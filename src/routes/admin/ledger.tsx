@@ -260,10 +260,39 @@ function LedgerPage() {
   const [isSaveConfirmOpen, setIsSaveConfirmOpen] = useState(false);
   const [isSaveReportOpen, setIsSaveReportOpen] = useState(false);
   const [saveReportData, setSaveReportData] = useState<any>(null);
+  const [balanceAdjustmentEntry, setBalanceAdjustmentEntry] = useState<JournalEntry | null>(null);
 
   const handleSaveAndPersistJournals = () => {
     try {
       setIsSavingToDb(true);
+      const invalidEntries = (erpStore.getState().journalEntries || []).filter((entry) => {
+        const currencies = new Set(
+          (entry.lines || []).map((line) => line.currency || entry.currency || "USD"),
+        );
+        const debit = (entry.lines || []).reduce((sum, line) => sum + (Number(line.debit) || 0), 0);
+        const credit = (entry.lines || []).reduce((sum, line) => sum + (Number(line.credit) || 0), 0);
+        const baseDebit = (entry.lines || []).reduce(
+          (sum, line) => sum + getLineBaseValue(line.debit, line.rate || 1),
+          0,
+        );
+        const baseCredit = (entry.lines || []).reduce(
+          (sum, line) => sum + getLineBaseValue(line.credit, line.rate || 1),
+          0,
+        );
+        return currencies.size <= 1
+          ? Math.abs(debit - credit) >= 0.01
+          : Math.abs(baseDebit - baseCredit) >= 0.05;
+      });
+
+      if (invalidEntries.length > 0) {
+        const examples = invalidEntries
+          .slice(0, 5)
+          .map((entry) => entry.reference || entry.description || entry.id)
+          .join(", ");
+        throw new Error(
+          `لا يمكن حفظ ${invalidEntries.length} قيد غير متزن. راجع القيود: ${examples}`,
+        );
+      }
       const res = erpStore.persistAllJournalsToDatabase();
       setErpState({ ...erpStore.getState() });
       setSavedEntryIds(new Set((erpStore.getState().journalEntries || []).map((e) => e.id)));
@@ -417,7 +446,7 @@ function LedgerPage() {
   // Find imports and state section to add new states for viewing journal entries
   const [journalEndDate, setJournalEndDate] = useState("");
 
-  const checkIsEntryBalanced = (je: JournalEntry) => {
+  const getEntryBalanceInfo = (je: JournalEntry) => {
     const currencies = Array.from(
       new Set((je.lines || []).map((l) => l.currency || je.currency || "USD")),
     );
@@ -436,7 +465,83 @@ function LedgerPage() {
       if ((l.currency || je.currency) === "USD") return sum + val;
       return sum + (r >= 1 ? val / r : val * r);
     }, 0);
-    return single ? Math.abs(tDebit - tCredit) < 0.01 : Math.abs(baseDebit - baseCredit) < 0.05;
+    const difference = single ? Math.abs(tDebit - tCredit) : Math.abs(baseDebit - baseCredit);
+    return {
+      difference,
+      isBalanced: single ? difference < 0.01 : difference < 0.05,
+      isSingleCurrency: single,
+      currency: currencies[0] || je.currency || "USD",
+      side: baseDebit < baseCredit ? ("debit" as const) : ("credit" as const),
+    };
+  };
+
+  const checkIsEntryBalanced = (je: JournalEntry) => {
+    return getEntryBalanceInfo(je).isBalanced;
+  };
+
+  const confirmBalanceAdjustment = () => {
+    const entry = balanceAdjustmentEntry;
+    if (!entry) return;
+
+    const info = getEntryBalanceInfo(entry);
+    if (info.isBalanced) {
+      setBalanceAdjustmentEntry(null);
+      return;
+    }
+
+    const lines = [...(entry.lines || [])];
+    const targetSide = info.side;
+    let targetIndex = lines.findIndex((line) =>
+      targetSide === "debit" ? Number(line.debit) > 0 : Number(line.credit) > 0,
+    );
+    const template = lines[targetIndex] || lines[0];
+    if (!template) return;
+
+    const currency = template.currency || entry.currency || "USD";
+    const rate = Number(template.rate) > 0 ? Number(template.rate) : 1;
+    const amount = info.isSingleCurrency
+      ? info.difference
+      : currency === "USD"
+        ? info.difference
+        : rate > 1
+          ? info.difference * rate
+          : info.difference / rate;
+
+    if (targetIndex < 0) {
+      targetIndex = lines.length;
+      lines.push({
+        account_code: template.account_code,
+        account_name: (template as any).account_name,
+        debit: targetSide === "debit" ? amount : 0,
+        credit: targetSide === "credit" ? amount : 0,
+        currency,
+        rate,
+        description: `تسوية فرق القيد ${entry.reference || ""}`,
+      } as any);
+    } else {
+      const line = { ...lines[targetIndex] };
+      if (targetSide === "debit") line.debit = Number(line.debit || 0) + amount;
+      else line.credit = Number(line.credit || 0) + amount;
+      line.description = `${line.description || entry.description || ""} - تسوية فرق القيد`;
+      lines[targetIndex] = line;
+    }
+
+    erpStore.state.journalEntries = erpStore.state.journalEntries.map((item) =>
+      item.id === entry.id ? { ...item, lines } : item,
+    );
+    erpStore.recalculateAccountBalances();
+    erpStore.saveState();
+    setSavedEntryIds((current) => {
+      const next = new Set(current);
+      next.delete(entry.id);
+      return next;
+    });
+    setErpState({ ...erpStore.getState() });
+    setBalanceAdjustmentEntry(null);
+    toast({
+      title: "تمت تسوية القيد",
+      description: `تمت إضافة ${amount.toFixed(2)} ${currency} إلى الجانب ${targetSide === "debit" ? "المدين" : "الدائن"}. احفظ القيود لتثبيت التعديل.`,
+    });
   };
 
   // Journal Entry View/Print Dialog State
@@ -2292,8 +2397,9 @@ function LedgerPage() {
                       return sum + (r >= 1 ? val / r : val * r);
                     }, 0);
 
-                    const balanceDiff = Math.abs(totalBaseDebit - totalBaseCredit);
-                    const isBalanced = balanceDiff < 0.05;
+                    const balanceInfo = getEntryBalanceInfo(entry);
+                    const balanceDiff = balanceInfo.difference;
+                    const isBalanced = balanceInfo.isBalanced;
 
                     return (
                       <div
@@ -2365,6 +2471,17 @@ function LedgerPage() {
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
+                              {!isBalanced && (
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-7 w-7 rounded-md text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40"
+                                  title={`تسوية فرق القيد ${formatCurrency(balanceDiff, "USD")}`}
+                                  onClick={() => setBalanceAdjustmentEntry(entry)}
+                                >
+                                  <PlusCircle className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
                               <Button
                                 variant="outline"
                                 size="icon"
@@ -3597,6 +3714,51 @@ function LedgerPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={Boolean(balanceAdjustmentEntry)}
+        onOpenChange={(open) => !open && setBalanceAdjustmentEntry(null)}
+      >
+        <AlertDialogContent className="rounded-2xl max-w-lg" dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-right flex items-center gap-2 text-amber-700 dark:text-amber-400">
+              <Scale className="h-5 w-5" />
+              تأكيد تسوية فرق القيد
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-right text-sm space-y-3 pt-2">
+              {balanceAdjustmentEntry && (() => {
+                const info = getEntryBalanceInfo(balanceAdjustmentEntry);
+                const sideLabel = info.side === "debit" ? "المدين" : "الدائن";
+                return (
+                  <>
+                    <p>
+                      القيد <strong>{balanceAdjustmentEntry.reference}</strong> غير متزن بفارق:
+                    </p>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-900 font-bold">
+                      {formatCurrency(info.difference, info.isSingleCurrency ? info.currency : "USD")}
+                    </div>
+                    <p>
+                      هل أنت متأكد من إضافة قيمة الفرق إلى جانب <strong>{sideLabel}</strong>؟
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      سيتم تعديل القيد في الذاكرة، ثم اضغط حفظ القيود لتثبيته نهائيًا.
+                    </p>
+                  </>
+                );
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-row justify-start gap-2">
+            <AlertDialogAction
+              onClick={confirmBalanceAdjustment}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl"
+            >
+              نعم، أضف الفرق وسوِّ القيد
+            </AlertDialogAction>
+            <AlertDialogCancel className="rounded-xl">إلغاء</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Save Confirmation Dialog */}
       <AlertDialog open={isSaveConfirmOpen} onOpenChange={setIsSaveConfirmOpen}>

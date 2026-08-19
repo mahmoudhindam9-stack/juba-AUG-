@@ -66,14 +66,19 @@ export function parseCurrency(
   accCode?: string,
 ): "USD" | "SSP" | "EGP" {
   const codeStr = String(currCode ?? "").trim();
-  if (codeStr === "0" || codeStr === "0.0") return "USD";
-  if (codeStr === "1" || codeStr === "1.0") return "SSP";
-  if (codeStr === "2" || codeStr === "2.0") return "EGP";
-
   const nameStr = String(currName || "").toLowerCase();
+  // Oracle code 0 means the local currency; the name is authoritative because
+  // this export uses the same code for different local installations.
+  if (nameStr.includes("محلي") || nameStr.includes("محليه") || nameStr.includes("local")) {
+    return "EGP";
+  }
   if (nameStr.includes("دولار") || nameStr.includes("usd") || nameStr.includes("$")) return "USD";
   if (nameStr.includes("سودان") || nameStr.includes("ssp") || nameStr.includes("sdg")) return "SSP";
   if (nameStr.includes("مصر") || nameStr.includes("egp") || nameStr.includes("le")) return "EGP";
+
+  if (codeStr === "0" || codeStr === "0.0") return "EGP";
+  if (codeStr === "1" || codeStr === "1.0") return "SSP";
+  if (codeStr === "2" || codeStr === "2.0") return "EGP";
 
   const descStr = String(desc || "").toLowerCase();
   if (descStr.includes("سودان") || descStr.includes("ssp")) return "SSP";
@@ -278,8 +283,8 @@ export function parseOracleSheetRows(rawRows: any[][]): ParsedOracleRow[] {
   if (colCurrencyCode === -1 && colCurrencyName === -1) colCurrencyCode = 9;
   if (colCurrencyName === -1) colCurrencyName = 10;
   if (colExchangeRate === -1) colExchangeRate = 11;
-  if (colDebitCurr === -1) colDebitCurr = 12;
-  if (colCreditCurr === -1) colCreditCurr = 13;
+  // Currency debit/credit columns are optional. Do not use positional fallbacks
+  // here: Oracle exports commonly place journal number and period at these indexes.
 
   const dataRows = rawRows.slice(1);
   const parsedRows: ParsedOracleRow[] = [];
@@ -294,18 +299,20 @@ export function parseOracleSheetRows(rawRows: any[][]): ParsedOracleRow[] {
     const currCode = row[colCurrencyCode];
     const currName = String(row[colCurrencyName] || "").trim();
     const rawRate = Number(row[colExchangeRate]);
+    // A zero/blank Oracle factor means no conversion, not a zero-valued amount.
     const rate = !isNaN(rawRate) && rawRate > 0 ? rawRate : 1;
 
     let baseDebit = Number(row[colDebit]) || 0;
     let baseCredit = Number(row[colCredit]) || 0;
-    let currDebit = Number(row[colDebitCurr]) || 0;
-    let currCredit = Number(row[colCreditCurr]) || 0;
+    const hasCurrencyAmounts = colDebitCurr !== -1 || colCreditCurr !== -1;
+    let currDebit = hasCurrencyAmounts ? Number(row[colDebitCurr]) || 0 : baseDebit;
+    let currCredit = hasCurrencyAmounts ? Number(row[colCreditCurr]) || 0 : baseCredit;
 
     if (!accCode && baseDebit === 0 && baseCredit === 0 && currDebit === 0 && currCredit === 0) {
       return;
     }
 
-    if (currDebit === 0 && currCredit === 0) {
+    if (hasCurrencyAmounts && currDebit === 0 && currCredit === 0) {
       const derivedCurr = parseCurrency(currCode, currName, description, accCode);
       if (derivedCurr === "USD") {
         currDebit = baseDebit;
