@@ -604,7 +604,8 @@ function Index() {
         payment_method: payment,
         order_type: orderType,
         table_id: orderType === "dine_in" ? cleanTableId(selectedTable) : null,
-        status: activeTableOrderSentToKitchen ? "served" : "pending",
+        // Persist as pending first so inventory processing can lock the order and deduct atomically.
+        status: "pending",
         notes: finalNotes || null,
 
         items: cart.map((c) => {
@@ -683,6 +684,32 @@ function Index() {
         }
       }
 
+      // Process inventory once on the server before recording the sale and issuing the invoice.
+      if (!String(data.id).startsWith("local-")) {
+        const { data: inventoryResult, error: inventoryError } = await (supabase.rpc as any)(
+          "start_order_preparing",
+          {
+            p_order_id: data.id,
+            p_allow_negative: allowNegative,
+          },
+        );
+        if (inventoryError) throw inventoryError;
+        if (inventoryResult && !inventoryResult.success) {
+          throw new Error(inventoryResult.error_ar || inventoryResult.error || "فشل خصم المخزون");
+        }
+
+        const { data: servedOrder, error: servedError } = await supabase
+          .from("orders")
+          .update({ status: "served" })
+          .eq("id", data.id)
+          .select(
+            "id,order_number,subtotal,tax,total,payment_method,order_type,table_id,status,items,created_at",
+          )
+          .single();
+        if (servedError) throw servedError;
+        data = servedOrder;
+      }
+
       // Post to ERP automated journal entries and update treasury balances (Cashier / Bank)
       try {
         erpStore.postSalesInvoiceJournal(
@@ -698,19 +725,6 @@ function Index() {
         );
       } catch (erpErr) {
         console.error("Error posting sales to ERP system from POS:", erpErr);
-      }
-
-      // 5. Deduct ingredients from the operational warehouse
-      const deductionResult = await inventoryService.deductOrderIngredients(
-        data.id,
-        data.items || payload.items,
-        data.order_number,
-        allowNegative,
-      );
-
-      if (!deductionResult.success) {
-        // If deduction failed (e.g. strict stock and run out), we should ideally roll back or inform
-        console.error("Inventory deduction failed during order placement:", deductionResult.error);
       }
 
       if (activeTableKitchenOrderId) {
