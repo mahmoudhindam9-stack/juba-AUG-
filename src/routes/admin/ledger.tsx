@@ -489,65 +489,88 @@ function LedgerPage() {
     const entry = balanceAdjustmentEntry;
     if (!entry) return;
 
-    const info = getEntryBalanceInfo(entry);
-    if (info.isBalanced) {
+    try {
+      const info = getEntryBalanceInfo(entry);
+      if (info.isBalanced) {
+        setBalanceAdjustmentEntry(null);
+        return;
+      }
+
+      const lines = [...(entry.lines || [])];
+      const targetSide = info.side;
+      let targetIndex = lines.findIndex((line) =>
+        targetSide === "debit" ? Number(line.debit) > 0 : Number(line.credit) > 0,
+      );
+      const template = lines[targetIndex] || lines[0];
+      if (!template) return;
+
+      const currency = template.currency || entry.currency || "USD";
+      const rate = Number(template.rate) > 0 ? Number(template.rate) : 1;
+      // `info.difference` is expressed in the BASE currency. To add it to a line
+      // that is in a foreign currency, convert base -> native by MULTIPLYING by the
+      // rate (native = base * rate). A heuristic like (rate > 1 ? v * rate : v /
+      // rate) mis-applies coefficients below 1 and can leave a multi-currency entry
+      // still unbalanced after clicking OK.
+      const amount = info.difference * rate;
+
+      if (targetIndex < 0) {
+        targetIndex = lines.length;
+        lines.push({
+          account_code: template.account_code,
+          account_name: (template as any).account_name,
+          debit: targetSide === "debit" ? amount : 0,
+          credit: targetSide === "credit" ? amount : 0,
+          currency,
+          rate,
+          description: `تسوية فرق القيد ${entry.reference || ""}`,
+        } as any);
+      } else {
+        const line = { ...lines[targetIndex] };
+        if (targetSide === "debit") line.debit = Number(line.debit || 0) + amount;
+        else line.credit = Number(line.credit || 0) + amount;
+        line.description = `${line.description || entry.description || ""} - تسوية فرق القيد`;
+        lines[targetIndex] = line;
+      }
+
+      erpStore.state.journalEntries = erpStore.state.journalEntries.map((item) =>
+        item.id === entry.id ? { ...item, lines } : item,
+      );
+      erpStore.recalculateAccountBalances();
+      erpStore.saveState();
+      setSavedEntryIds((current) => {
+        const next = new Set(current);
+        next.delete(entry.id);
+        return next;
+      });
+      setErpState({ ...erpStore.getState() });
       setBalanceAdjustmentEntry(null);
-      return;
+
+      if (!getEntryBalanceInfo({ ...entry, lines }).isBalanced) {
+        toast({
+          title: "⚠️ تم تعديل القيد لكنه ما زال غير متزن",
+          description:
+            "بسبب تعدد العملات والمعاملات، قد تحتاج لمعالجة هذا القيد يدويًا لإتمام التوازن الكامل.",
+        });
+      } else {
+        toast({
+          title: "تمت تسوية القيد",
+          description: `تمت إضافة ${amount.toFixed(2)} ${currency} إلى الجانب ${
+            targetSide === "debit" ? "المدين" : "الدائن"
+          }. احفظ القيود لتثبيت التعديل.`,
+        });
+      }
+    } catch (err) {
+      console.error("[تسوية القيد]", err);
+      // Even on failure, refresh the UI from the store so partial mutations are
+      // reflected, and surface the real error instead of swallowing it silently.
+      setErpState({ ...erpStore.getState() });
+      setBalanceAdjustmentEntry(null);
+      toast({
+        title: "خطأ أثناء تسوية القيد",
+        description: (err as any)?.message || "حدث خطأ غير متوقع أثناء محاولة تسوية القيد.",
+        variant: "destructive",
+      });
     }
-
-    const lines = [...(entry.lines || [])];
-    const targetSide = info.side;
-    let targetIndex = lines.findIndex((line) =>
-      targetSide === "debit" ? Number(line.debit) > 0 : Number(line.credit) > 0,
-    );
-    const template = lines[targetIndex] || lines[0];
-    if (!template) return;
-
-    const currency = template.currency || entry.currency || "USD";
-    const rate = Number(template.rate) > 0 ? Number(template.rate) : 1;
-    const amount = info.isSingleCurrency
-      ? info.difference
-      : currency === "USD"
-        ? info.difference
-        : rate > 1
-          ? info.difference * rate
-          : info.difference / rate;
-
-    if (targetIndex < 0) {
-      targetIndex = lines.length;
-      lines.push({
-        account_code: template.account_code,
-        account_name: (template as any).account_name,
-        debit: targetSide === "debit" ? amount : 0,
-        credit: targetSide === "credit" ? amount : 0,
-        currency,
-        rate,
-        description: `تسوية فرق القيد ${entry.reference || ""}`,
-      } as any);
-    } else {
-      const line = { ...lines[targetIndex] };
-      if (targetSide === "debit") line.debit = Number(line.debit || 0) + amount;
-      else line.credit = Number(line.credit || 0) + amount;
-      line.description = `${line.description || entry.description || ""} - تسوية فرق القيد`;
-      lines[targetIndex] = line;
-    }
-
-    erpStore.state.journalEntries = erpStore.state.journalEntries.map((item) =>
-      item.id === entry.id ? { ...item, lines } : item,
-    );
-    erpStore.recalculateAccountBalances();
-    erpStore.saveState();
-    setSavedEntryIds((current) => {
-      const next = new Set(current);
-      next.delete(entry.id);
-      return next;
-    });
-    setErpState({ ...erpStore.getState() });
-    setBalanceAdjustmentEntry(null);
-    toast({
-      title: "تمت تسوية القيد",
-      description: `تمت إضافة ${amount.toFixed(2)} ${currency} إلى الجانب ${targetSide === "debit" ? "المدين" : "الدائن"}. احفظ القيود لتثبيت التعديل.`,
-    });
   };
 
   // Journal Entry View/Print Dialog State
