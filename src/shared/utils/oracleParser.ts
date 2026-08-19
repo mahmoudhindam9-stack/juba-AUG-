@@ -67,16 +67,12 @@ export function parseCurrency(
 ): "USD" | "SSP" | "EGP" {
   const codeStr = String(currCode ?? "").trim();
   const nameStr = String(currName || "").toLowerCase();
-  // Oracle code 0 means the local currency; the name is authoritative because
-  // this export uses the same code for different local installations.
-  if (nameStr.includes("محلي") || nameStr.includes("محليه") || nameStr.includes("local")) {
-    return "EGP";
-  }
   if (nameStr.includes("دولار") || nameStr.includes("usd") || nameStr.includes("$")) return "USD";
   if (nameStr.includes("سودان") || nameStr.includes("ssp") || nameStr.includes("sdg")) return "SSP";
   if (nameStr.includes("مصر") || nameStr.includes("egp") || nameStr.includes("le")) return "EGP";
 
-  if (codeStr === "0" || codeStr === "0.0") return "EGP";
+  // In this ledger, Oracle currency code 0 is the USD base currency.
+  if (codeStr === "0" || codeStr === "0.0") return "USD";
   if (codeStr === "1" || codeStr === "1.0") return "SSP";
   if (codeStr === "2" || codeStr === "2.0") return "EGP";
 

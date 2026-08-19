@@ -451,8 +451,6 @@ function LedgerPage() {
       new Set((je.lines || []).map((l) => l.currency || je.currency || "USD")),
     );
     const single = currencies.length <= 1;
-    const tDebit = (je.lines || []).reduce((s, l) => s + (Number(l.debit) || 0), 0);
-    const tCredit = (je.lines || []).reduce((s, l) => s + (Number(l.credit) || 0), 0);
     const baseDebit = (je.lines || []).reduce((sum, l) => {
       const r = Number(l.rate) || 1;
       const val = Number(l.debit) || 0;
@@ -465,10 +463,10 @@ function LedgerPage() {
       if ((l.currency || je.currency) === "USD") return sum + val;
       return sum + (r >= 1 ? val / r : val * r);
     }, 0);
-    const difference = single ? Math.abs(tDebit - tCredit) : Math.abs(baseDebit - baseCredit);
+    const difference = Math.abs(baseDebit - baseCredit);
     return {
       difference,
-      isBalanced: single ? difference < 0.01 : difference < 0.05,
+      isBalanced: difference < 0.05,
       isSingleCurrency: single,
       currency: currencies[0] || je.currency || "USD",
       side: baseDebit < baseCredit ? ("debit" as const) : ("credit" as const),
