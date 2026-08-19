@@ -11,22 +11,26 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as CaptainRouteImport } from './routes/captain'
 import { Route as CashierTreasuryRouteImport } from './routes/cashier-treasury'
 import { Route as ComponentsRouteImport } from './routes/components'
-import { Route as FloorRouteImport } from './routes/floor'
-import { Route as KitchenRouteImport } from './routes/kitchen'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as MenuRouteImport } from './routes/menu'
+import { Route as OvenRouteImport } from './routes/oven'
+import { Route as PosRouteImport } from './routes/pos'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAccountsRouteImport } from './routes/admin/accounts'
 import { Route as AdminHrRouteImport } from './routes/admin/hr'
 import { Route as AdminInventoryRouteImport } from './routes/admin/inventory'
 import { Route as AdminLedgerRouteImport } from './routes/admin/ledger'
+import { Route as AdminMallRouteImport } from './routes/admin/mall'
 import { Route as AdminMenuRouteImport } from './routes/admin/menu'
 import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
+import { Route as AdminReceiptsRouteImport } from './routes/admin/receipts'
 import { Route as AdminReportsRouteImport } from './routes/admin/reports'
+import { Route as AdminRestaurantRouteImport } from './routes/admin/restaurant'
 import { Route as AdminSystemUpdateRouteImport } from './routes/admin/system-update'
-import { Route as AdminTablesRouteImport } from './routes/admin/tables'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 
 const IndexRoute = IndexRouteImport.update({
@@ -39,6 +43,11 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CaptainRoute = CaptainRouteImport.update({
+  id: '/captain',
+  path: '/captain',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CashierTreasuryRoute = CashierTreasuryRouteImport.update({
   id: '/cashier-treasury',
   path: '/cashier-treasury',
@@ -49,19 +58,24 @@ const ComponentsRoute = ComponentsRouteImport.update({
   path: '/components',
   getParentRoute: () => rootRouteImport,
 } as any)
-const FloorRoute = FloorRouteImport.update({
-  id: '/floor',
-  path: '/floor',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const KitchenRoute = KitchenRouteImport.update({
-  id: '/kitchen',
-  path: '/kitchen',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MenuRoute = MenuRouteImport.update({
+  id: '/menu',
+  path: '/menu',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OvenRoute = OvenRouteImport.update({
+  id: '/oven',
+  path: '/oven',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PosRoute = PosRouteImport.update({
+  id: '/pos',
+  path: '/pos',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SetupRoute = SetupRouteImport.update({
@@ -94,6 +108,11 @@ const AdminLedgerRoute = AdminLedgerRouteImport.update({
   path: '/ledger',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminMallRoute = AdminMallRouteImport.update({
+  id: '/mall',
+  path: '/mall',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminMenuRoute = AdminMenuRouteImport.update({
   id: '/menu',
   path: '/menu',
@@ -104,19 +123,24 @@ const AdminOrdersRoute = AdminOrdersRouteImport.update({
   path: '/orders',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminReceiptsRoute = AdminReceiptsRouteImport.update({
+  id: '/receipts',
+  path: '/receipts',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminReportsRoute = AdminReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminRestaurantRoute = AdminRestaurantRouteImport.update({
+  id: '/restaurant',
+  path: '/restaurant',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminSystemUpdateRoute = AdminSystemUpdateRouteImport.update({
   id: '/system-update',
   path: '/system-update',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminTablesRoute = AdminTablesRouteImport.update({
-  id: '/tables',
-  path: '/tables',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
@@ -128,41 +152,49 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/captain': typeof CaptainRoute
   '/cashier-treasury': typeof CashierTreasuryRoute
   '/components': typeof ComponentsRoute
-  '/floor': typeof FloorRoute
-  '/kitchen': typeof KitchenRoute
   '/login': typeof LoginRoute
+  '/menu': typeof MenuRoute
+  '/oven': typeof OvenRoute
+  '/pos': typeof PosRoute
   '/setup': typeof SetupRoute
   '/admin/accounts': typeof AdminAccountsRoute
   '/admin/hr': typeof AdminHrRoute
   '/admin/inventory': typeof AdminInventoryRoute
   '/admin/ledger': typeof AdminLedgerRoute
+  '/admin/mall': typeof AdminMallRoute
   '/admin/menu': typeof AdminMenuRoute
   '/admin/orders': typeof AdminOrdersRoute
+  '/admin/receipts': typeof AdminReceiptsRoute
   '/admin/reports': typeof AdminReportsRoute
+  '/admin/restaurant': typeof AdminRestaurantRoute
   '/admin/system-update': typeof AdminSystemUpdateRoute
-  '/admin/tables': typeof AdminTablesRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/': typeof AdminIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/captain': typeof CaptainRoute
   '/cashier-treasury': typeof CashierTreasuryRoute
   '/components': typeof ComponentsRoute
-  '/floor': typeof FloorRoute
-  '/kitchen': typeof KitchenRoute
   '/login': typeof LoginRoute
+  '/menu': typeof MenuRoute
+  '/oven': typeof OvenRoute
+  '/pos': typeof PosRoute
   '/setup': typeof SetupRoute
   '/admin/accounts': typeof AdminAccountsRoute
   '/admin/hr': typeof AdminHrRoute
   '/admin/inventory': typeof AdminInventoryRoute
   '/admin/ledger': typeof AdminLedgerRoute
+  '/admin/mall': typeof AdminMallRoute
   '/admin/menu': typeof AdminMenuRoute
   '/admin/orders': typeof AdminOrdersRoute
+  '/admin/receipts': typeof AdminReceiptsRoute
   '/admin/reports': typeof AdminReportsRoute
+  '/admin/restaurant': typeof AdminRestaurantRoute
   '/admin/system-update': typeof AdminSystemUpdateRoute
-  '/admin/tables': typeof AdminTablesRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin': typeof AdminIndexRoute
 }
@@ -170,21 +202,25 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/captain': typeof CaptainRoute
   '/cashier-treasury': typeof CashierTreasuryRoute
   '/components': typeof ComponentsRoute
-  '/floor': typeof FloorRoute
-  '/kitchen': typeof KitchenRoute
   '/login': typeof LoginRoute
+  '/menu': typeof MenuRoute
+  '/oven': typeof OvenRoute
+  '/pos': typeof PosRoute
   '/setup': typeof SetupRoute
   '/admin/accounts': typeof AdminAccountsRoute
   '/admin/hr': typeof AdminHrRoute
   '/admin/inventory': typeof AdminInventoryRoute
   '/admin/ledger': typeof AdminLedgerRoute
+  '/admin/mall': typeof AdminMallRoute
   '/admin/menu': typeof AdminMenuRoute
   '/admin/orders': typeof AdminOrdersRoute
+  '/admin/receipts': typeof AdminReceiptsRoute
   '/admin/reports': typeof AdminReportsRoute
+  '/admin/restaurant': typeof AdminRestaurantRoute
   '/admin/system-update': typeof AdminSystemUpdateRoute
-  '/admin/tables': typeof AdminTablesRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/': typeof AdminIndexRoute
 }
@@ -193,62 +229,74 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/captain'
     | '/cashier-treasury'
     | '/components'
-    | '/floor'
-    | '/kitchen'
     | '/login'
+    | '/menu'
+    | '/oven'
+    | '/pos'
     | '/setup'
     | '/admin/accounts'
     | '/admin/hr'
     | '/admin/inventory'
     | '/admin/ledger'
+    | '/admin/mall'
     | '/admin/menu'
     | '/admin/orders'
+    | '/admin/receipts'
     | '/admin/reports'
+    | '/admin/restaurant'
     | '/admin/system-update'
-    | '/admin/tables'
     | '/admin/users'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/captain'
     | '/cashier-treasury'
     | '/components'
-    | '/floor'
-    | '/kitchen'
     | '/login'
+    | '/menu'
+    | '/oven'
+    | '/pos'
     | '/setup'
     | '/admin/accounts'
     | '/admin/hr'
     | '/admin/inventory'
     | '/admin/ledger'
+    | '/admin/mall'
     | '/admin/menu'
     | '/admin/orders'
+    | '/admin/receipts'
     | '/admin/reports'
+    | '/admin/restaurant'
     | '/admin/system-update'
-    | '/admin/tables'
     | '/admin/users'
     | '/admin'
   id:
     | '__root__'
     | '/'
     | '/admin'
+    | '/captain'
     | '/cashier-treasury'
     | '/components'
-    | '/floor'
-    | '/kitchen'
     | '/login'
+    | '/menu'
+    | '/oven'
+    | '/pos'
     | '/setup'
     | '/admin/accounts'
     | '/admin/hr'
     | '/admin/inventory'
     | '/admin/ledger'
+    | '/admin/mall'
     | '/admin/menu'
     | '/admin/orders'
+    | '/admin/receipts'
     | '/admin/reports'
+    | '/admin/restaurant'
     | '/admin/system-update'
-    | '/admin/tables'
     | '/admin/users'
     | '/admin/'
   fileRoutesById: FileRoutesById
@@ -256,11 +304,13 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  CaptainRoute: typeof CaptainRoute
   CashierTreasuryRoute: typeof CashierTreasuryRoute
   ComponentsRoute: typeof ComponentsRoute
-  FloorRoute: typeof FloorRoute
-  KitchenRoute: typeof KitchenRoute
   LoginRoute: typeof LoginRoute
+  MenuRoute: typeof MenuRoute
+  OvenRoute: typeof OvenRoute
+  PosRoute: typeof PosRoute
   SetupRoute: typeof SetupRoute
 }
 
@@ -280,6 +330,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/captain': {
+      id: '/captain'
+      path: '/captain'
+      fullPath: '/captain'
+      preLoaderRoute: typeof CaptainRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/cashier-treasury': {
       id: '/cashier-treasury'
       path: '/cashier-treasury'
@@ -294,25 +351,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ComponentsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/floor': {
-      id: '/floor'
-      path: '/floor'
-      fullPath: '/floor'
-      preLoaderRoute: typeof FloorRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/kitchen': {
-      id: '/kitchen'
-      path: '/kitchen'
-      fullPath: '/kitchen'
-      preLoaderRoute: typeof KitchenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/login': {
       id: '/login'
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/menu': {
+      id: '/menu'
+      path: '/menu'
+      fullPath: '/menu'
+      preLoaderRoute: typeof MenuRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oven': {
+      id: '/oven'
+      path: '/oven'
+      fullPath: '/oven'
+      preLoaderRoute: typeof OvenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pos': {
+      id: '/pos'
+      path: '/pos'
+      fullPath: '/pos'
+      preLoaderRoute: typeof PosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/setup': {
@@ -357,6 +421,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminLedgerRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/mall': {
+      id: '/admin/mall'
+      path: '/mall'
+      fullPath: '/admin/mall'
+      preLoaderRoute: typeof AdminMallRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/menu': {
       id: '/admin/menu'
       path: '/menu'
@@ -371,6 +442,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminOrdersRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/receipts': {
+      id: '/admin/receipts'
+      path: '/receipts'
+      fullPath: '/admin/receipts'
+      preLoaderRoute: typeof AdminReceiptsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/reports': {
       id: '/admin/reports'
       path: '/reports'
@@ -378,18 +456,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminReportsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/restaurant': {
+      id: '/admin/restaurant'
+      path: '/restaurant'
+      fullPath: '/admin/restaurant'
+      preLoaderRoute: typeof AdminRestaurantRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/system-update': {
       id: '/admin/system-update'
       path: '/system-update'
       fullPath: '/admin/system-update'
       preLoaderRoute: typeof AdminSystemUpdateRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/tables': {
-      id: '/admin/tables'
-      path: '/tables'
-      fullPath: '/admin/tables'
-      preLoaderRoute: typeof AdminTablesRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/users': {
@@ -407,11 +485,13 @@ interface AdminRouteChildren {
   AdminHrRoute: typeof AdminHrRoute
   AdminInventoryRoute: typeof AdminInventoryRoute
   AdminLedgerRoute: typeof AdminLedgerRoute
+  AdminMallRoute: typeof AdminMallRoute
   AdminMenuRoute: typeof AdminMenuRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
+  AdminReceiptsRoute: typeof AdminReceiptsRoute
   AdminReportsRoute: typeof AdminReportsRoute
+  AdminRestaurantRoute: typeof AdminRestaurantRoute
   AdminSystemUpdateRoute: typeof AdminSystemUpdateRoute
-  AdminTablesRoute: typeof AdminTablesRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
@@ -421,11 +501,13 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminHrRoute: AdminHrRoute,
   AdminInventoryRoute: AdminInventoryRoute,
   AdminLedgerRoute: AdminLedgerRoute,
+  AdminMallRoute: AdminMallRoute,
   AdminMenuRoute: AdminMenuRoute,
   AdminOrdersRoute: AdminOrdersRoute,
+  AdminReceiptsRoute: AdminReceiptsRoute,
   AdminReportsRoute: AdminReportsRoute,
+  AdminRestaurantRoute: AdminRestaurantRoute,
   AdminSystemUpdateRoute: AdminSystemUpdateRoute,
-  AdminTablesRoute: AdminTablesRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
@@ -435,11 +517,13 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  CaptainRoute: CaptainRoute,
   CashierTreasuryRoute: CashierTreasuryRoute,
   ComponentsRoute: ComponentsRoute,
-  FloorRoute: FloorRoute,
-  KitchenRoute: KitchenRoute,
   LoginRoute: LoginRoute,
+  MenuRoute: MenuRoute,
+  OvenRoute: OvenRoute,
+  PosRoute: PosRoute,
   SetupRoute: SetupRoute,
 }
 export const routeTree = rootRouteImport
