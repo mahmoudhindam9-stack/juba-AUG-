@@ -324,8 +324,12 @@ function LedgerPage() {
       const reader = new FileReader();
       reader.onload = async (event) => {
         try {
-          const data = event.target?.result;
-          const workbook = XLSX.read(data, { type: "binary" });
+          // Read as an ArrayBuffer and parse with type "array" — this preserves the
+          // exact binary content of .xlsx/.xls files. Using readAsBinaryString +
+          // type "binary" corrupts compressed cell data and silently garbles amounts,
+          // which makes balanced journal entries appear unbalanced after import.
+          const data = new Uint8Array(event.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: "array" });
           const sheetName = workbook.SheetNames[0];
           const sheet = workbook.Sheets[sheetName];
           const rawRows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1 });
@@ -362,7 +366,7 @@ function LedgerPage() {
           if (e.target) e.target.value = "";
         }
       };
-      reader.readAsBinaryString(file);
+      reader.readAsArrayBuffer(file);
     } catch (err) {
       console.error(err);
       alert("حدث خطأ أثناء الاستيراد");
