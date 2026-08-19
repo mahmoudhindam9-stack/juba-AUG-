@@ -13,7 +13,9 @@ export default defineConfig({
   plugins: [
     tanstackStart({
       prerender: {
-        enabled: false,
+        enabled: true,
+        autoStaticPathsDiscovery: false,
+        routes: ["/"],
       },
     }),
     react(),
