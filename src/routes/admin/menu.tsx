@@ -305,6 +305,23 @@ function MenuPage() {
     setIngredientWeight("");
   };
 
+  const getInventoryStock = (inventoryId: string) => {
+    const inventoryItem: any = (inventoryQuery.data ?? []).find(
+      (item: any) => item.id === inventoryId,
+    );
+    if (!inventoryItem) return null;
+
+    if (selectedRecipeWarehouseId === "all") {
+      return Number(inventoryItem.quantity || 0);
+    }
+
+    const warehouseItem: any = (warehouseInventoryQuery.data ?? []).find(
+      (item: any) =>
+        item.warehouse_id === selectedRecipeWarehouseId && item.inventory_id === inventoryId,
+    );
+    return Number(warehouseItem?.quantity || 0);
+  };
+
   const startEditCategory = (cat: Category) => {
     setEditingCategory(cat);
     setCatForm({
@@ -940,6 +957,10 @@ function MenuPage() {
                           </div>
                           <span className="text-[10px] text-muted-foreground block">
                             المقدار: {ing.weight} {ing.unit || invItem?.unit || ""}
+                          </span>
+                          <span className="text-[10px] text-primary font-bold block">
+                            رصيد المخزن: {getInventoryStock(ing.inventory_id)?.toFixed(2) ?? "0.00"}{" "}
+                            {invItem?.unit || ""}
                           </span>
                           {ing.waste_percent ? (
                             <span className="text-[9px] text-destructive block">
