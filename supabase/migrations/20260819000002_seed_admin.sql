@@ -26,7 +26,7 @@ BEGIN
       admin_id, 
       '00000000-0000-0000-0000-000000000000', 
       'admin@restocash.com', 
-      crypt('123456', gen_salt('bf')), 
+      extensions.crypt('123456', extensions.gen_salt('bf')), 
       now(), 
       '{"provider":"email","providers":["email"]}', 
       '{"role":"admin","full_name":"Super Admin"}', 
@@ -44,7 +44,7 @@ BEGIN
   ELSE
     -- If the user exists, force update their password to '123456' and role to 'admin'
     UPDATE auth.users
-    SET encrypted_password = crypt('123456', gen_salt('bf'))
+    SET encrypted_password = extensions.crypt('123456', extensions.gen_salt('bf'))
     WHERE email = 'admin@restocash.com';
     
     UPDATE public.profiles
