@@ -459,13 +459,17 @@ function LedgerPage() {
       const r = Number(l.rate) || 1;
       const val = Number(l.debit) || 0;
       if ((l.currency || je.currency) === "USD") return sum + val;
-      return sum + (r >= 1 ? val / r : val * r);
+      // The معامل (rate) always converts a native amount to the base currency by
+      // DIVISION — even when the coefficient is below 1 (e.g. 0.135). A heuristic
+      // like (r >= 1 ? val / r : val * r) silently mis-applies such coefficients and
+      // makes balanced journal entries appear unbalanced after import.
+      return sum + val / r;
     }, 0);
     const baseCredit = (je.lines || []).reduce((sum, l) => {
       const r = Number(l.rate) || 1;
       const val = Number(l.credit) || 0;
       if ((l.currency || je.currency) === "USD") return sum + val;
-      return sum + (r >= 1 ? val / r : val * r);
+      return sum + val / r;
     }, 0);
     const difference = Math.abs(baseDebit - baseCredit);
     return {
@@ -2389,14 +2393,14 @@ function LedgerPage() {
                       const r = Number(l.rate) || 1;
                       const val = Number(l.debit) || 0;
                       if ((l.currency || entry.currency) === "USD") return sum + val;
-                      return sum + (r >= 1 ? val / r : val * r);
+                      return sum + val / r;
                     }, 0);
 
                     const totalBaseCredit = entry.lines.reduce((sum, l) => {
                       const r = Number(l.rate) || 1;
                       const val = Number(l.credit) || 0;
                       if ((l.currency || entry.currency) === "USD") return sum + val;
-                      return sum + (r >= 1 ? val / r : val * r);
+                      return sum + val / r;
                     }, 0);
 
                     const balanceInfo = getEntryBalanceInfo(entry);
@@ -3220,14 +3224,14 @@ function LedgerPage() {
                 const r = Number(l.rate) || 1;
                 const val = Number(l.debit) || 0;
                 if ((l.currency || jCurr) === "USD") return sum + val;
-                return sum + (r >= 1 ? val / r : val * r);
+                return sum + val / r;
               }, 0);
 
               const totalBaseCredit = selectedJournal.lines.reduce((sum, l) => {
                 const r = Number(l.rate) || 1;
                 const val = Number(l.credit) || 0;
                 if ((l.currency || jCurr) === "USD") return sum + val;
-                return sum + (r >= 1 ? val / r : val * r);
+                return sum + val / r;
               }, 0);
 
               const isBalanced = isSingleCurrency
@@ -3617,14 +3621,14 @@ function LedgerPage() {
                       const r = Number(l.rate) || 1;
                       const val = Number(l.debit) || 0;
                       if (l.currency === "USD") return sum + val;
-                      return sum + (r >= 1 ? val / r : val * r);
+                      return sum + val / r;
                     }, 0);
 
                     const totalBaseCredit = entry.lines.reduce((sum, l) => {
                       const r = Number(l.rate) || 1;
                       const val = Number(l.credit) || 0;
                       if (l.currency === "USD") return sum + val;
-                      return sum + (r >= 1 ? val / r : val * r);
+                      return sum + val / r;
                     }, 0);
 
                     const isBalanced = isSingleCurrency

@@ -9,6 +9,7 @@ export interface ParsedOracleRow {
   base_credit: number;
   description: string;
   date: string; // YYYY-MM-DD
+  document_number: string;
   journal_number: string;
   period: string;
   currency_code: string;
@@ -16,6 +17,14 @@ export interface ParsedOracleRow {
   rate: number;
   curr_debit: number;
   curr_credit: number;
+}
+
+function normalizeHeader(value: any): string {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[ًٌٍَُِّْـ]/g, "")
+    .replace(/[\s_\-./():]+/g, "")
+    .trim();
 }
 
 export function parseDateDDMMYYYY(rawDate: any): string {
@@ -178,6 +187,7 @@ export function parseOracleTextToRows(text: string): ParsedOracleRow[] {
       base_credit: baseCredit,
       description: description || accName,
       date: isoDate,
+      document_number: "",
       journal_number: journalNum,
       period: period,
       currency_code: currCode,
@@ -194,7 +204,15 @@ export function parseOracleTextToRows(text: string): ParsedOracleRow[] {
 export function parseOracleSheetRows(rawRows: any[][]): ParsedOracleRow[] {
   if (!rawRows || rawRows.length === 0) return [];
 
-  const headerRow = rawRows[0] || [];
+  const headerIndex = Math.max(
+    0,
+    rawRows.slice(0, 10).findIndex((row) => {
+      const text = (row || []).map(normalizeHeader).join("|");
+      return /كودالحساب|رقمالحساب|accountcode/i.test(text) &&
+        /مدين|debit/i.test(text) && /دائن|credit/i.test(text);
+    }),
+  );
+  const headerRow = rawRows[headerIndex] || [];
   let colAccountCode = -1;
   let colAccountName = -1;
   let colDebit = -1;
@@ -205,6 +223,7 @@ export function parseOracleSheetRows(rawRows: any[][]): ParsedOracleRow[] {
   let colJournalNum = -1;
   let colDate = -1;
   let colDescription = -1;
+  let colDocumentNum = -1;
   let colExchangeRate = -1;
   let colDebitCurr = -1;
   let colCreditCurr = -1;
@@ -213,6 +232,7 @@ export function parseOracleSheetRows(rawRows: any[][]): ParsedOracleRow[] {
     const h = String(cell || "")
       .trim()
       .toLowerCase();
+    const hn = normalizeHeader(cell);
     if (
       /كود.*(العملة|عملة)|رمز.*(العملة|عملة)|نوع.*(العملة|عملة)|curr(ency)?[-_ ]?code/i.test(h) &&
       colCurrencyCode === -1
@@ -253,6 +273,11 @@ export function parseOracleSheetRows(rawRows: any[][]): ParsedOracleRow[] {
     ) {
       colCurrencyName = idx;
     } else if (
+      /رقم.*المستند|document.*no|doc.*no/i.test(hn) &&
+      colDocumentNum === -1
+    ) {
+      colDocumentNum = idx;
+    } else if (
       /رقم.*القيد|رقم.*السند|^سند$|^قيد$|journal.*no|voucher.*no|^ref$|doc.*no|trx.*no/i.test(h) &&
       colJournalNum === -1
     ) {
@@ -282,7 +307,7 @@ export function parseOracleSheetRows(rawRows: any[][]): ParsedOracleRow[] {
   // Currency debit/credit columns are optional. Do not use positional fallbacks
   // here: Oracle exports commonly place journal number and period at these indexes.
 
-  const dataRows = rawRows.slice(1);
+  const dataRows = rawRows.slice(headerIndex + 1);
   const parsedRows: ParsedOracleRow[] = [];
 
   dataRows.forEach((row, i) => {
@@ -290,6 +315,7 @@ export function parseOracleSheetRows(rawRows: any[][]): ParsedOracleRow[] {
     const accName = String(row[colAccountName] || "").trim();
     const description = String(row[colDescription] || "").trim();
     const rawDate = row[colDate];
+    const documentNumber = colDocumentNum === -1 ? "" : String(row[colDocumentNum] || "").trim();
     const journalNum = String(row[colJournalNum] || "").trim();
     const period = String(row[colPeriod] || "").trim();
     const currCode = row[colCurrencyCode];
@@ -327,6 +353,7 @@ export function parseOracleSheetRows(rawRows: any[][]): ParsedOracleRow[] {
       base_credit: baseCredit,
       description: description || accName,
       date: parseDateDDMMYYYY(rawDate),
+      document_number: documentNumber,
       journal_number: journalNum,
       period: period,
       currency_code: currCode,
@@ -343,7 +370,15 @@ export function parseOracleSheetRows(rawRows: any[][]): ParsedOracleRow[] {
 export function groupOracleRowsIntoJournalEntries(rows: ParsedOracleRow[]): JournalEntry[] {
   if (!rows || rows.length === 0) return [];
 
-  // Group rows by journal key (period + journalNum + date)
+  // Group rows into CONDENSED journal entries.
+  //
+  // The grouping key is the journal number only (not period + journal + date).
+  // A single Oracle journal voucher frequently spans multiple periods / dates
+  // (e.g. closing and adjustment journals cover periods 1..12), so including the
+  // period in the key split one logical journal into many fragmented entries.
+  // Rows without a journal number (e.g. opening balances, BAL_TRX) are grouped
+  // by account code so they become one entry per account instead of fragmenting
+  // into a separate entry per description/date.
   const masterGroups: {
     key: string;
     period: string;
@@ -355,9 +390,9 @@ export function groupOracleRowsIntoJournalEntries(rows: ParsedOracleRow[]): Jour
 
   rows.forEach((r) => {
     const p = String(r.period || "1").trim();
-    const j = String(r.journal_number || "").trim();
+    const j = String(r.journal_number || r.document_number || "").trim();
     const d = r.date;
-    const key = j ? `${p}_${j}_${d}` : `auto_${d}_${r.description}`;
+    const key = j ? `j_${j}` : `bal_${String(r.account_code || "?").trim()}`;
 
     if (!masterGroupMap.has(key)) {
       const newGroup = { key, period: p, journalNum: j, date: d, rows: [] };
@@ -372,7 +407,8 @@ export function groupOracleRowsIntoJournalEntries(rows: ParsedOracleRow[]): Jour
 
   masterGroups.forEach((mg) => {
     const periodNum = parseInt(mg.period || "1", 10) || 1;
-    const jNum = mg.journalNum || String(seqCounter);
+    const firstAccCode = mg.rows[0]?.account_code || "";
+    const jNum = mg.journalNum || (firstAccCode ? `BAL-${firstAccCode}` : String(seqCounter));
     const baseRef = `${String(periodNum).padStart(2, "0")}/${jNum.padStart(2, "0")}`;
 
     if (mg.rows.length === 0) return;
