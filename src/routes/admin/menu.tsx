@@ -131,6 +131,7 @@ function MenuPage() {
   const inventoryQuery = useQuery({
     queryKey: ["admin", "inventory"],
     queryFn: () => inventoryService.getInventory(),
+    refetchInterval: 5000,
   });
 
   const warehousesQuery = useQuery({
@@ -141,6 +142,7 @@ function MenuPage() {
   const warehouseInventoryQuery = useQuery({
     queryKey: ["admin", "warehouse_inventory"],
     queryFn: () => inventoryService.getWarehouseInventory(),
+    refetchInterval: 5000,
   });
 
   const itemsQuery = useQuery({

@@ -254,11 +254,6 @@ export const menuService = {
     for (const item of dbData) {
       if (localDeletedItems.has(item.id)) continue;
 
-      if (latestLocalItems[item.id]) {
-        resultMap.set(item.id, latestLocalItems[item.id]);
-        continue;
-      }
-
       const recipe = item.recipes?.[0];
       const dbIngredients =
         recipe?.recipe_ingredients?.map((ing: any) => ({
@@ -285,6 +280,7 @@ export const menuService = {
       const requiresOven = item.requires_oven ?? latestLocalItems[item.id]?.requires_oven ?? false;
 
       resultMap.set(item.id, {
+        ...(latestLocalItems[item.id] || {}),
         ...item,
         requires_oven: requiresOven,
         inventory_tracking: trackingMode,
