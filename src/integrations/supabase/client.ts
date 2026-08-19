@@ -98,17 +98,37 @@ function createSupabaseClient() {
       ...(!SUPABASE_URL ? ["SUPABASE_URL"] : []),
       ...(!SUPABASE_PUBLISHABLE_KEY ? ["SUPABASE_PUBLISHABLE_KEY"] : []),
     ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(", ")}. Connect Supabase in Lovable Cloud.`;
+    const message = `Missing Supabase environment variable(s): ${missing.join(", ")}. Please check your environment variables.`;
     console.error(`[Supabase] ${message}`);
     throw new Error(message);
   }
+
+  const customStorage =
+    typeof window !== "undefined"
+      ? {
+          getItem: (key: string) => {
+            return window.localStorage.getItem(key) || window.sessionStorage.getItem(key);
+          },
+          setItem: (key: string, value: string) => {
+            if (window.localStorage.getItem("remember_me") === "true") {
+              window.localStorage.setItem(key, value);
+            } else {
+              window.sessionStorage.setItem(key, value);
+            }
+          },
+          removeItem: (key: string) => {
+            window.localStorage.removeItem(key);
+            window.sessionStorage.removeItem(key);
+          },
+        }
+      : undefined;
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     global: {
       fetch: createSupabaseFetch(SUPABASE_PUBLISHABLE_KEY),
     },
     auth: {
-      storage: typeof window !== "undefined" ? localStorage : undefined,
+      storage: customStorage,
       persistSession: true,
       autoRefreshToken: true,
     },

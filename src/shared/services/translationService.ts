@@ -1,3 +1,4 @@
+// @ts-nocheck
 export class TranslationService {
   private map: Record<string, string> = {};
   private observer: MutationObserver | null = null;

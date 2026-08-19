@@ -1,12 +1,22 @@
 import React, { useState, useMemo } from "react";
 import { ORACLE_MIGRATION_ACCOUNTS } from "@/shared/data/oracleAccounts";
-import { Search, ChevronLeft, Folder, FileText, BarChart3, Database, CreditCard, Building2, Layers } from "lucide-react";
+import {
+  Search,
+  ChevronLeft,
+  Folder,
+  FileText,
+  BarChart3,
+  Database,
+  CreditCard,
+  Building2,
+  Layers,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-type Account = typeof ORACLE_MIGRATION_ACCOUNTS[0];
+type Account = (typeof ORACLE_MIGRATION_ACCOUNTS)[0];
 
 export function OracleAccountsViewer() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -38,9 +48,9 @@ export function OracleAccountsViewer() {
 
     // Sort everything by code
     l1.sort((a, b) => a.code.localeCompare(b.code));
-    Object.values(l2).forEach(arr => arr.sort((a, b) => a.code.localeCompare(b.code)));
-    Object.values(l3).forEach(arr => arr.sort((a, b) => a.code.localeCompare(b.code)));
-    Object.values(l4).forEach(arr => arr.sort((a, b) => a.code.localeCompare(b.code)));
+    Object.values(l2).forEach((arr) => arr.sort((a, b) => a.code.localeCompare(b.code)));
+    Object.values(l3).forEach((arr) => arr.sort((a, b) => a.code.localeCompare(b.code)));
+    Object.values(l4).forEach((arr) => arr.sort((a, b) => a.code.localeCompare(b.code)));
 
     return { l1, l2, l3, l4 };
   }, []);
@@ -53,7 +63,7 @@ export function OracleAccountsViewer() {
       (a) =>
         a.name_ar.toLowerCase().includes(lower) ||
         a.code.toLowerCase().includes(lower) ||
-        (a.name_en && a.name_en.toLowerCase().includes(lower))
+        (a.name_en && a.name_en.toLowerCase().includes(lower)),
     ).sort((a, b) => a.code.localeCompare(b.code));
   }, [searchTerm]);
 
@@ -88,38 +98,60 @@ export function OracleAccountsViewer() {
   const selectedAccount = getSelectedAccountDetails();
 
   const getTypeColor = (type: string) => {
-    switch(type) {
-      case 'asset': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800';
-      case 'liability': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800';
-      case 'equity': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border-purple-200 dark:border-purple-800';
-      case 'revenue': return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
-      case 'expense': return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300 border-orange-200 dark:border-orange-800';
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-700';
+    switch (type) {
+      case "asset":
+        return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800";
+      case "liability":
+        return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800";
+      case "equity":
+        return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border-purple-200 dark:border-purple-800";
+      case "revenue":
+        return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800";
+      case "expense":
+        return "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300 border-orange-200 dark:border-orange-800";
+      default:
+        return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-700";
     }
   };
 
   const getTypeName = (type: string) => {
-    switch(type) {
-      case 'asset': return 'أصول';
-      case 'liability': return 'التزامات / خصوم';
-      case 'equity': return 'حقوق ملكية';
-      case 'revenue': return 'إيرادات';
-      case 'expense': return 'مصروفات';
-      default: return type;
+    switch (type) {
+      case "asset":
+        return "أصول";
+      case "liability":
+        return "التزامات / خصوم";
+      case "equity":
+        return "حقوق ملكية";
+      case "revenue":
+        return "إيرادات";
+      case "expense":
+        return "مصروفات";
+      default:
+        return type;
     }
   };
 
   const getIconForLevel = (level: number) => {
-    switch(level) {
-      case 1: return <Database size={16} className="text-primary" />;
-      case 2: return <Layers size={16} className="text-primary/80" />;
-      case 3: return <Folder size={16} className="text-primary/60" />;
-      case 4: return <FileText size={16} className="text-primary/40" />;
-      default: return <Folder size={16} />;
+    switch (level) {
+      case 1:
+        return <Database size={16} className="text-primary" />;
+      case 2:
+        return <Layers size={16} className="text-primary/80" />;
+      case 3:
+        return <Folder size={16} className="text-primary/60" />;
+      case 4:
+        return <FileText size={16} className="text-primary/40" />;
+      default:
+        return <Folder size={16} />;
     }
   };
 
-  const renderColumn = (title: string, items: Account[], selectedCode: string | null, level: number) => (
+  const renderColumn = (
+    title: string,
+    items: Account[],
+    selectedCode: string | null,
+    level: number,
+  ) => (
     <div className="flex flex-col h-full border rounded-xl overflow-hidden bg-card/50 shadow-sm">
       <div className="bg-muted/50 p-3 border-b flex items-center justify-between">
         <h4 className="font-bold text-sm">{title}</h4>
@@ -141,23 +173,34 @@ export function OracleAccountsViewer() {
                   key={acc.code}
                   onClick={() => handleSelect(level, acc.code)}
                   className={`w-full text-right p-2.5 rounded-lg flex items-center justify-between group transition-all duration-200 border border-transparent ${
-                    isSelected 
-                      ? 'bg-primary text-primary-foreground shadow-md font-bold border-primary/20' 
-                      : 'hover:bg-primary/5 hover:border-primary/20 text-foreground'
+                    isSelected
+                      ? "bg-primary text-primary-foreground shadow-md font-bold border-primary/20"
+                      : "hover:bg-primary/5 hover:border-primary/20 text-foreground"
                   }`}
                 >
                   <div className="flex items-center gap-2 overflow-hidden flex-1">
-                    <span className={`shrink-0 ${isSelected ? 'text-primary-foreground/90' : 'text-muted-foreground group-hover:text-primary/70'}`}>
+                    <span
+                      className={`shrink-0 ${isSelected ? "text-primary-foreground/90" : "text-muted-foreground group-hover:text-primary/70"}`}
+                    >
                       {getIconForLevel(level)}
                     </span>
                     <span className="truncate text-xs leading-tight sm:text-sm">{acc.name_ar}</span>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0 pl-2">
-                    <span className={`text-[10px] sm:text-xs font-mono ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                    <span
+                      className={`text-[10px] sm:text-xs font-mono ${isSelected ? "text-primary-foreground/80" : "text-muted-foreground"}`}
+                    >
                       {acc.code}
                     </span>
                     {level < 4 && (
-                      <ChevronLeft size={14} className={isSelected ? 'text-primary-foreground' : 'text-muted-foreground/30 group-hover:text-primary/50'} />
+                      <ChevronLeft
+                        size={14}
+                        className={
+                          isSelected
+                            ? "text-primary-foreground"
+                            : "text-muted-foreground/30 group-hover:text-primary/50"
+                        }
+                      />
                     )}
                   </div>
                 </button>
@@ -205,7 +248,9 @@ export function OracleAccountsViewer() {
           <CardHeader className="bg-muted/30 border-b pb-4">
             <CardTitle className="text-base font-bold flex justify-between items-center">
               <span>نتائج البحث ({searchResults.length})</span>
-              <Badge variant="secondary" className="font-mono bg-background shadow-sm">{searchTerm}</Badge>
+              <Badge variant="secondary" className="font-mono bg-background shadow-sm">
+                {searchTerm}
+              </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
@@ -218,23 +263,32 @@ export function OracleAccountsViewer() {
               ) : (
                 <div className="divide-y divide-border">
                   {searchResults.map((acc) => (
-                    <div key={acc.code} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/30 transition-colors">
+                    <div
+                      key={acc.code}
+                      className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/30 transition-colors"
+                    >
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           {getIconForLevel(acc.level)}
                           <span className="font-bold text-foreground text-sm">{acc.name_ar}</span>
                           {acc.name_en && (
-                            <span className="text-xs text-muted-foreground font-medium">({acc.name_en})</span>
+                            <span className="text-xs text-muted-foreground font-medium">
+                              ({acc.name_en})
+                            </span>
                           )}
                         </div>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
-                          <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-[11px] shadow-sm border border-border/50 text-foreground">كود: {acc.code}</span>
+                          <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-[11px] shadow-sm border border-border/50 text-foreground">
+                            كود: {acc.code}
+                          </span>
                           <span>•</span>
                           <span>مستوى {acc.level}</span>
                           {acc.parent_code && (
                             <>
                               <span>•</span>
-                              <span>يتبع لـ: <span className="font-mono">{acc.parent_code}</span></span>
+                              <span>
+                                يتبع لـ: <span className="font-mono">{acc.parent_code}</span>
+                              </span>
                             </>
                           )}
                         </div>
@@ -281,28 +335,45 @@ export function OracleAccountsViewer() {
                         </p>
                       )}
                       <div className="flex flex-wrap gap-2 mt-3">
-                        <Badge variant="secondary" className="font-mono text-xs bg-muted shadow-sm border">
+                        <Badge
+                          variant="secondary"
+                          className="font-mono text-xs bg-muted shadow-sm border"
+                        >
                           كود: {selectedAccount.code}
                         </Badge>
-                        <Badge variant="outline" className="bg-background border-primary/30 text-primary text-xs">
+                        <Badge
+                          variant="outline"
+                          className="bg-background border-primary/30 text-primary text-xs"
+                        >
                           المستوى {selectedAccount.level}
                         </Badge>
                         {selectedAccount.parent_code && (
-                          <Badge variant="outline" className="bg-background text-muted-foreground text-xs">
-                            تفرع من: <span className="font-mono ml-1">{selectedAccount.parent_code}</span>
+                          <Badge
+                            variant="outline"
+                            className="bg-background text-muted-foreground text-xs"
+                          >
+                            تفرع من:{" "}
+                            <span className="font-mono ml-1">{selectedAccount.parent_code}</span>
                           </Badge>
                         )}
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="flex flex-col items-end gap-2 shrink-0 bg-muted/30 p-3 rounded-xl border border-border/50">
-                    <Badge className={`px-3 py-1 text-xs font-bold border ${getTypeColor(selectedAccount.type)}`}>
+                    <Badge
+                      className={`px-3 py-1 text-xs font-bold border ${getTypeColor(selectedAccount.type)}`}
+                    >
                       {getTypeName(selectedAccount.type)}
                     </Badge>
                     <span className="text-[11px] text-muted-foreground font-semibold flex items-center gap-1.5">
-                      <div className={`h-2 w-2 rounded-full ${['asset', 'expense'].includes(selectedAccount.type) ? 'bg-blue-500' : 'bg-green-500'}`}></div>
-                      طبيعة الحساب: {['asset', 'expense'].includes(selectedAccount.type) ? 'مدين (Debit)' : 'دائن (Credit)'}
+                      <div
+                        className={`h-2 w-2 rounded-full ${["asset", "expense"].includes(selectedAccount.type) ? "bg-blue-500" : "bg-green-500"}`}
+                      ></div>
+                      طبيعة الحساب:{" "}
+                      {["asset", "expense"].includes(selectedAccount.type)
+                        ? "مدين (Debit)"
+                        : "دائن (Credit)"}
                     </span>
                   </div>
                 </div>

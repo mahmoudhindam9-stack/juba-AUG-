@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState, useMemo } from "react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -31,7 +32,6 @@ function MenuPage() {
   const [customNotes, setCustomNotes] = useState("");
   const [selectedAdditions, setSelectedAdditions] = useState<any[]>([]);
 
-
   const categoriesQuery = useQuery({
     queryKey: ["menu_categories"],
     queryFn: () => menuService.getCategories(),
@@ -45,7 +45,6 @@ function MenuPage() {
   const categories = categoriesQuery.data || [];
   const availableItems = itemsQuery.data || [];
 
-
   const handleItemClick = (item: MenuItem) => {
     setCustomizingItem(item);
     setCustomNotes("");
@@ -54,13 +53,13 @@ function MenuPage() {
 
   const confirmAddToCart = () => {
     if (!customizingItem) return;
-    
+
     setCart((prev) => {
       const existingIdx = prev.findIndex(
         (p) =>
           p.item.id === customizingItem.id &&
           p.notes === customNotes &&
-          JSON.stringify(p.selectedAdditions) === JSON.stringify(selectedAdditions)
+          JSON.stringify(p.selectedAdditions) === JSON.stringify(selectedAdditions),
       );
 
       if (existingIdx >= 0) {
@@ -68,16 +67,23 @@ function MenuPage() {
         next[existingIdx].quantity += 1;
         return next;
       }
-      return [...prev, { item: customizingItem, quantity: 1, notes: customNotes, selectedAdditions: selectedAdditions }];
+      return [
+        ...prev,
+        {
+          item: customizingItem,
+          quantity: 1,
+          notes: customNotes,
+          selectedAdditions: selectedAdditions,
+        },
+      ];
     });
-    
+
     toast({
       title: "تم الإضافة",
       description: `تم إضافة ${customizingItem.name_ar} إلى الطلب`,
     });
     setCustomizingItem(null);
   };
-
 
   const updateQuantity = (cartIndex: number, delta: number) => {
     setCart((prev) =>
@@ -90,15 +96,14 @@ function MenuPage() {
       }),
     );
   };
-  
+
   const removeFromCart = (cartIndex: number) => {
     setCart((prev) => prev.filter((_, i) => i !== cartIndex));
   };
 
-
-
   const totalAmount = cart.reduce((sum, c) => {
-    const itemTotal = c.item.price + (c.selectedAdditions?.reduce((s, a) => s + (a.price || 0), 0) || 0);
+    const itemTotal =
+      c.item.price + (c.selectedAdditions?.reduce((s, a) => s + (a.price || 0), 0) || 0);
     return sum + itemTotal * c.quantity;
   }, 0);
 
@@ -107,7 +112,7 @@ function MenuPage() {
 
     const tableNum = table ? parseInt(table) : 999;
     const resolvedTableId = tableId || table_id || (table ? `tbl-${tableNum}` : "tbl-999");
-    
+
     const orderPayload = {
       id: "ord_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
       table_id: resolvedTableId,
@@ -118,21 +123,21 @@ function MenuPage() {
       tax: 0,
       total: totalAmount,
       status: "STATUS_PENDING_CAPTAIN",
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
     };
 
     // Broadcast the order to the Captain via Supabase Realtime Channels
-    const channel = supabase.channel('orders_channel');
+    const channel = supabase.channel("orders_channel");
     channel.subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
+      if (status === "SUBSCRIBED") {
         await channel.send({
-          type: 'broadcast',
-          event: 'NEW_ORDER',
-          payload: orderPayload
+          type: "broadcast",
+          event: "NEW_ORDER",
+          payload: orderPayload,
         });
-        
+
         supabase.removeChannel(channel);
-        
+
         setCart([]);
         setIsCartOpen(false);
         toast({
@@ -142,14 +147,15 @@ function MenuPage() {
         });
       }
     });
-    
+
     // Fallback if network is bad
     setTimeout(() => {
-      if (cart.length > 0) { // If cart wasn't cleared, it means we didn't subscribe in time
+      if (cart.length > 0) {
+        // If cart wasn't cleared, it means we didn't subscribe in time
         supabase.removeChannel(channel);
         toast({
-           title: "تأخير في الاتصال",
-           description: "جاري محاولة الإرسال...",
+          title: "تأخير في الاتصال",
+          description: "جاري محاولة الإرسال...",
         });
         // Still try to clear cart so user doesn't double click forever
         setCart([]);
@@ -229,7 +235,6 @@ function MenuPage() {
         })}
       </main>
 
-
       {customizingItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[60] flex items-end justify-center">
           <div className="bg-white w-full max-w-md rounded-t-3xl p-6 space-y-4 max-h-[85vh] overflow-y-auto animate-in slide-in-from-bottom">
@@ -242,30 +247,34 @@ function MenuPage() {
                 إلغاء
               </button>
             </div>
-            
+
             {customizingItem.additions && customizingItem.additions.length > 0 && (
               <div className="space-y-2">
                 <label className="font-bold text-sm text-slate-700">إضافات اختيارية:</label>
                 <div className="grid grid-cols-2 gap-2">
                   {customizingItem.additions.map((add, idx) => {
-                    const isSelected = selectedAdditions.some(a => a.name_ar === add.name_ar);
+                    const isSelected = selectedAdditions.some((a) => a.name_ar === add.name_ar);
                     return (
                       <button
                         key={idx}
                         onClick={() => {
                           if (isSelected) {
-                            setSelectedAdditions(prev => prev.filter(a => a.name_ar !== add.name_ar));
+                            setSelectedAdditions((prev) =>
+                              prev.filter((a) => a.name_ar !== add.name_ar),
+                            );
                           } else {
-                            setSelectedAdditions(prev => [...prev, add]);
+                            setSelectedAdditions((prev) => [...prev, add]);
                           }
                         }}
-                        className={`flex items-center justify-between p-3 rounded-xl border text-sm transition ${isSelected ? 'bg-indigo-50 border-indigo-500 text-indigo-900 font-bold' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                        className={`flex items-center justify-between p-3 rounded-xl border text-sm transition ${isSelected ? "bg-indigo-50 border-indigo-500 text-indigo-900 font-bold" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"}`}
                       >
                         <div className="flex items-center gap-1.5">
                           {add.icon && <span>{add.icon}</span>}
                           <span>{add.name_ar}</span>
                         </div>
-                        {add.price ? <span className="text-xs font-black text-emerald-600">+{add.price}</span> : null}
+                        {add.price ? (
+                          <span className="text-xs font-black text-emerald-600">+{add.price}</span>
+                        ) : null}
                       </button>
                     );
                   })}

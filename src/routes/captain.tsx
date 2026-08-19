@@ -139,48 +139,45 @@ function CaptainPage() {
   });
 
   const tablesList = tablesQuery.data || getLocalTables() || [];
-  
+
   // Realtime Incoming Pending Orders
-  
 
   // Load from local storage to survive reloads
-  
 
   // Save to local storage whenever it changes
-  
 
   useEffect(() => {
     const channel = supabase
-      .channel('orders_channel')
-      .on('broadcast', { event: 'NEW_ORDER' }, (payload) => {
+      .channel("orders_channel")
+      .on("broadcast", { event: "NEW_ORDER" }, (payload) => {
         const order = payload.payload;
-        
+
         // Find table number
         const tblId = order.table_id || "tbl-999";
-        const tblMatch = tablesList.find(t => t.id === tblId);
-        const tblNum = tblMatch ? tblMatch.number : parseInt(tblId.replace('tbl-', '')) || 999;
+        const tblMatch = tablesList.find((t) => t.id === tblId);
+        const tblNum = tblMatch ? tblMatch.number : parseInt(tblId.replace("tbl-", "")) || 999;
         const tblName = tblMatch ? tblMatch.name : null;
 
         // Save as a TableOrder directly
         tableOrdersStore.saveOrder({
-           table_id: tblId,
-           table_number: tblNum,
-           table_name: tblName,
-           items: order.items,
-           order_type: order.order_type || "dine_in",
-           notes: order.notes || "طلب ذاتي من العميل",
-           selectedAdditions: [],
-           subtotal: order.subtotal,
-           tax: order.tax,
-           total: order.total,
-           status: "draft",
-           is_self_order: true
+          table_id: tblId,
+          table_number: tblNum,
+          table_name: tblName,
+          items: order.items,
+          order_type: order.order_type || "dine_in",
+          notes: order.notes || "طلب ذاتي من العميل",
+          selectedAdditions: [],
+          subtotal: order.subtotal,
+          tax: order.tax,
+          total: order.total,
+          status: "draft",
+          is_self_order: true,
         });
 
         toast({
           title: "طلب ذاتي جديد!",
           description: `تم استلام طلب ذاتي جديد من طاولة ${tblNum}.`,
-          variant: "default"
+          variant: "default",
         });
       })
       .subscribe();
@@ -197,8 +194,8 @@ function CaptainPage() {
     tableOrdersStore.saveOrder({
       status: "sent_to_cashier",
       table_id: order.table_id,
-      table_number: parseInt(order.table_id.replace('tbl-','')) || 999,
-      table_name: `طاولة ${order.table_id.replace('tbl-','')}`,
+      table_number: parseInt(order.table_id.replace("tbl-", "")) || 999,
+      table_name: `طاولة ${order.table_id.replace("tbl-", "")}`,
       items: order.items,
       order_type: "dine_in",
       notes: order.notes,
@@ -207,15 +204,15 @@ function CaptainPage() {
       tax: order.tax,
       total: order.total,
     });
-    
+
     toast({ title: "تم قبول الطلب وإرساله للكاشير بنجاح." });
   };
 
   const handleEditOrder = async (order: any) => {
     tableOrdersStore.saveOrder({
       table_id: order.table_id,
-      table_number: parseInt(order.table_id.replace('tbl-','')) || 999,
-      table_name: `طاولة ${order.table_id.replace('tbl-','')}`,
+      table_number: parseInt(order.table_id.replace("tbl-", "")) || 999,
+      table_name: `طاولة ${order.table_id.replace("tbl-", "")}`,
       items: order.items,
       order_type: "dine_in",
       notes: order.notes,
@@ -223,21 +220,21 @@ function CaptainPage() {
       subtotal: order.subtotal,
       tax: order.tax,
       total: order.total,
-      status: "draft"
+      status: "draft",
     });
-    
+
     // We should also delete it from Supabase so it's not pending anymore
-    
+
     // find the table in tablesQuery.data and set it
-    let t = tablesList.find(t => t.id === order.table_id);
+    let t = tablesList.find((t) => t.id === order.table_id);
     if (!t) {
-       t = {
-         id: order.table_id,
-         number: parseInt(order.table_id.replace('tbl-','')) || 999,
-         name: `طاولة ${order.table_id.replace('tbl-','')}`,
-         capacity: 4,
-         status: "available"
-       };
+      t = {
+        id: order.table_id,
+        number: parseInt(order.table_id.replace("tbl-", "")) || 999,
+        name: `طاولة ${order.table_id.replace("tbl-", "")}`,
+        capacity: 4,
+        status: "available",
+      };
     }
     setSelectedTable(t);
   };
@@ -245,8 +242,6 @@ function CaptainPage() {
   const handleRejectOrder = async (orderId: string) => {
     toast({ title: "تم رفض الطلب.", variant: "destructive" });
   };
-
-
 
   useEffect(() => {
     const channel = supabase
@@ -693,7 +688,7 @@ function CaptainPage() {
           </DialogHeader>
 
           {(() => {
-                    const selectedT = tablesList.find((t) => t.id === qrTableId);
+            const selectedT = tablesList.find((t) => t.id === qrTableId);
             const displayedTableNumber = selectedT ? selectedT.number : "";
             const origin = typeof window !== "undefined" ? window.location.origin : "";
             const qrUrl = `${origin}/menu${qrTableId ? `?tableId=${qrTableId}&table=${displayedTableNumber}` : ""}`;

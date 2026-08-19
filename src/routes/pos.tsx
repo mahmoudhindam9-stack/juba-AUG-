@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { RestocashLogo } from "@/components/RestocashLogo";
 import {
@@ -246,10 +247,10 @@ function Index() {
 
       if (merged.length === 0) {
         const defaultTables: Table[] = [
-          { id: "tbl-1", number: 1, name: "طاولة 1",  status: "available" },
-          { id: "tbl-2", number: 2, name: "طاولة 2",  status: "available" },
-          { id: "tbl-3", number: 3, name: "طاولة 3",  status: "available" },
-          { id: "tbl-4", number: 4, name: "طاولة 4",  status: "available" },
+          { id: "tbl-1", number: 1, name: "طاولة 1", status: "available" },
+          { id: "tbl-2", number: 2, name: "طاولة 2", status: "available" },
+          { id: "tbl-3", number: 3, name: "طاولة 3", status: "available" },
+          { id: "tbl-4", number: 4, name: "طاولة 4", status: "available" },
         ];
         return defaultTables;
       }

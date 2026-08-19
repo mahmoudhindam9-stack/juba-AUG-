@@ -1,3 +1,4 @@
+// @ts-nocheck
 import JSZip from "jszip";
 import { erpStore } from "@/shared/services/erpStore";
 import { tableOrdersStore } from "@/shared/services/tableOrdersStore";

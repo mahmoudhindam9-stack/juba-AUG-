@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AdminLayout } from "./admin";
-import { AdminDashboard } from "./admin/index";
+import { Route as AdminRoute } from "./admin/index";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -16,9 +16,10 @@ export const Route = createFileRoute("/")({
 });
 
 function DashboardHome() {
+  const Dashboard = AdminRoute.options.component as React.ElementType;
   return (
     <AdminLayout>
-      <AdminDashboard />
+      <Dashboard />
     </AdminLayout>
   );
 }

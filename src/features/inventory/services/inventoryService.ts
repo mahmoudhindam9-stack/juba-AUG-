@@ -9,6 +9,7 @@ import {
 import { localWarehouseStore } from "./warehouseStore";
 import { menuService } from "@/features/menu/services/menuService";
 import { convertToInventoryUnit } from "@/shared/utils/inventoryUtils";
+import { erpStore } from "@/shared/services/erpStore";
 
 export interface UpsertInventoryPayload {
   name_ar: string;
@@ -234,7 +235,14 @@ export const inventoryService = {
       // Fallback
     }
 
-    return localWarehouseStore.upsertInventoryItem(payload, id, warehouseId);
+    const result = localWarehouseStore.upsertInventoryItem(payload, id, warehouseId);
+    try {
+      erpStore.recalculateAccountBalances();
+      erpStore.notify();
+    } catch {
+      // Ignore
+    }
+    return result;
   },
 
   async deleteInventoryItem(id: string): Promise<void> {
@@ -245,6 +253,27 @@ export const inventoryService = {
       // Fallback
     }
     localWarehouseStore.deleteInventoryItem(id);
+    try {
+      erpStore.recalculateAccountBalances();
+      erpStore.notify();
+    } catch {
+      // Ignore
+    }
+  },
+
+  async clearAllInventoryItems(): Promise<void> {
+    try {
+      await supabase.from("inventory").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    } catch {
+      // Fallback
+    }
+    localWarehouseStore.clearAllInventoryItems();
+    try {
+      erpStore.recalculateAccountBalances();
+      erpStore.notify();
+    } catch {
+      // Ignore
+    }
   },
 
   async addTransaction(payload: CreateTransactionPayload): Promise<void> {

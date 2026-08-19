@@ -1,5 +1,20 @@
 import { supabase } from "@/integrations/supabase/client";
+import { createClient } from "@supabase/supabase-js";
 import { Profile } from "@/shared/types";
+
+const getSecondaryClient = () => {
+  const url = import.meta.env.VITE_SUPABASE_URL || "https://myqtvbfibvgxkqwxvuru.supabase.co";
+  const key =
+    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    "sb_publishable_srgqLn2ZvysGKh47yCQ0Kg_IW02yjDf";
+  return createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+};
 
 export const authService = {
   async signIn(email: string, password: string) {
@@ -47,5 +62,18 @@ export const authService = {
   async deleteUser(id: string): Promise<void> {
     const { error } = await supabase.from("profiles").delete().eq("id", id);
     if (error) throw error;
+  },
+
+  async signUpNewUser(email: string, password: string, profileData: any) {
+    const secondaryClient = getSecondaryClient();
+    const { data, error } = await secondaryClient.auth.signUp({
+      email,
+      password,
+      options: {
+        data: profileData,
+      },
+    });
+    if (error) throw error;
+    return data;
   },
 };

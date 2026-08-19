@@ -9,9 +9,9 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
+import { translator } from "../shared/services/translationService";
 
 import appCss from "../styles.css?url";
-import { reportLovableError } from "../lib/lovable-error-reporting";
 
 function NotFoundComponent() {
   return (
@@ -38,9 +38,6 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
-  useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
-  }, [error]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -78,34 +75,23 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Restocash — نقطة البيع" },
+      { title: "Restocash — نظام إدارة المطاعم والمحاسبة ERP" },
       {
         name: "description",
-        content: "نظام نقطة بيع مطعم Restocash لإدارة الأصناف والطلبات والفواتير.",
+        content: "نظام Restocash المتكامل لإدارة المطاعم، نقاط البيع، المخزون، الحسابات والخزائن.",
       },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Restocash — نقطة البيع" },
+      { name: "author", content: "Restocash ERP" },
+      { property: "og:title", content: "Restocash — نظام إدارة المطاعم والمحاسبة ERP" },
       {
         property: "og:description",
-        content: "نظام نقطة بيع مطعم Restocash لإدارة الأصناف والطلبات والفواتير.",
+        content: "نظام Restocash المتكامل لإدارة المطاعم، نقاط البيع، المخزون، الحسابات والخزائن.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
-      { name: "twitter:title", content: "Restocash — نقطة البيع" },
+      { name: "twitter:title", content: "Restocash — نظام إدارة المطاعم والمحاسبة ERP" },
       {
         name: "twitter:description",
-        content: "نظام نقطة بيع مطعم Restocash لإدارة الأصناف والطلبات والفواتير.",
-      },
-      {
-        property: "og:image",
-        content:
-          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/90f7379b-de38-430e-9efa-5823ac723ba8/id-preview-53274e86--6a62e49b-e503-418d-957e-ccfe9631d8c4.lovable.app-1784199093859.png",
-      },
-      {
-        name: "twitter:image",
-        content:
-          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/90f7379b-de38-430e-9efa-5823ac723ba8/id-preview-53274e86--6a62e49b-e503-418d-957e-ccfe9631d8c4.lovable.app-1784199093859.png",
+        content: "نظام Restocash المتكامل لإدارة المطاعم، نقاط البيع، المخزون، الحسابات والخزائن.",
       },
     ],
     links: [
@@ -123,6 +109,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  useEffect(() => {
+    try {
+      translator.start();
+    } catch (e) {
+      console.error("Failed to start translator:", e);
+    }
+  }, []);
 
   return (
     <html lang="ar" dir="rtl">

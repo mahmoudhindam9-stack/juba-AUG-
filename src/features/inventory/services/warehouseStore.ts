@@ -10,6 +10,7 @@ const WAREHOUSES_KEY = "ydb_warehouses_v2";
 const WAREHOUSE_INV_KEY = "ydb_warehouse_inventory_v2";
 const WAREHOUSE_TRANSFERS_KEY = "ydb_warehouse_transfers_v2";
 const INVENTORY_ITEMS_KEY = "ydb_inventory_items_v2";
+const INVENTORY_INITIALIZED_KEY = "ydb_inventory_initialized_v2";
 const TRANSACTIONS_KEY = "ydb_inventory_transactions_v2";
 
 const DEFAULT_WAREHOUSES: Warehouse[] = [
@@ -296,10 +297,12 @@ export class LocalWarehouseStore {
 
   // --- Inventory Items ---
   getInventory(): InventoryItem[] {
+    const isInitialized = this.getItem<boolean>(INVENTORY_INITIALIZED_KEY, false);
     let list = this.getItem<InventoryItem[]>(INVENTORY_ITEMS_KEY, []);
-    if (list.length === 0) {
+    if (!isInitialized && list.length === 0) {
       list = DEFAULT_INVENTORY_SEED;
       this.setItem(INVENTORY_ITEMS_KEY, list);
+      this.setItem(INVENTORY_INITIALIZED_KEY, true);
 
       // Auto link seed items with default warehouse
       const defaultWh = this.getWarehouses().find((w) => w.is_default) || this.getWarehouses()[0];
@@ -328,6 +331,13 @@ export class LocalWarehouseStore {
 
   saveInventory(list: InventoryItem[]): void {
     this.setItem(INVENTORY_ITEMS_KEY, list);
+    this.setItem(INVENTORY_INITIALIZED_KEY, true);
+  }
+
+  clearAllInventoryItems(): void {
+    this.setItem(INVENTORY_ITEMS_KEY, []);
+    this.setItem(INVENTORY_INITIALIZED_KEY, true);
+    this.setItem(WAREHOUSE_INV_KEY, []);
   }
 
   upsertInventoryItem(

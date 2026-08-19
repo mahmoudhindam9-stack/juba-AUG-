@@ -138,6 +138,7 @@ export interface Profile {
   full_name: string | null;
   phone: string | null;
   role: UserRole;
+  permissions?: Record<string, any>;
   created_at: string;
   updated_at: string;
 }

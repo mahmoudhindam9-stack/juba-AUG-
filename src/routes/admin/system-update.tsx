@@ -50,6 +50,7 @@ import {
   Archive,
   Server,
   BookOpen,
+  AlertTriangle,
 } from "lucide-react";
 
 export const Route = createFileRoute("/admin/system-update")({
@@ -104,8 +105,8 @@ function SystemUpdatePage() {
           .eq("id", "erp_state")
           .maybeSingle();
 
-        if (!error && data?.data) {
-          localStorage.setItem("erp_store_state", JSON.stringify(data.data));
+        if (!error && (data as any)?.data) {
+          localStorage.setItem("erp_store_state", JSON.stringify((data as any).data));
           setErpState(erpStore.getState());
         }
 
@@ -389,7 +390,7 @@ function SystemUpdatePage() {
       name: "tblInventory",
       label: "أصناف المخزون والخامات",
       csvName: "Inventory.csv",
-      count: erpState.inventoryItems?.length || 0,
+      count: (erpState as any).inventoryItems?.length || 0,
       description: "أكواد الأصناف، الباركرود، التكلفة، الوحدات والكميات الحالية",
       primaryKey: "id",
       fields: ["id", "item_code", "barcode", "name_ar", "cost", "quantity"],
@@ -399,7 +400,7 @@ function SystemUpdatePage() {
       name: "tblMenu",
       label: "قائمة الطعام والوجبات",
       csvName: "Menu.csv",
-      count: erpState.menu?.length || 0,
+      count: (erpState as any).menu?.length || 0,
       description: "أسعار الأصناف، المطبخ المسند، التوفر، والأقسام",
       primaryKey: "id",
       fields: ["id", "name_ar", "price", "category_id", "available"],
@@ -429,7 +430,7 @@ function SystemUpdatePage() {
       name: "tblTreasuries",
       label: "الخزائن والبنوك والصناديق",
       csvName: "Treasuries.csv",
-      count: erpState.treasuryAccounts?.length || 0,
+      count: (erpState as any).treasuryAccounts?.length || 0,
       description: "الخزائن الفرعية، أرصدة العملات، وحسابات الكاشير",
       primaryKey: "id",
       fields: ["id", "name_ar", "type", "currency", "balance"],
@@ -654,6 +655,41 @@ function SystemUpdatePage() {
               RWD Mode: Ready
             </Badge>
           </div>
+
+          {/* Danger Zone */}
+          <Card className="border-red-300 dark:border-red-900 shadow-sm rounded-2xl overflow-hidden mt-6">
+            <CardHeader className="bg-red-50 dark:bg-red-950/20 border-b border-red-200 dark:border-red-900/40 pb-4">
+              <CardTitle className="text-lg font-black text-red-700 flex items-center gap-2">
+                <AlertTriangle size={22} />
+                منطقة الخطر (مسح جميع البيانات)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6 space-y-4">
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                سيتم مسح جميع الحركات المالية، والقيود، وأوامر الشراء، وحركات الخزينة (بما في ذلك
+                البيانات القديمة)، وسيتم تصفير جميع الأرصدة. هذه العملية لا رجعة فيها.
+              </p>
+              <Button
+                variant="destructive"
+                className="w-full sm:w-auto font-black"
+                onClick={() => {
+                  if (
+                    confirm(
+                      "هل أنت متأكد من رغبتك في مسح جميع الحركات وتصفير جميع الأرصدة؟ لا يمكن التراجع عن هذه الخطوة!",
+                    )
+                  ) {
+                    erpStore.deleteAllSystemData();
+                    toast({
+                      title: "تم",
+                      description: "تم مسح جميع البيانات وتصفير النظام بنجاح.",
+                    });
+                  }
+                }}
+              >
+                مسح جميع البيانات وتصفير النظام
+              </Button>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* TAB 2: MS ACCESS COMPREHENSIVE PACKAGE TAB */}

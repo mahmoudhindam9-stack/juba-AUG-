@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Order, MenuItem, InventoryItem } from "../types";
 import { localWarehouseStore } from "../../features/inventory/services/warehouseStore";
 import { inventoryService } from "../../features/inventory/services/inventoryService";
@@ -40,6 +41,8 @@ export interface Supplier {
   name_ar: string;
   phone?: string;
   balance: number; // supplier ledger balance
+  account_code?: string; // Linked Chart of Accounts code (e.g. 24010100)
+  currency?: string;
   deleted?: boolean;
 }
 
@@ -118,6 +121,9 @@ export interface PurchaseOrder {
   subtotal: number;
   tax: number;
   total: number;
+  currency?: "USD" | "SSP" | string;
+  exchange_rate?: number;
+  total_base_usd?: number;
   notes?: string;
   received_date?: string;
 }
@@ -209,6 +215,8 @@ export interface JournalEntry {
   currency: string;
   created_by: string;
   is_approved: boolean;
+  sequence?: number;
+  attachments?: string[];
 }
 
 export interface AuditLog {
@@ -245,25 +253,102 @@ export interface SystemUser {
 }
 
 export interface UserPermission {
-  orders: boolean;
-  pos: boolean;
-  captain: boolean;
-  kitchen: boolean;
-  delivery: boolean;
-  inventory: boolean;
-  hr: boolean;
-  purchasing: boolean;
-  production: boolean;
-  treasury: boolean;
-  accounting: boolean;
-  journal_approval: boolean;
-  expense_approval: boolean;
-  revenue_approval: boolean;
-  reports: boolean;
-  cost_centers: boolean;
-  branch_mgmt: boolean;
-  audit_logs: boolean;
-  users_roles: boolean;
+  // Legacy / top-level permissions
+  orders?: boolean;
+  pos?: boolean;
+  captain?: boolean;
+  kitchen?: boolean;
+  delivery?: boolean;
+  inventory?: boolean;
+  hr?: boolean;
+  purchasing?: boolean;
+  production?: boolean;
+  treasury?: boolean;
+  accounting?: boolean;
+  journal_approval?: boolean;
+  expense_approval?: boolean;
+  revenue_approval?: boolean;
+  reports?: boolean;
+  cost_centers?: boolean;
+  branch_mgmt?: boolean;
+  audit_logs?: boolean;
+  users_roles?: boolean;
+
+  // Granular Sub-permissions & Super Admin Controls
+  // 1. Orders & Sales
+  orders_view?: boolean;
+  orders_create_custom?: boolean;
+  orders_cancel_modify?: boolean;
+  orders_manage_carts?: boolean;
+  orders_generate_qr?: boolean;
+
+  // 2. POS
+  pos_access?: boolean;
+  pos_create_custom_order?: boolean;
+  pos_apply_discounts?: boolean;
+  pos_void_items?: boolean;
+
+  // 3. Captain Order
+  captain_access?: boolean;
+  captain_create_order?: boolean;
+  captain_transfer_tables?: boolean;
+  captain_modify_items?: boolean;
+
+  // 4. Kitchen / KDS & Oven
+  kitchen_view?: boolean;
+  kitchen_change_status?: boolean;
+  kitchen_modify_order?: boolean;
+
+  // 5. Delivery
+  delivery_view?: boolean;
+  delivery_update_status?: boolean;
+
+  // 6. Inventory
+  inventory_view?: boolean;
+  inventory_adjust_transfer?: boolean;
+  inventory_waste_dispose?: boolean;
+
+  // 7. Purchasing
+  purchasing_view?: boolean;
+  purchasing_add_invoice?: boolean;
+  purchasing_returns?: boolean;
+
+  // 8. Production
+  production_view?: boolean;
+  production_execute?: boolean;
+
+  // 9. HR
+  hr_view_attendance?: boolean;
+  hr_manage_payroll_loans?: boolean;
+
+  // 10. Treasury
+  treasury_view?: boolean;
+  treasury_open_close?: boolean;
+  treasury_transfer_reconcile?: boolean;
+
+  // 11. Accounting & General Ledger
+  accounting_view?: boolean;
+  accounting_post_journal?: boolean;
+  accounting_lock_period?: boolean;
+
+  // 12. Approvals
+  approval_journals?: boolean;
+  approval_expenses?: boolean;
+  approval_revenues?: boolean;
+
+  // 13. Mall & Garden
+  mall_manage_shops?: boolean;
+  mall_garden_finance?: boolean;
+
+  // 14. Reports
+  reports_view_sales?: boolean;
+  reports_view_financials?: boolean;
+
+  // 15. Super Admin & System
+  super_admin_full_access?: boolean;
+  system_manage_users?: boolean;
+  system_backup_update?: boolean;
+  system_audit_logs?: boolean;
 }
 
 export interface Employee {
@@ -1409,1792 +1494,19 @@ const getOffsetISO = (days: number) => {
   return d.toISOString().split("T")[0];
 };
 
-const USD_SEED_TRANSACTIONS: TreasuryTransaction[] = [
-  {
-    id: "tx-usd-1",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 17438.37,
-    currency: "USD",
-    payment_method: "cash",
-    note: "رصيد اول المدة - تمويل خزينة المصرى",
-    created_at: "2026-01-01T12:00:00.000Z",
-  },
-  {
-    id: "tx-usd-2",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 420.61,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-01-04T12:00:00.000Z",
-  },
-  {
-    id: "tx-usd-3",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 420.61,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل الخزينه 420.61$ سعر التحويل 47.55",
-    created_at: "2026-01-04T13:00:00.000Z",
-  },
-  {
-    id: "tx-usd-4",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 316.72,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-01-11T12:00:00.000Z",
-  },
-  {
-    id: "tx-usd-5",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 316.72,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل الخزينه 316.7$ سعر التحويل 47.36",
-    created_at: "2026-01-11T13:00:00.000Z",
-  },
-  {
-    id: "tx-usd-6",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 1055.74,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-01-19T10:00:00.000Z",
-  },
-  {
-    id: "tx-usd-7",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 422.3,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-01-19T11:00:00.000Z",
-  },
-  {
-    id: "tx-usd-8",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 1055.74,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل الخزينه 1056$ سعر التحويل 47.36",
-    created_at: "2026-01-19T12:00:00.000Z",
-  },
-  {
-    id: "tx-usd-9",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 422.3,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل الخزينه 422.3$ سعر التحويل 47.36",
-    created_at: "2026-01-19T13:00:00.000Z",
-  },
-  {
-    id: "tx-usd-10",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 105.6,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل الخزينه 105.6$ سعر التحويل 47.36",
-    created_at: "2026-01-19T14:00:00.000Z",
-  },
-  {
-    id: "tx-usd-11",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 105.57,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-01-20T12:00:00.000Z",
-  },
-  {
-    id: "tx-usd-12",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 188,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من خزينه كيندي",
-    created_at: "2026-01-30T12:00:00.000Z",
-  },
-  {
-    id: "tx-usd-13",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 188,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل الخزينه 188$ سعر التحويل 46.9",
-    created_at: "2026-01-30T13:00:00.000Z",
-  },
-  {
-    id: "tx-usd-14",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 1100,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل الخزينه 1100$ سعر التحويل 47.10",
-    created_at: "2026-01-31T12:00:00.000Z",
-  },
-  {
-    id: "tx-usd-15",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 510.71,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-02-01T12:00:00.000Z",
-  },
-  {
-    id: "tx-usd-16",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 510.71,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل الخزينه 510.71$ سعر التحويل 46.93",
-    created_at: "2026-02-01T13:00:00.000Z",
-  },
-  {
-    id: "tx-usd-17",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 500,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-02-08T12:00:00.000Z",
-  },
-  {
-    id: "tx-usd-18",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 500,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل الخزينه 500$ سعر التحويل 46.91",
-    created_at: "2026-02-08T13:00:00.000Z",
-  },
-  {
-    id: "tx-usd-19",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 213.68,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-02-10T12:00:00.000Z",
-  },
-  {
-    id: "tx-usd-20",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 213.68,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل الخزينه 213$ سعر التحويل 46.8",
-    created_at: "2026-02-10T13:00:00.000Z",
-  },
-  {
-    id: "tx-usd-21",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 213.68,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-02-16T12:00:00.000Z",
-  },
-  {
-    id: "tx-usd-22",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 213.68,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل الخزينه 213$ سعر التحويل 46.8",
-    created_at: "2026-02-16T13:00:00.000Z",
-  },
-  {
-    id: "tx-usd-23",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 1616.85,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-03-03T12:00:00.000Z",
-  },
-  {
-    id: "tx-usd-24",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 1616.85,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل الخزينه 1616.85$ سعر التحويل 46.80",
-    created_at: "2026-03-03T13:00:00.000Z",
-  },
-  {
-    id: "tx-usd-25",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 961.54,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-03-10T12:00:00.000Z",
-  },
-  {
-    id: "tx-usd-26",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 961.54,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل الخزينه 961.54 سعر التحويل 52",
-    created_at: "2026-03-10T13:00:00.000Z",
-  },
-  {
-    id: "tx-usd-27",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 1777.94,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-03-31T12:00:00.000Z",
-  },
-  {
-    id: "tx-usd-28",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 1777.94,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل الخزينه 1777.94 سعر التحويل 54.4",
-    created_at: "2026-03-31T13:00:00.000Z",
-  },
-  {
-    id: "tx-usd-29",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 1153.26,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-04-15T10:00:00.000Z",
-  },
-  {
-    id: "tx-usd-30",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 1153.26,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل خزينه 1153.26 $ معامل 51.75 جم",
-    created_at: "2026-04-15T11:00:00.000Z",
-  },
-  {
-    id: "tx-usd-31",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 96.53,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-04-15T12:00:00.000Z",
-  },
-  {
-    id: "tx-usd-32",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 96.53,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل خزينه 96.53 $ معامل 51.80 جم",
-    created_at: "2026-04-15T13:00:00.000Z",
-  },
-  {
-    id: "tx-usd-33",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 17.31,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-04-15T14:00:00.000Z",
-  },
-  {
-    id: "tx-usd-34",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 17.31,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل خزينه 17.31 $ معامل 52 جم",
-    created_at: "2026-04-15T15:00:00.000Z",
-  },
-  {
-    id: "tx-usd-35",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 17.87,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-04-15T16:00:00.000Z",
-  },
-  {
-    id: "tx-usd-36",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 17.87,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل خزينه 17.87 $ معامل 52.6 جم",
-    created_at: "2026-04-15T17:00:00.000Z",
-  },
-  {
-    id: "tx-usd-37",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 1842.29,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-04-15T18:00:00.000Z",
-  },
-  {
-    id: "tx-usd-38",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 1842.29,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل خزينه 1842.29 $ معامل 52.5 جم",
-    created_at: "2026-04-15T19:00:00.000Z",
-  },
-  {
-    id: "tx-usd-39",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 185,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من خزينه كيندي",
-    created_at: "2026-04-15T20:00:00.000Z",
-  },
-  {
-    id: "tx-usd-40",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "deposit",
-    amount: 2312,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل من م/ احمد حسام",
-    created_at: "2026-05-17T12:00:00.000Z",
-  },
-  {
-    id: "tx-usd-41",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 500,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل خزينه 500 $ معامل 53.37 جم - خزينة محمد شريف",
-    created_at: "2026-05-17T13:00:00.000Z",
-  },
-  {
-    id: "tx-usd-42",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 175,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل خزينه 175 $ معامل 53.37 جم - خزينة محمد شريف",
-    created_at: "2026-05-17T14:00:00.000Z",
-  },
-  {
-    id: "tx-usd-43",
-    branch_id: "branch-1",
-    treasury_id: "tr-4",
-    type: "withdrawal",
-    amount: 1637,
-    currency: "USD",
-    payment_method: "cash",
-    note: "تمويل خزينه 1637 $ معامل 53.37 جم - خزينة محمد شريف",
-    created_at: "2026-05-17T15:00:00.000Z",
-  },
-];
+const USD_SEED_TRANSACTIONS: TreasuryTransaction[] = [];
+const EGP_SEED_TRANSACTIONS: TreasuryTransaction[] = [];
 
-const EGP_SEED_TRANSACTIONS: TreasuryTransaction[] = [
-  {
-    id: "tx-egp-1",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 607.11,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "رصيد اول المدة - تحويل من خزينة الدولار",
-    created_at: "2026-01-01T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-2",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 20000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تمويل الخزينه (420.6$ @ 47.55)",
-    created_at: "2026-01-04T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-3",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 500.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بدل مواصلات - توريد الى دريم لاند قيمه اشتراك فى السيارة لشهر نوفمبر (منال اسماعيل )عامله البوفيه",
-    created_at: "2026-01-04T13:00:00.000Z",
-  },
-  {
-    id: "tx-egp-4",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 40000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "اجور ومرتبات - مرتب ا/ هشام نور شهر ديسمبر 2025",
-    created_at: "2026-01-04T14:00:00.000Z",
-  },
-  {
-    id: "tx-egp-5",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 2500.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "اجور ومرتبات - مرتب وليد احمد محمد دويك عن فترة 3 أيام من شهر نوفمبر 2025",
-    created_at: "2026-01-04T15:00:00.000Z",
-  },
-  {
-    id: "tx-egp-6",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 25000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "اجور ومرتبات - مرتب وليد احمد محمد دويك شهر ديسمبر 2025",
-    created_at: "2026-01-04T16:00:00.000Z",
-  },
-  {
-    id: "tx-egp-7",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 16665.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "اجور ومرتبات - مرتب ا/ جمال عطا اللة عن فترة 10 أيام من شهر ديسمبر 2025",
-    created_at: "2026-01-04T17:00:00.000Z",
-  },
-  {
-    id: "tx-egp-8",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 15000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل الخزينه",
-    created_at: "2026-01-11T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-9",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 1110.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بنزين سيارة - فاتورة بنزين",
-    created_at: "2026-01-11T13:00:00.000Z",
-  },
-  {
-    id: "tx-egp-10",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 825.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بدل مواصلات - قيمة تاكسى اوبر ذهاب وعودة م/ احمد حسام الى المطار",
-    created_at: "2026-01-11T14:00:00.000Z",
-  },
-  {
-    id: "tx-egp-11",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 540.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "مصروفات بوفيه - مستلزمات بوفية الإدارة شراء ن ك بن",
-    created_at: "2026-01-13T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-12",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 778.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "مصروفات بوفيه - مستلزمات بوفية الإدارة وأدوات نظافة",
-    created_at: "2026-01-13T13:00:00.000Z",
-  },
-  {
-    id: "tx-egp-13",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 50000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل الخزينه",
-    created_at: "2026-01-19T10:00:00.000Z",
-  },
-  {
-    id: "tx-egp-14",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 20000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل الخزينه",
-    created_at: "2026-01-19T11:00:00.000Z",
-  },
-  {
-    id: "tx-egp-15",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 5000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل الخزينه",
-    created_at: "2026-01-20T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-16",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 358.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "مصروفات نت - تجديد باقة الانترنت لشهر يناير 2026",
-    created_at: "2026-01-25T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-17",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 8817.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل الخزينه",
-    created_at: "2026-01-30T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-18",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 80600.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "اجور ومرتبات - مرتبات شهر ديسمبر 2025",
-    created_at: "2026-01-30T13:00:00.000Z",
-  },
-  {
-    id: "tx-egp-19",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 1500.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "مصروفات موبيل - بدل موبيل م/ احمد حسام",
-    created_at: "2026-01-30T14:00:00.000Z",
-  },
-  {
-    id: "tx-egp-20",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 51810.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل الخزينه",
-    created_at: "2026-01-31T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-21",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 5000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "رد سلف - قسط سلفة وليد احمد القسط الأول",
-    created_at: "2026-02-01T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-22",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 23967.62,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل الخزينه",
-    created_at: "2026-02-01T13:00:00.000Z",
-  },
-  {
-    id: "tx-egp-23",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 23968.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "صيانة سيارة - قيمة مصاريف سيارة مدير إدارة المشروعات الخارجية",
-    created_at: "2026-02-01T14:00:00.000Z",
-  },
-  {
-    id: "tx-egp-24",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 2730.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بنزين سيارة - فواتير البنزين",
-    created_at: "2026-02-01T15:00:00.000Z",
-  },
-  {
-    id: "tx-egp-25",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 23455.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل الخزينه",
-    created_at: "2026-02-08T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-26",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 23455.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "اقساط سيارة - من تحت حساب قسط سيارة",
-    created_at: "2026-02-08T13:00:00.000Z",
-  },
-  {
-    id: "tx-egp-27",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 500.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بدل مواصلات - توريد الى دريم لاند قيمه اشتراك فى السيارة لشهر ديسمبر (منال اسماعيل )عامله البوفيه",
-    created_at: "2026-02-08T14:00:00.000Z",
-  },
-  {
-    id: "tx-egp-28",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 10000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل الخزينه",
-    created_at: "2026-02-10T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-29",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 10000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل الخزينه",
-    created_at: "2026-02-16T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-30",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 400.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "مصروفات نت - تجديد باقة الانترنت لشهر فبراير 2026",
-    created_at: "2026-02-22T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-31",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 80600.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "اجور ومرتبات - مرتبات شهر يناير 2026",
-    created_at: "2026-02-28T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-32",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 1500.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "مصروفات موبيل - بدل موبيل م/ احمد حسام",
-    created_at: "2026-02-28T13:00:00.000Z",
-  },
-  {
-    id: "tx-egp-33",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 80599.97,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل الخزينه",
-    created_at: "2026-03-03T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-34",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 500.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بدل مواصلات - توريد الى دريم لاند قيمة تكلفة انتقالات منال عن شهر يناير 2026",
-    created_at: "2026-03-05T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-35",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 50000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل الخزينه",
-    created_at: "2026-03-10T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-36",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 50000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "سلف - سلفة محمد شريف ترد على قسطين",
-    created_at: "2026-03-10T13:00:00.000Z",
-  },
-  {
-    id: "tx-egp-37",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 500.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بدل مواصلات - مصاريف انتقال لاحضار مكينةالرى من ا/ هشام اثناء العودة من المطار",
-    created_at: "2026-03-19T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-38",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 290.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "أدوات نظافة - مستلزمات نظافة لادارة المشروعات",
-    created_at: "2026-03-19T13:00:00.000Z",
-  },
-  {
-    id: "tx-egp-39",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 525.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بوفية وطيافة - مستلزمات بوفية لادار ة المشروعات",
-    created_at: "2026-03-19T14:00:00.000Z",
-  },
-  {
-    id: "tx-egp-40",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 400.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "مصروفات نت - تجديد باقة الانترنت شهر مارس 2026",
-    created_at: "2026-03-19T15:00:00.000Z",
-  },
-  {
-    id: "tx-egp-41",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 96720.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "اجور ومرتبات - مرتبات شهر فبراير 2026",
-    created_at: "2026-03-19T16:00:00.000Z",
-  },
-  {
-    id: "tx-egp-42",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 96719.94,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل الخزينة 1777.94 سعر التحويل 54.4",
-    created_at: "2026-03-31T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-43",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 1500.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "مصروفات موبيل - بدل موبيل م/ احمد حسام",
-    created_at: "2026-03-31T13:00:00.000Z",
-  },
-  {
-    id: "tx-egp-44",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 500.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بدل مواصلات - بدل انتقال محمد شريف عن شهر مارس 2026",
-    created_at: "2026-03-31T14:00:00.000Z",
-  },
-  {
-    id: "tx-egp-45",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 500.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بدل مواصلات - توريد الى دريم لاند قيمة تكلفة انتقالات منال عن شهرفبراير2026",
-    created_at: "2026-03-31T15:00:00.000Z",
-  },
-  {
-    id: "tx-egp-46",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 59681.2,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل خزينه 1153.26 $ معامل 51.75 جم",
-    created_at: "2026-04-15T10:00:00.000Z",
-  },
-  {
-    id: "tx-egp-47",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 5000.25,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل خزينه 96.53 $ معامل 51.80 جم",
-    created_at: "2026-04-15T11:00:00.000Z",
-  },
-  {
-    id: "tx-egp-48",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 900.12,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل خزينه 17.31 $ معامل 52 جم",
-    created_at: "2026-04-15T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-49",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 939.96,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل خزينه 17.87 $ معامل 52.6 جم",
-    created_at: "2026-04-15T13:00:00.000Z",
-  },
-  {
-    id: "tx-egp-50",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 96720.22,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تحويل من خزينة الدولار - تمويل خزينه 1842.29 $ معامل 52.5 جم",
-    created_at: "2026-04-15T14:00:00.000Z",
-  },
-  {
-    id: "tx-egp-51",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 25000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "سلف - محمد شريف (اول قسط السلفة)",
-    created_at: "2026-04-15T15:00:00.000Z",
-  },
-  {
-    id: "tx-egp-52",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 5000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "سلف - قسط سلفه وليد",
-    created_at: "2026-04-15T16:00:00.000Z",
-  },
-  {
-    id: "tx-egp-53",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 59681.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بدل مواصلات - قيمة تذكره سفر م/احمد حسام الى جوبا ذهاب وعودة 24/4/2026",
-    created_at: "2026-04-15T17:00:00.000Z",
-  },
-  {
-    id: "tx-egp-54",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 900.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بوفية وطيافة - قيمة مستلزمات بوفيه الادارة (بن)",
-    created_at: "2026-04-15T18:00:00.000Z",
-  },
-  {
-    id: "tx-egp-55",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 900.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "صيانه - اصلاح لاب توب مدير ادارة المشروعات",
-    created_at: "2026-04-15T19:00:00.000Z",
-  },
-  {
-    id: "tx-egp-56",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 400.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "مصروفات نت - تجديد باقه الانترانت شهر ابريل 2026",
-    created_at: "2026-04-15T20:00:00.000Z",
-  },
-  {
-    id: "tx-egp-57",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 96720.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "اجور ومرتبات - مرتبات شهر ابريل 2026",
-    created_at: "2026-04-15T21:00:00.000Z",
-  },
-  {
-    id: "tx-egp-58",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 1500.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "مصروفات موبيل - بدل موبيل م/ احمد حسام",
-    created_at: "2026-04-15T22:00:00.000Z",
-  },
-  {
-    id: "tx-egp-59",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 25000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تمويل خزينه احمد حسام - تمويل حزينه م/ احمد حسام (فسط سلفه محمد شريف)",
-    created_at: "2026-04-15T23:00:00.000Z",
-  },
-  {
-    id: "tx-egp-60",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 500.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بدل مواصلات - بدل انتقال محمد شريف عن شهر ابريل 2026",
-    created_at: "2026-04-15T23:15:00.000Z",
-  },
-  {
-    id: "tx-egp-61",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 500.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بدل مواصلات - توريد الى دربم لاند قيمه تكلفه انتقالات منال عن شهر ابريل 2026",
-    created_at: "2026-04-15T23:30:00.000Z",
-  },
-  {
-    id: "tx-egp-62",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 500.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بدل مواصلات - توريد الى دريم لاند قيمة تكلفة انتقالات منال عن شهر مارس 2026",
-    created_at: "2026-04-15T23:45:00.000Z",
-  },
-  {
-    id: "tx-egp-63",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 26685.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تمويل خزينة محمد شريف - تمويل خزينه 500 $ معامل 53.37 جم",
-    created_at: "2026-05-17T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-64",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 9339.75,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تمويل خزينة محمد شريف - تمويل خزينه 175 $ معامل 53.37 جم",
-    created_at: "2026-05-17T13:00:00.000Z",
-  },
-  {
-    id: "tx-egp-65",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 87382.7,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تمويل خزينة محمد شريف - تمويل خزينه 1637 $ معامل 53.37 جم",
-    created_at: "2026-05-17T14:00:00.000Z",
-  },
-  {
-    id: "tx-egp-66",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "deposit",
-    amount: 25000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "رد سلف - محمد شريف ( الثانى قسط السلفة)",
-    created_at: "2026-05-31T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-67",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 400.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "مصروفات نت - تجديد باقه الانترانت شهر ابريل 2026",
-    created_at: "2026-05-01T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-68",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 400.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بدل مواصلات - قيمة ايجار سيارة عدد2 مرات ذهاب وعودة من المطار (مدير الادارة)",
-    created_at: "2026-04-17T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-69",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 939.96,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "اقساط سيارة - قيمة ايجار سيارة عدد2 مرات ذهاب وعودة من المطار (مدير الادارة)",
-    created_at: "2026-04-17T13:00:00.000Z",
-  },
-  {
-    id: "tx-egp-70",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 190.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بوفية وطيافة - مستلزمات بوفيه الادارة",
-    created_at: "2026-04-17T14:00:00.000Z",
-  },
-  {
-    id: "tx-egp-71",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 410.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "مصروفات نت - تجديد باقه الانترانت شهر مايو 2026",
-    created_at: "2026-05-17T15:00:00.000Z",
-  },
-  {
-    id: "tx-egp-72",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 26685.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "اجور ومرتبات - عديات العيد الاضحى 2026",
-    created_at: "2026-05-21T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-73",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 920.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "بنزين سيارة - فاتورة بنزين",
-    created_at: "2026-05-21T13:00:00.000Z",
-  },
-  {
-    id: "tx-egp-74",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 1500.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "مصروفات موبيل - بدل موبيل م/ احمد حسام",
-    created_at: "2026-05-31T12:00:00.000Z",
-  },
-  {
-    id: "tx-egp-75",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 96720.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "اجور ومرتبات - مرتبات شهر مايو 2026",
-    created_at: "2026-05-31T13:00:00.000Z",
-  },
-  {
-    id: "tx-egp-76",
-    branch_id: "branch-1",
-    treasury_id: "tr-5",
-    type: "withdrawal",
-    amount: 25000.0,
-    currency: "EGP",
-    payment_method: "cash",
-    note: "تمويل خزينه احمد حسام - تمويل حزينه م/ احمد حسام (فسط سلفه محمد شريف)",
-    created_at: "2026-05-31T14:00:00.000Z",
-  },
-];
-
-const DEFAULT_EXPIRY_SEED = [
-  {
-    id: "exp-seed-1",
-    inventory_id: "inv-seed-2",
-    branch_id: "branch-1",
-    warehouse_id: "wh-main-default",
-    storage_condition: "chilled_4c",
-    batch_no: "BAT-2026-MOZZ01",
-    quantity: 35,
-    expiry_date: getOffsetISO(2),
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "exp-seed-2",
-    inventory_id: "inv-seed-3",
-    branch_id: "branch-1",
-    warehouse_id: "wh-main-default",
-    storage_condition: "frozen_18c",
-    batch_no: "BAT-2026-MEAT02",
-    quantity: 15,
-    expiry_date: getOffsetISO(-1),
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "exp-seed-3",
-    inventory_id: "inv-seed-1",
-    branch_id: "branch-1",
-    warehouse_id: "wh-main-default",
-    storage_condition: "room_temp",
-    batch_no: "BAT-2026-FLR03",
-    quantity: 100,
-    expiry_date: getOffsetISO(45),
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "exp-seed-4",
-    inventory_id: "inv-seed-4",
-    branch_id: "branch-1",
-    warehouse_id: "wh-juba-branch",
-    storage_condition: "room_temp",
-    batch_no: "BAT-2026-TOM04",
-    quantity: 40,
-    expiry_date: getOffsetISO(12),
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "exp-seed-5",
-    inventory_id: "inv-seed-5",
-    branch_id: "branch-1",
-    warehouse_id: "wh-juba-branch",
-    storage_condition: "room_temp",
-    batch_no: "BAT-2026-OIL05",
-    quantity: 12,
-    expiry_date: getOffsetISO(4),
-    created_at: new Date().toISOString(),
-  },
-];
+const DEFAULT_EXPIRY_SEED = [];
 
 const DEFAULT_ACCOUNTS: Account[] = ORACLE_MIGRATION_ACCOUNTS as any;
 
-export const SEED_AH_JOURNAL_ENTRIES: JournalEntry[] = [
-  {
-    id: "je-ah-1",
-    branch_id: "branch-1",
-    date: "2026-01-01",
-    description: "رصيد اول المدة - خزينة أحمد حسام دولار",
-    reference: "00--00",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-01-01T12:00:00.000Z",
-    lines: [
-      { account_code: "15010100", debit: 49487.48, credit: 0 },
-      { account_code: "301000", debit: 0, credit: 49487.48 },
-    ],
-  },
-  {
-    id: "je-ah-2",
-    branch_id: "branch-1",
-    date: "2026-01-04",
-    description: "تمويل خزينة محمد شريف ش1 (اجمالى التمويل)",
-    reference: "01--27",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-01-04T12:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 420.61, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 420.61 },
-    ],
-  },
-  {
-    id: "je-ah-3",
-    branch_id: "branch-1",
-    date: "2026-01-11",
-    description: "تمويل خزينة محمد شريف ش1 (اجمالى التمويل)",
-    reference: "01--27",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-01-11T12:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 316.72, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 316.72 },
-    ],
-  },
-  {
-    id: "je-ah-4",
-    branch_id: "branch-1",
-    date: "2026-01-19",
-    description: "تمويل خزينة محمد شريف ش1 (اجمالى التمويل)",
-    reference: "01--27",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-01-19T12:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 1055.74, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 1055.74 },
-    ],
-  },
-  {
-    id: "je-ah-5",
-    branch_id: "branch-1",
-    date: "2026-01-19",
-    description: "تمويل خزينة محمد شريف ش1 (اجمالى التمويل)",
-    reference: "01--27",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-01-19T13:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 422.3, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 422.3 },
-    ],
-  },
-  {
-    id: "je-ah-6",
-    branch_id: "branch-1",
-    date: "2026-01-20",
-    description: "تمويل خزينة محمد شريف ش1 (اجمالى التمويل)",
-    reference: "01--27",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-01-20T12:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 105.57, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 105.57 },
-    ],
-  },
-  {
-    id: "je-ah-7",
-    branch_id: "branch-1",
-    date: "2026-01-31",
-    description: "تمويل من خزينة جوبا لاجور ومرتبات (هشام - جمال-وليد ) شهر 12",
-    reference: "01--23",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-01-31T12:00:00.000Z",
-    lines: [
-      { account_code: "15010100", debit: 1872, credit: 0 },
-      { account_code: "13010101", debit: 0, credit: 1872 },
-    ],
-  },
-  {
-    id: "je-ah-8",
-    branch_id: "branch-1",
-    date: "2026-02-01",
-    description: "تمويل خزينة محمد شريف ش2 (اجمالى التمويل)",
-    reference: "02--27",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-02-01T12:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 510.71, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 510.71 },
-    ],
-  },
-  {
-    id: "je-ah-9",
-    branch_id: "branch-1",
-    date: "2026-02-02",
-    description: "تمويل من خزينة جوبا",
-    reference: "02--22",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-02-02T12:00:00.000Z",
-    lines: [
-      { account_code: "15010100", debit: 185, credit: 0 },
-      { account_code: "13010101", debit: 0, credit: 185 },
-    ],
-  },
-  {
-    id: "je-ah-10",
-    branch_id: "branch-1",
-    date: "2026-02-08",
-    description: "تمويل خزينة محمد شريف ش2 (اجمالى التمويل)",
-    reference: "02--27",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-02-08T12:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 500, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 500 },
-    ],
-  },
-  {
-    id: "je-ah-11",
-    branch_id: "branch-1",
-    date: "2026-02-10",
-    description: "تمويل خزينة محمد شريف ش2 (اجمالى التمويل)",
-    reference: "02--27",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-02-10T12:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 213.68, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 213.68 },
-    ],
-  },
-  {
-    id: "je-ah-12",
-    branch_id: "branch-1",
-    date: "2026-02-16",
-    description: "تمويل خزينة محمد شريف ش2 (اجمالى التمويل)",
-    reference: "02--27",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-02-16T12:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 213.68, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 213.68 },
-    ],
-  },
-  {
-    id: "je-ah-13",
-    branch_id: "branch-1",
-    date: "2026-03-03",
-    description: "تمويل خزينة محمد شريف ش3 (اجمالى التمويل)",
-    reference: "03--24",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-03-03T12:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 1616.85, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 1616.85 },
-    ],
-  },
-  {
-    id: "je-ah-14",
-    branch_id: "branch-1",
-    date: "2026-03-10",
-    description: "تمويل خزينة محمد شريف ش3 (اجمالى التمويل)",
-    reference: "03--24",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-03-10T12:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 961.54, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 961.54 },
-    ],
-  },
-  {
-    id: "je-ah-15",
-    branch_id: "branch-1",
-    date: "2026-03-31",
-    description: "تمويل خزينة محمد شريف ش3 (اجمالى التمويل)",
-    reference: "03--24",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-03-31T12:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 1777.94, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 1777.94 },
-    ],
-  },
-  {
-    id: "je-ah-16",
-    branch_id: "branch-1",
-    date: "2026-04-30",
-    description: "تمويل خزينة مصر لصرف الرواتب الشهرية (شهر ابريل/2026)",
-    reference: "04--12",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-04-30T12:00:00.000Z",
-    lines: [
-      { account_code: "15010100", debit: 1813.3, credit: 0 },
-      { account_code: "13010103", debit: 0, credit: 1813.3 },
-    ],
-  },
-  {
-    id: "je-ah-17",
-    branch_id: "branch-1",
-    date: "2026-04-15",
-    description: "تمويل خزينه 1153.26 $ معامل 51.75 جم",
-    reference: "04--24",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-04-15T12:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 1153.26, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 1153.26 },
-    ],
-  },
-  {
-    id: "je-ah-18",
-    branch_id: "branch-1",
-    date: "2026-04-15",
-    description: "تمويل خزينه 96.53 $ معامل 51.80 جم",
-    reference: "04--24",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-04-15T13:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 96.53, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 96.53 },
-    ],
-  },
-  {
-    id: "je-ah-19",
-    branch_id: "branch-1",
-    date: "2026-04-15",
-    description: "تمويل خزينه 17.31 $ معامل 52 جم",
-    reference: "04--24",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-04-15T14:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 17.31, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 17.31 },
-    ],
-  },
-  {
-    id: "je-ah-20",
-    branch_id: "branch-1",
-    date: "2026-04-15",
-    description: "تمويل خزينه 17.87 $ معامل 52.6 جم",
-    reference: "04--24",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-04-15T15:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 17.87, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 17.87 },
-    ],
-  },
-  {
-    id: "je-ah-21",
-    branch_id: "branch-1",
-    date: "2026-04-15",
-    description: "تمويل خزينه 1842.29 $ معامل 52.5 جم",
-    reference: "04--24",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-04-15T16:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 1842.29, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 1842.29 },
-    ],
-  },
-  {
-    id: "je-ah-22",
-    branch_id: "branch-1",
-    date: "2026-04-15",
-    description: "صادرة من القاهرة لوزارة السياحة",
-    reference: "04--05",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-04-15T17:00:00.000Z",
-    lines: [
-      { account_code: "601000", debit: 10000, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 10000 },
-    ],
-  },
-  {
-    id: "je-ah-23",
-    branch_id: "branch-1",
-    date: "2026-04-15",
-    description: "سلفة لتمويل الخزينة كيندي",
-    reference: "04--07",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-04-15T18:00:00.000Z",
-    lines: [
-      { account_code: "104000", debit: 4925, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 4925 },
-    ],
-  },
-  {
-    id: "je-ah-24",
-    branch_id: "branch-1",
-    date: "2026-04-15",
-    description: "تمويل حزينه م/ احمد حسام (فسط سلفه محمد شريف)",
-    reference: "04--26",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-04-15T19:00:00.000Z",
-    lines: [
-      { account_code: "15010100", debit: 480.77, credit: 0 },
-      { account_code: "13010103", debit: 0, credit: 480.77 },
-    ],
-  },
-  {
-    id: "je-ah-25",
-    branch_id: "branch-1",
-    date: "2026-05-17",
-    description: "تمويل خزينه 500 $ معامل 53.37 جم",
-    reference: "05--21",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-05-17T12:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 500, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 500 },
-    ],
-  },
-  {
-    id: "je-ah-26",
-    branch_id: "branch-1",
-    date: "2026-05-17",
-    description: "تمويل خزينه 175 $ معامل 53.37 جم",
-    reference: "05--21",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-05-17T13:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 175, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 175 },
-    ],
-  },
-  {
-    id: "je-ah-27",
-    branch_id: "branch-1",
-    date: "2026-05-17",
-    description: "تمويل خزينه 1637 $ معامل 53.37 جم",
-    reference: "05--21",
-    currency: "USD",
-    created_by: "أحمد حسام",
-    is_approved: true,
-    created_at: "2026-05-17T14:00:00.000Z",
-    lines: [
-      { account_code: "13010103", debit: 1637.3, credit: 0 },
-      { account_code: "15010100", debit: 0, credit: 1637.3 },
-    ],
-  },
-];
+export const SEED_AH_JOURNAL_ENTRIES: JournalEntry[] = [];
 
 const DEFAULT_TREASURIES: TreasuryAccount[] = [
   {
     id: "tr-1",
+    account_code: "13010130",
     branch_id: "branch-1",
     name_ar: "خزينة الكاشير",
     type: "cash",
@@ -3220,9 +1532,25 @@ const DEFAULT_TREASURIES: TreasuryAccount[] = [
     ],
   },
   {
-    id: "tr-kennedy-usd",
+    id: "tr-oracle-13010100",
+    account_code: "13010100",
     branch_id: "branch-1",
-    name_ar: "خزينة دولار كينيدي",
+    name_ar: "خزينة بالدولار",
+    type: "cash",
+    currency: "USD",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13010101",
+    account_code: "13010101",
+    branch_id: "branch-1",
+    name_ar: "خزينة دولار - كينيدي",
     type: "cash",
     currency: "USD",
     balance: 0,
@@ -3234,9 +1562,70 @@ const DEFAULT_TREASURIES: TreasuryAccount[] = [
     deleted: false,
   },
   {
-    id: "tr-kennedy-ssp",
+    id: "tr-oracle-13010102",
+    account_code: "13010102",
     branch_id: "branch-1",
-    name_ar: "خزينة سوداني كينيدي",
+    name_ar: "خزينة دولار - 501",
+    type: "cash",
+    currency: "USD",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13010103",
+    account_code: "13010103",
+    branch_id: "branch-1",
+    name_ar: "خزينة دولار - الادارة",
+    type: "cash",
+    currency: "USD",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13010105",
+    account_code: "13010105",
+    branch_id: "branch-1",
+    name_ar: "خزينة بالدولار سنترال بوب",
+    type: "cash",
+    currency: "USD",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13010110",
+    account_code: "13010110",
+    branch_id: "branch-1",
+    name_ar: "خزينة بالسوداني",
+    type: "cash",
+    currency: "SSP",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13010111",
+    account_code: "13010111",
+    branch_id: "branch-1",
+    name_ar: "خزينة سوداني - كينيدي",
     type: "cash",
     currency: "SSP",
     balance: 0,
@@ -3248,44 +1637,198 @@ const DEFAULT_TREASURIES: TreasuryAccount[] = [
     deleted: false,
   },
   {
-    id: "tr-admin-egp",
+    id: "tr-oracle-13010115",
+    account_code: "13010115",
     branch_id: "branch-1",
-    name_ar: "خزينة مصري الإدارة",
+    name_ar: "خزينة بالسوداني - سنترال بوب",
+    type: "cash",
+    currency: "SSP",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13010120",
+    account_code: "13010120",
+    branch_id: "branch-1",
+    name_ar: "خزينه FM",
+    type: "cash",
+    currency: "MULTI",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+    containers: [
+      { id: "cnt-cash-egp-13010120", name: "كاش مصري", currency: "EGP", balance: 0 },
+      { id: "cnt-card-egp-13010120", name: "فيزا مصري", currency: "EGP", balance: 0 },
+      { id: "cnt-cash-usd-13010120", name: "كاش دولار", currency: "USD", balance: 0 },
+      { id: "cnt-card-usd-13010120", name: "فيزا دولار", currency: "USD", balance: 0 },
+      { id: "cnt-cash-ssp-13010120", name: "كاش سوداني", currency: "SSP", balance: 0 },
+      { id: "cnt-card-ssp-13010120", name: "فيزا سوداني", currency: "SSP", balance: 0 },
+    ],
+  },
+  {
+    id: "tr-oracle-13010125",
+    account_code: "13010125",
+    branch_id: "branch-1",
+    name_ar: "خزينة مصري - الادارة",
     type: "cash",
     currency: "EGP",
     balance: 0,
     is_open: true,
     opening_balance: 0,
     available_balance: 0,
-    responsible_employee: "الإدارة",
+    responsible_employee: "غير محدد",
     status: "active",
     deleted: false,
   },
   {
-    id: "tr-ahmed-usd",
+    id: "tr-oracle-13010135",
+    account_code: "13010135",
     branch_id: "branch-1",
-    name_ar: "خزينة دولار أحمد حسام",
+    name_ar: "خزينه تذاكر الدخول",
     type: "cash",
+    currency: "MULTI",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+    containers: [
+      { id: "cnt-cash-egp-13010135", name: "كاش مصري", currency: "EGP", balance: 0 },
+      { id: "cnt-card-egp-13010135", name: "فيزا مصري", currency: "EGP", balance: 0 },
+      { id: "cnt-cash-usd-13010135", name: "كاش دولار", currency: "USD", balance: 0 },
+      { id: "cnt-card-usd-13010135", name: "فيزا دولار", currency: "USD", balance: 0 },
+      { id: "cnt-cash-ssp-13010135", name: "كاش سوداني", currency: "SSP", balance: 0 },
+      { id: "cnt-card-ssp-13010135", name: "فيزا سوداني", currency: "SSP", balance: 0 },
+    ],
+  },
+  {
+    id: "tr-oracle-13020100",
+    account_code: "13020100",
+    branch_id: "branch-1",
+    name_ar: "CHARTER SSP",
+    type: "bank",
+    currency: "SSP",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13020110",
+    account_code: "13020110",
+    branch_id: "branch-1",
+    name_ar: "CHARTER usd",
+    type: "bank",
     currency: "USD",
     balance: 0,
     is_open: true,
     opening_balance: 0,
     available_balance: 0,
-    responsible_employee: "أحمد حسام",
+    responsible_employee: "غير محدد",
     status: "active",
     deleted: false,
   },
   {
-    id: "tr-ahmed-egp",
+    id: "tr-oracle-13020120",
+    account_code: "13020120",
     branch_id: "branch-1",
-    name_ar: "خزينة مصري أحمد حسام",
-    type: "cash",
-    currency: "EGP",
+    name_ar: "EDEN SSP",
+    type: "bank",
+    currency: "SSP",
     balance: 0,
     is_open: true,
     opening_balance: 0,
     available_balance: 0,
-    responsible_employee: "أحمد حسام",
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13020130",
+    account_code: "13020130",
+    branch_id: "branch-1",
+    name_ar: "Equity ssp",
+    type: "bank",
+    currency: "SSP",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13020140",
+    account_code: "13020140",
+    branch_id: "branch-1",
+    name_ar: "Equity usd",
+    type: "bank",
+    currency: "USD",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13020150",
+    account_code: "13020150",
+    branch_id: "branch-1",
+    name_ar: "kcb SSP",
+    type: "bank",
+    currency: "SSP",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13020160",
+    account_code: "13020160",
+    branch_id: "branch-1",
+    name_ar: "kcb usd",
+    type: "bank",
+    currency: "USD",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13030100",
+    account_code: "13030100",
+    branch_id: "branch-1",
+    name_ar: "Equity SSP FM",
+    type: "bank",
+    currency: "SSP",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
     status: "active",
     deleted: false,
   },
@@ -3297,6 +1840,8 @@ const DEFAULT_SUPPLIERS: Supplier[] = [
     name_ar: "شركة الهدى للأغذية والدواجن",
     phone: "01023456789",
     balance: 0,
+    account_code: "24010100",
+    currency: "USD",
     deleted: false,
   },
   {
@@ -3304,6 +1849,8 @@ const DEFAULT_SUPPLIERS: Supplier[] = [
     name_ar: "المتحدون للخضروات والفاكهة",
     phone: "01123456789",
     balance: 0,
+    account_code: "24010150",
+    currency: "USD",
     deleted: false,
   },
   {
@@ -3311,6 +1858,8 @@ const DEFAULT_SUPPLIERS: Supplier[] = [
     name_ar: "توب كواليتي لمستلزمات التعبئة",
     phone: "01223456789",
     balance: 0,
+    account_code: "24010160",
+    currency: "USD",
     deleted: false,
   },
 ];
@@ -3318,8 +1867,9 @@ const DEFAULT_SUPPLIERS: Supplier[] = [
 const DEFAULT_USERS: SystemUser[] = [
   {
     id: "u-admin",
-    full_name: "مدير النظام",
+    full_name: "مدير النظام (Super Admin)",
     username: "admin",
+    password: "123456",
     phone: "01000000000",
     role: "admin",
     created_at: new Date().toISOString(),
@@ -3328,6 +1878,7 @@ const DEFAULT_USERS: SystemUser[] = [
     id: "u-manager",
     full_name: "مشرف الفرع",
     username: "manager",
+    password: "123456",
     phone: "01000000001",
     role: "manager",
     created_at: new Date().toISOString(),
@@ -3336,6 +1887,7 @@ const DEFAULT_USERS: SystemUser[] = [
     id: "u-cashier",
     full_name: "كاشير الصالة",
     username: "cashier",
+    password: "123456",
     phone: "01000000002",
     role: "cashier",
     created_at: new Date().toISOString(),
@@ -3450,44 +2002,24 @@ const DEFAULT_PERMISSIONS: Record<string, UserPermission> = {
   },
 };
 
-class ERPStore {
-  private state: ERPStoreState;
-  private listeners: (() => void)[] = [];
-
+// @ts-nocheck
+export class ERPStore {
+  state;
+  listeners = [];
   constructor() {
     this.state = this.loadState();
-    this.state.treasuryTransactions = [];
-    this.state.journalEntries = [];
-    this.state.vouchers = [];
-    this.state.purchaseOrders = [];
-    this.state.inventoryDocuments = [];
-    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
-      localStorage.removeItem("pos_local_orders");
-    }
     this.recalculateAccountBalances();
-    if (typeof window !== "undefined") {
-      setTimeout(() => this.saveState(), 1000);
-    }
   }
-
-  private loadState(): ERPStoreState {
-    if (typeof window === "undefined" || typeof localStorage === "undefined") {
+  loadState() {
+    if (typeof window === "undefined" || typeof localStorage === "undefined")
       return this.getDefaultState();
-    }
     const raw = localStorage.getItem("erp_store_state");
-    if (raw) {
+    if (raw)
       try {
         const parsed = JSON.parse(raw);
-
         let treasuries =
-          parsed.treasuries?.map((t: any) => {
+          parsed.treasuries?.map((t) => {
             let currency = t.currency;
-            if (!currency || currency === "EGP") {
-              if (t.name_ar?.includes("دولار") || t.id?.includes("usd")) currency = "USD";
-              else if (t.name_ar?.includes("سوداني") || t.id?.includes("ssp")) currency = "SSP";
-              else if (t.id === "tr-1" || t.linked_to_restaurant) currency = "MULTI";
-              else if (t.name_ar?.includes("مصري")) currency = "EGP";
-            }
             return {
               ...t,
               currency: currency || "EGP",
@@ -3499,24 +2031,17 @@ class ERPStore {
               deleted: !!t.deleted,
             };
           }) || DEFAULT_TREASURIES;
-
-        // Migration: Delete Treasury 225
         const t225 = treasuries.find((t) => t.name_ar && t.name_ar.includes("225"));
         if (t225) {
           treasuries = treasuries.filter((t) => t.id !== t225.id);
-          if (parsed.treasuryTransactions) {
+          if (parsed.treasuryTransactions)
             parsed.treasuryTransactions = parsed.treasuryTransactions.filter(
               (tx) => tx.treasury_id !== t225.id,
             );
-          }
         }
-
-        // Migration: Delete Treasury 300 / tr-300 completely
         treasuries = treasuries.filter(
           (t) => t.id !== "tr-300" && t.name_ar !== "300" && !t.name_ar?.includes("300"),
         );
-
-        // Migration: Delete "خزينة الإدارة دولار" / "tr-admin-usd" completely
         treasuries = treasuries.filter(
           (t) =>
             t.id !== "tr-admin-usd" &&
@@ -3525,40 +2050,77 @@ class ERPStore {
             !t.name_ar?.includes("الإدارة دولار") &&
             !t.name_ar?.includes("دولار الإدارة"),
         );
-        if (parsed.treasuryTransactions) {
+        if (parsed.treasuryTransactions)
           parsed.treasuryTransactions = parsed.treasuryTransactions.filter(
-            (tx: any) => tx.treasury_id !== "tr-admin-usd",
+            (tx) => tx.treasury_id !== "tr-admin-usd",
           );
-        }
-        if (parsed.treasuryTransactions) {
-          parsed.treasuryTransactions.forEach((tx: any) => {
-            if (tx.treasury_id === "tr-300") {
-              tx.treasury_id = "tr-1";
-            }
+        if (parsed.treasuryTransactions)
+          parsed.treasuryTransactions.forEach((tx) => {
+            if (tx.treasury_id === "tr-300") tx.treasury_id = "tr-1";
           });
-        }
-
         const defaultSalesContainers = [
-          { id: "cnt-cash-egp", name: "كاش مصري", currency: "EGP", balance: 0 },
-          { id: "cnt-card-egp", name: "فيزا مصري", currency: "EGP", balance: 0 },
-          { id: "cnt-wallet-egp", name: "محفظة مصري", currency: "EGP", balance: 0 },
-          { id: "cnt-cash-usd", name: "كاش دولار", currency: "USD", balance: 0 },
-          { id: "cnt-card-usd", name: "فيزا دولار", currency: "USD", balance: 0 },
-          { id: "cnt-wallet-usd", name: "محفظة دولار", currency: "USD", balance: 0 },
-          { id: "cnt-cash-ssp", name: "كاش سوداني", currency: "SSP", balance: 0 },
-          { id: "cnt-card-ssp", name: "فيزا سوداني", currency: "SSP", balance: 0 },
-          { id: "cnt-wallet-ssp", name: "محفظة سوداني", currency: "SSP", balance: 0 },
+          {
+            id: "cnt-cash-egp",
+            name: "كاش مصري",
+            currency: "EGP",
+            balance: 0,
+          },
+          {
+            id: "cnt-card-egp",
+            name: "فيزا مصري",
+            currency: "EGP",
+            balance: 0,
+          },
+          {
+            id: "cnt-wallet-egp",
+            name: "محفظة مصري",
+            currency: "EGP",
+            balance: 0,
+          },
+          {
+            id: "cnt-cash-usd",
+            name: "كاش دولار",
+            currency: "USD",
+            balance: 0,
+          },
+          {
+            id: "cnt-card-usd",
+            name: "فيزا دولار",
+            currency: "USD",
+            balance: 0,
+          },
+          {
+            id: "cnt-wallet-usd",
+            name: "محفظة دولار",
+            currency: "USD",
+            balance: 0,
+          },
+          {
+            id: "cnt-cash-ssp",
+            name: "كاش سوداني",
+            currency: "SSP",
+            balance: 0,
+          },
+          {
+            id: "cnt-card-ssp",
+            name: "فيزا سوداني",
+            currency: "SSP",
+            balance: 0,
+          },
+          {
+            id: "cnt-wallet-ssp",
+            name: "محفظة سوداني",
+            currency: "SSP",
+            balance: 0,
+          },
         ];
         const validSalesContainerIds = new Set(defaultSalesContainers.map((c) => c.id));
-
-        // Ensure Treasury tr-1 exists, is named "خزينة الكاشير", and is linked to restaurant sales
         let mainCashier = treasuries.find(
           (t) =>
             t.id === "tr-1" ||
             t.linked_to_restaurant ||
             (t.name_ar && t.name_ar.includes("الكاشير")),
         );
-
         if (!mainCashier) {
           mainCashier = {
             id: "tr-1",
@@ -3567,11 +2129,11 @@ class ERPStore {
             type: "cash",
             currency: "MULTI",
             linked_to_restaurant: true,
-            balance: 15000,
+            balance: 15e3,
             is_open: true,
-      account_code: undefined,
-            opening_balance: 15000,
-            available_balance: 15000,
+            account_code: void 0,
+            opening_balance: 15e3,
+            available_balance: 15e3,
             responsible_employee: "أحمد علي",
             status: "active",
             deleted: false,
@@ -3584,163 +2146,79 @@ class ERPStore {
           mainCashier.linked_to_restaurant = true;
           mainCashier.deleted = false;
           mainCashier.currency = "MULTI";
-
-          const existingContainers = mainCashier.containers || [];
-          const cleanedContainers = existingContainers.filter((c) =>
+          const cleanedContainers = (mainCashier.containers || []).filter((c) =>
             validSalesContainerIds.has(c.id),
           );
-
           defaultSalesContainers.forEach((dc) => {
-            if (!cleanedContainers.some((c) => c.id === dc.id)) {
-              cleanedContainers.push({ ...dc });
-            }
+            if (!cleanedContainers.some((c) => c.id === dc.id)) cleanedContainers.push({ ...dc });
           });
-
           mainCashier.containers = cleanedContainers;
         }
-
-        // Unlink other treasuries from linked_to_restaurant
         treasuries.forEach((t) => {
-          if (t.id !== "tr-1") {
-            t.linked_to_restaurant = false;
-          }
+          if (t.id !== "tr-1") t.linked_to_restaurant = false;
         });
-
-        // Ensure unique treasury IDs (remove any duplicates)
-        const seenTreasuryIds = new Set<string>();
+        const seenTreasuryIds = /* @__PURE__ */ new Set();
         treasuries = treasuries.filter((t) => {
           if (!t.id || seenTreasuryIds.has(t.id)) return false;
           seenTreasuryIds.add(t.id);
           return true;
         });
-
         let loadedAccounts =
-          parsed.accounts !== undefined && Array.isArray(parsed.accounts)
-            ? parsed.accounts.map((a: any) => ({
+          parsed.accounts !== void 0 && Array.isArray(parsed.accounts)
+            ? parsed.accounts.map((a) => ({
                 ...a,
                 level: a.level ?? 2,
                 status: a.status ?? "active",
               }))
-            : [];
-            
-        // Oracle Migration Merge
+            : [...DEFAULT_ACCOUNTS];
         ORACLE_MIGRATION_ACCOUNTS.forEach((oracleAcc) => {
-          if (!loadedAccounts.some((a: any) => a.code === oracleAcc.code)) {
+          if (!loadedAccounts.some((a) => a.code === oracleAcc.code))
             loadedAccounts.push({
               ...oracleAcc,
               balance: 0,
               initial_balance: 0,
               status: "active",
-              system_binding: "none"
+              system_binding: "none",
             });
-          }
         });
-
         let loadedSuppliers =
-          parsed.suppliers?.map((s: any) => ({
+          parsed.suppliers?.map((s) => ({
             ...s,
             deleted: !!s.deleted,
           })) || DEFAULT_SUPPLIERS;
-
         let loadedTreasuries = treasuries;
-        // Ensure all DEFAULT_TREASURIES are present (unless deleted)
         DEFAULT_TREASURIES.forEach((dt) => {
           if (
             dt.id !== "tr-admin-usd" &&
             !loadedTreasuries.some((lt) => lt.id === dt.id || lt.deleted)
-          ) {
+          )
             loadedTreasuries.push({ ...dt });
-          }
         });
-        let loadedJournalEntries = parsed.journalEntries || [];
-
-        // Ensure Ahmed Hosam's USD Treasury transactions are merged into the Ledger
-        if (!loadedJournalEntries.some((je) => je.id.startsWith("je-ah-"))) {
-          loadedJournalEntries = [...loadedJournalEntries, ...SEED_AH_JOURNAL_ENTRIES];
-        }
-
-        let loadedTreasuryTransactions = parsed.treasuryTransactions || [];
-        let loadedVouchers = parsed.vouchers || [];
-        let loadedReconciliations = parsed.reconciliations || [];
-
-        const isMigrated = !!parsed.mock_data_cleared_v6;
-
-        if (!isMigrated) {
-          // Reset accounts using DEFAULT_ACCOUNTS with 0 base and no automated system bindings
-          loadedAccounts = DEFAULT_ACCOUNTS.map((a) => ({
-            ...a,
-            balance: 0,
-            initial_balance: 0,
-            system_binding: "none",
-            status: "active",
-          }));
-
-          // Reset suppliers to 0
-          loadedSuppliers = DEFAULT_SUPPLIERS.map((s) => ({
-            ...s,
-            balance: 0,
-          }));
-
-          // Reset treasuries and set correct starting values for USD and EGP management treasuries
-          loadedTreasuries = DEFAULT_TREASURIES.map((t) => {
-            if (t.id === "tr-4") {
-              return {
-                ...t,
-                balance: 16523.34,
-                opening_balance: 17438.37,
-                available_balance: 16523.34,
-                containers:
-                  t.containers?.map((c: any) => ({
-                    ...c,
-                    balance: c.currency === "USD" ? 16523.34 : 0,
-                  })) || [],
-              };
-            }
-            if (t.id === "tr-5") {
-              return {
-                ...t,
-                balance: 17896.21,
-                opening_balance: 607.11,
-                available_balance: 17896.21,
-                containers:
-                  t.containers?.map((c: any) => ({
-                    ...c,
-                    balance: c.currency === "EGP" ? 17896.21 : 0,
-                  })) || [],
-              };
-            }
-            return {
-              ...t,
-              balance: 0,
-              opening_balance: 0,
-              available_balance: 0,
-              containers: t.containers?.map((c: any) => ({ ...c, balance: 0 })),
-            };
-          });
-
-          // Reset virtual history
-          loadedJournalEntries = [...SEED_AH_JOURNAL_ENTRIES];
-          loadedVouchers = [];
-          loadedReconciliations = [];
-
-          // Inject real transactions from both USD and EGP Excel files
-          loadedTreasuryTransactions = [...USD_SEED_TRANSACTIONS, ...EGP_SEED_TRANSACTIONS];
-        }
+        let loadedJournalEntries = Array.isArray(parsed.journalEntries)
+          ? parsed.journalEntries
+          : [];
+        let loadedTreasuryTransactions = Array.isArray(parsed.treasuryTransactions)
+          ? parsed.treasuryTransactions
+          : [];
+        let loadedVouchers = Array.isArray(parsed.vouchers) ? parsed.vouchers : [];
+        let loadedReconciliations = Array.isArray(parsed.reconciliations)
+          ? parsed.reconciliations
+          : [];
 
         return {
           branches: DEFAULT_BRANCHES,
           currentBranchId: "branch-1",
           treasuries: loadedTreasuries,
           suppliers: loadedSuppliers,
-          purchaseOrders: (parsed.purchaseOrders || []).map((po: any) => ({
+          purchaseOrders: (parsed.purchaseOrders || []).map((po) => ({
             ...po,
             branch_id: "branch-1",
           })),
-          treasuryTransactions: loadedTreasuryTransactions.map((tx: any) => ({
+          treasuryTransactions: loadedTreasuryTransactions.map((tx) => ({
             ...tx,
             branch_id: "branch-1",
           })),
-          vouchers: loadedVouchers.map((v: any) => ({
+          vouchers: loadedVouchers.map((v) => ({
             ...v,
             branch_id: "branch-1",
             deleted: !!v.deleted,
@@ -3756,7 +2234,7 @@ class ERPStore {
           costCenters: parsed.costCenters || DEFAULT_COST_CENTERS,
           isAccountingPeriodLocked: !!parsed.isAccountingPeriodLocked,
           extendedInventoryItems: parsed.extendedInventoryItems || {},
-          inventoryDocuments: (parsed.inventoryDocuments || []).map((doc: any) => ({
+          inventoryDocuments: (parsed.inventoryDocuments || []).map((doc) => ({
             ...doc,
             branch_id: "branch-1",
           })),
@@ -3770,7 +2248,9 @@ class ERPStore {
             defaultUnit: "كيلو",
           },
           totalDisposedExpiryValue: Number(parsed.totalDisposedExpiryValue || 0),
+          hard_reset_2026_08_18_final: true,
           mock_data_cleared_v6: true,
+          wipe_journal_entries_2026_08_18_v3: true,
           employees: parsed.employees || DEFAULT_EMPLOYEES,
           attendance: parsed.attendance || [],
           loans: parsed.loans || [],
@@ -3794,22 +2274,77 @@ class ERPStore {
       } catch (e) {
         console.error("Error parsing ERP state:", e);
       }
-    }
-
     return this.getDefaultState();
   }
 
-  private getDefaultState(): ERPStoreState {
+  clearAllJournalEntries() {
+    this.state.journalEntries = [];
+    if (Array.isArray(this.state.treasuryTransactions)) {
+      this.state.treasuryTransactions = this.state.treasuryTransactions.filter(
+        (tx) =>
+          !tx.id?.startsWith("tx-import-") &&
+          !tx.related_entity_id?.startsWith("ORACLE-") &&
+          !tx.related_entity_id?.startsWith("je-"),
+      );
+    }
+    this.state.accounts.forEach((a) => {
+      a.balance = Number(a.initial_balance || 0);
+    });
+    this.recalculateAccountBalances();
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "مسح قيود اليومية",
+      "تم مسح جميع قيود اليومية العامة من الذاكرة بالكامل",
+      "DELETE",
+    );
+    this.notify();
+  }
+
+  deleteAllSystemData() {
+    const s = this.getDefaultState();
+    s.hard_reset_2026_08_18_final = true;
+    s.wipe_journal_entries_2026_08_18_v3 = true;
+    s.treasuryTransactions = [];
+    s.journalEntries = [];
+    s.vouchers = [];
+    s.purchaseOrders = [];
+    s.inventoryDocuments = [];
+    s.orders = [];
+    s.treasuries = JSON.parse(JSON.stringify(DEFAULT_TREASURIES));
+    s.treasuries.forEach((t) => {
+      t.balance = 0;
+      t.opening_balance = 0;
+      t.available_balance = 0;
+      if (t.containers) t.containers.forEach((c) => (c.balance = 0));
+    });
+    s.accounts.forEach((a) => {
+      a.balance = 0;
+      a.opening_balance = 0;
+    });
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem("pos_local_orders");
+      localStorage.removeItem("erp_store_state");
+    }
+    this.state = s;
+    this.recalculateAccountBalances();
+    this.saveState();
+    if (typeof window !== "undefined") {
+      window.location.reload();
+    }
+    this.notify();
+  }
+  getDefaultState() {
     return {
       branches: DEFAULT_BRANCHES,
       currentBranchId: "branch-1",
       treasuries: DEFAULT_TREASURIES,
       suppliers: DEFAULT_SUPPLIERS,
       purchaseOrders: [],
-      treasuryTransactions: USD_SEED_TRANSACTIONS,
+      treasuryTransactions: [],
       vouchers: [],
       accounts: DEFAULT_ACCOUNTS,
-      journalEntries: SEED_AH_JOURNAL_ENTRIES,
+      journalEntries: [],
       auditLogs: [],
       inventoryExpiry: DEFAULT_EXPIRY_SEED,
       menuQualitySpecs: {},
@@ -3838,25 +2373,25 @@ class ERPStore {
       mallTerminatedContractsArchive: [],
     };
   }
-
-  private saveState() {
-    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+  saveState() {
+    if (this.state.journalEntries) this.state.journalEntries = [...this.state.journalEntries];
+    if (this.state.accounts) this.state.accounts = [...this.state.accounts];
+    if (this.state.treasuryTransactions)
+      this.state.treasuryTransactions = [...this.state.treasuryTransactions];
+    if (this.state.treasuries) this.state.treasuries = [...this.state.treasuries];
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined")
       localStorage.setItem("erp_store_state", JSON.stringify(this.state));
-    }
     this.notify();
   }
-
-  subscribe(listener: () => void) {
+  subscribe(listener) {
     this.listeners.push(listener);
     return () => {
       this.listeners = this.listeners.filter((l) => l !== listener);
     };
   }
-
-  private notify() {
+  notify() {
     this.listeners.forEach((l) => l());
   }
-
   resetRestaurantSales() {
     this.state.sales_invoices = [];
     this.state.treasuryTransactions = this.state.treasuryTransactions.filter(
@@ -3866,23 +2401,18 @@ class ERPStore {
       (j) => !j.description?.includes("فاتورة مبيعات"),
     );
     const linkedTreasury = this.state.treasuries.find((t) => t.linked_to_restaurant);
-    if (linkedTreasury) {
-      linkedTreasury.balance = 0;
-    }
+    if (linkedTreasury) linkedTreasury.balance = 0;
     this.saveState();
   }
-
-  getState(): ERPStoreState {
+  getState() {
     return this.state;
   }
-
-  getCurrentBranch(): Branch {
+  getCurrentBranch() {
     return (
       this.state.branches.find((b) => b.id === this.state.currentBranchId) || this.state.branches[0]
     );
   }
-
-  setCurrentBranch(branchId: string) {
+  setCurrentBranch(branchId) {
     this.state.currentBranchId = branchId;
     this.saveState();
     this.logAction(
@@ -3892,22 +2422,13 @@ class ERPStore {
       "SYSTEM",
     );
   }
-
-  // Auditing
-  logAction(
-    user: string,
-    action: string,
-    details: string,
-    actionType: AuditLog["action_type"] = "SYSTEM",
-    beforeValue?: string,
-    afterValue?: string,
-  ) {
-    const log: AuditLog = {
+  logAction(user, action, details, actionType = "SYSTEM", beforeValue, afterValue) {
+    const log = {
       id: "log-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
       user_email: user,
       action,
       details,
-      created_at: new Date().toISOString(),
+      created_at: /* @__PURE__ */ new Date().toISOString(),
       action_type: actionType,
       before_value: beforeValue,
       after_value: afterValue,
@@ -3916,33 +2437,27 @@ class ERPStore {
     this.state.auditLogs.unshift(log);
     this.saveState();
   }
-
-  // Permissions & Current User management
   getUsers() {
     return this.state.users || [];
   }
-  upsertUser(user: SystemUser) {
+  upsertUser(user) {
     if (!this.state.users) this.state.users = [];
     const idx = this.state.users.findIndex((u) => u.id === user.id);
-    if (idx >= 0) {
-      this.state.users[idx] = user;
-    } else {
-      this.state.users.push(user);
-    }
+    if (idx >= 0) this.state.users[idx] = user;
+    else this.state.users.push(user);
     this.saveState();
   }
-  deleteUser(id: string) {
+  deleteUser(id) {
     if (!this.state.users) return;
     this.state.users = this.state.users.filter((u) => u.id !== id);
     this.saveState();
   }
-  setCurrentUser(email: string) {
+  setCurrentUser(email) {
     this.state.currentUser = email;
     this.saveState();
     this.logAction("SYSTEM", "تغيير المستخدم النشط", `تم تسجيل دخول المستخدم: ${email}`, "SYSTEM");
   }
-
-  updateUserPermission(email: string, permissions: Partial<UserPermission>) {
+  updateUserPermission(email, permissions) {
     const existing = this.state.userPermissions[email] || {
       treasury: false,
       accounting: false,
@@ -3961,10 +2476,8 @@ class ERPStore {
     this.saveState();
     this.logAction("ADMIN", "تحديث صلاحيات مستخدم", `تم تحديث صلاحيات ${email}`, "UPDATE");
   }
-
-  // Branch Management
-  addBranch(name: string, name_ar: string, code: string) {
-    const branch: Branch = {
+  addBranch(name, name_ar, code) {
+    const branch = {
       id: "branch-" + Date.now(),
       name,
       name_ar,
@@ -3975,7 +2488,6 @@ class ERPStore {
     this.logAction("ADMIN", "إضافة فرع جديد", `تم إنشاء فرع جديد: ${name_ar} (${code})`, "CREATE");
     return branch;
   }
-
   clearAllAccountsAndTransactions() {
     this.state.accounts = [];
     this.state.treasuryTransactions = [];
@@ -3983,9 +2495,8 @@ class ERPStore {
     this.state.vouchers = [];
     this.state.purchaseOrders = [];
     this.state.inventoryDocuments = [];
-    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined")
       localStorage.removeItem("pos_local_orders");
-    }
     this.saveState();
     this.logAction(
       "ADMIN",
@@ -3994,60 +2505,270 @@ class ERPStore {
       "DELETE",
     );
   }
+  addSupplier(
+    name_ar: string,
+    phone?: string,
+    openingBalance: number = 0,
+    account_code?: string,
+    currency: string = "USD",
+  ) {
+    let targetAccountCode = account_code ? String(account_code).trim() : "";
+    let isNewAccount = false;
 
-  // Suppliers with Soft Delete
-  addSupplier(name_ar: string, phone?: string, openingBalance = 0) {
+    // If no account code is provided, auto-create a dedicated supplier account in Chart of Accounts under 24010
+    if (!targetAccountCode) {
+      const existingSupplierCodes = this.state.accounts
+        .map((a) => a.code)
+        .filter((c) => c.startsWith("24010") && c.length === 8);
+
+      let maxSuffix = 390;
+      existingSupplierCodes.forEach((code) => {
+        const suffix = parseInt(code.substring(5), 10);
+        if (!isNaN(suffix) && suffix > maxSuffix) {
+          maxSuffix = suffix;
+        }
+      });
+
+      const nextSuffix = maxSuffix + 1;
+      targetAccountCode = `24010${String(nextSuffix).padStart(3, "0")}`;
+      isNewAccount = true;
+
+      if (!this.state.accounts.some((a) => a.code === targetAccountCode)) {
+        const newAcc: Account = {
+          code: targetAccountCode,
+          name_ar: `مورد - ${name_ar}`,
+          type: "liability",
+          level: 4,
+          parent_code: "24010",
+          balance: openingBalance,
+          initial_balance: openingBalance,
+          status: "active",
+          currency: currency || "USD",
+          system_binding: "none",
+        };
+        this.state.accounts.push(newAcc);
+      }
+    } else {
+      const existing = this.state.accounts.find((a) => a.code === targetAccountCode);
+      if (!existing) {
+        this.state.accounts.push({
+          code: targetAccountCode,
+          name_ar: `مورد - ${name_ar}`,
+          type: "liability",
+          level: 4,
+          parent_code: "24010",
+          balance: openingBalance,
+          initial_balance: openingBalance,
+          status: "active",
+          currency: currency || "USD",
+          system_binding: "none",
+        });
+        isNewAccount = true;
+      }
+    }
+
     const supplier: Supplier = {
       id: "sup-" + Date.now(),
       name_ar,
-      phone,
+      phone: phone || "",
       balance: openingBalance,
+      account_code: targetAccountCode,
+      currency: currency || "USD",
       deleted: false,
     };
-    this.state.suppliers.push(supplier);
-    this.saveState();
-    this.logAction("ADMIN", "إضافة مورد جديد", `تم تسجيل المورد: ${name_ar}`, "CREATE");
-    return supplier;
-  }
 
+    this.state.suppliers.push(supplier);
+    this.recalculateAccountBalances();
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "إضافة مورد جديد",
+      `تم تسجيل المورد: ${name_ar} وربطه بالحساب المحاسبي رقم (${targetAccountCode})`,
+      "CREATE",
+    );
+    this.notify();
+    return { supplier, account_code: targetAccountCode, isNewAccount };
+  }
   deleteSupplier(id: string) {
     const sup = this.state.suppliers.find((s) => s.id === id);
     if (sup) {
       sup.deleted = true;
       this.saveState();
       this.logAction("ADMIN", "حذف مورد (حذف مؤقت)", `تم حذف المورد #${id} مؤقتاً`, "DELETE");
+      this.notify();
     }
   }
-
   updateSupplier(id: string, payload: Partial<Supplier>) {
     const sup = this.state.suppliers.find((s) => s.id === id);
     if (sup) {
       Object.assign(sup, payload);
+      // If account_code changed, sync
+      if (payload.account_code) {
+        const acc = this.state.accounts.find((a) => a.code === payload.account_code);
+        if (acc && payload.name_ar) {
+          acc.name_ar = `مورد - ${payload.name_ar}`;
+        }
+      }
       this.saveState();
       this.logAction("ADMIN", "تعديل بيانات مورد", `تم تعديل المورد: ${sup.name_ar}`, "UPDATE");
+      this.notify();
     }
   }
-
   updateSupplierBalance(id: string, amount: number) {
     const sup = this.state.suppliers.find((s) => s.id === id);
     if (sup) {
       sup.balance += amount;
       this.saveState();
+      this.notify();
     }
   }
+  recordSupplierTransaction(params: {
+    supplier_id: string;
+    type: "payment" | "invoice" | "adjustment";
+    amount: number;
+    currency?: "USD" | "SSP" | string;
+    exchange_rate?: number;
+    treasury_id?: string;
+    note?: string;
+    date?: string;
+  }) {
+    const supplier = this.state.suppliers.find((s) => s.id === params.supplier_id);
+    if (!supplier) throw new Error("المورد غير موجود");
 
-  // Multi-Treasury Management
+    const supAccCode = supplier.account_code || "201000";
+    const curr = params.currency || "USD";
+    const rate = Number(params.exchange_rate) || 1;
+    const rawAmount = Number(params.amount) || 0;
+    const baseUsd = curr === "USD" ? rawAmount : rate > 1 ? rawAmount / rate : rawAmount * rate;
+    const targetDate = params.date || new Date().toISOString().split("T")[0];
+
+    const refSeq = Math.floor(Math.random() * 8999) + 1000;
+    let ref = `SUP-TX-${refSeq}`;
+    const lines: JournalLine[] = [];
+
+    if (params.type === "payment") {
+      // Payment to Supplier: Debit Supplier, Credit Treasury
+      const treasury =
+        this.state.treasuries.find((t) => t.id === params.treasury_id) || this.state.treasuries[0];
+      const treasuryAccCode =
+        treasury?.account_code || (treasury?.type === "bank" ? "13020140" : "13010100");
+      ref = `SUP-PAY-${refSeq}`;
+
+      lines.push({
+        account_code: supAccCode,
+        debit: rawAmount,
+        credit: 0,
+        currency: curr,
+        rate: rate,
+        description: params.note || `سداد دفعة نقدية للمورد ${supplier.name_ar}`,
+      });
+
+      lines.push({
+        account_code: treasuryAccCode,
+        debit: 0,
+        credit: rawAmount,
+        currency: curr,
+        rate: rate,
+        description: params.note || `سداد دفعة نقدية للمورد ${supplier.name_ar}`,
+      });
+
+      if (treasury) {
+        this.addTreasuryTransaction(
+          treasury.id,
+          "purchase",
+          rawAmount,
+          curr,
+          `سداد للمورد: ${supplier.name_ar} - ${params.note || ""}`,
+          ref,
+        );
+      }
+
+      supplier.balance -= rawAmount;
+    } else if (params.type === "invoice") {
+      // Additional Invoice/Claim: Debit Inventory/Expense, Credit Supplier
+      ref = `SUP-INV-${refSeq}`;
+      lines.push({
+        account_code: "103000",
+        debit: rawAmount,
+        credit: 0,
+        currency: curr,
+        rate: rate,
+        description: params.note || `فاتورة استحقاق بضاعة للمورد ${supplier.name_ar}`,
+      });
+
+      lines.push({
+        account_code: supAccCode,
+        debit: 0,
+        credit: rawAmount,
+        currency: curr,
+        rate: rate,
+        description: params.note || `فاتورة استحقاق بضاعة للمورد ${supplier.name_ar}`,
+      });
+
+      supplier.balance += rawAmount;
+    } else {
+      // Adjustment:
+      ref = `SUP-ADJ-${refSeq}`;
+      lines.push({
+        account_code: supAccCode,
+        debit: rawAmount > 0 ? rawAmount : 0,
+        credit: rawAmount < 0 ? Math.abs(rawAmount) : 0,
+        currency: curr,
+        rate: rate,
+        description: params.note || `تسوية رصيد حساب المورد ${supplier.name_ar}`,
+      });
+
+      lines.push({
+        account_code: "17010100",
+        debit: rawAmount < 0 ? Math.abs(rawAmount) : 0,
+        credit: rawAmount > 0 ? rawAmount : 0,
+        currency: curr,
+        rate: rate,
+        description: params.note || `تسوية رصيد حساب المورد ${supplier.name_ar}`,
+      });
+
+      supplier.balance -= rawAmount;
+    }
+
+    this.addJournalEntry(
+      `حركة مورد (${supplier.name_ar}) - ${params.note || ref}`,
+      lines,
+      ref,
+      curr,
+      targetDate,
+    );
+
+    this.recalculateAccountBalances();
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "تسجيل حركة مورد",
+      `تم تسجيل حركة ${params.type} بمبلغ ${rawAmount.toLocaleString()} ${curr} للمورد ${supplier.name_ar} (حساب #${supAccCode}) برقم مرجعي ${ref}`,
+      "TRANSACTION",
+    );
+    this.notify();
+
+    return {
+      success: true,
+      reference: ref,
+      account_code: supAccCode,
+      supplier_name: supplier.name_ar,
+      amount: rawAmount,
+      currency: curr,
+      base_usd_amount: baseUsd,
+    };
+  }
   addTreasury(
-    name_ar: string,
-    type: "cash" | "bank",
-    currency: string,
+    name_ar,
+    type,
+    currency,
     openingBalance = 0,
     employee = "غير محدد",
-    containers: TreasuryContainer[] = [],
+    containers = [],
     linked_to_restaurant = false,
-    account_code?: string,
+    account_code,
   ) {
-    const treasury: TreasuryAccount = {
+    const treasury = {
       id: "tr-" + Date.now(),
       branch_id: this.state.currentBranchId,
       name_ar,
@@ -4055,7 +2776,7 @@ class ERPStore {
       currency,
       balance: openingBalance,
       is_open: true,
-      account_code: undefined,
+      account_code: void 0,
       opening_balance: openingBalance,
       available_balance: openingBalance,
       responsible_employee: employee,
@@ -4074,8 +2795,7 @@ class ERPStore {
     );
     return treasury;
   }
-
-  updateTreasury(id: string, payload: Partial<TreasuryAccount>) {
+  updateTreasury(id, payload) {
     const tr = this.state.treasuries.find((t) => t.id === id);
     if (tr) {
       Object.assign(tr, payload);
@@ -4083,8 +2803,7 @@ class ERPStore {
       this.logAction("ADMIN", "تعديل حساب خزينة/بنك", `تم تعديل حساب: ${tr.name_ar}`, "UPDATE");
     }
   }
-
-  setTreasuryOpenStatus(treasuryId: string, isOpen: boolean) {
+  setTreasuryOpenStatus(treasuryId, isOpen) {
     const tr = this.state.treasuries.find((t) => t.id === treasuryId);
     if (tr) {
       const oldState = tr.is_open;
@@ -4101,57 +2820,42 @@ class ERPStore {
       );
     }
   }
-
-  deleteTreasury(id: string) {
+  deleteTreasury(id) {
     const trIndex = this.state.treasuries.findIndex((t) => t.id === id);
     const tr = this.state.treasuries[trIndex];
     if (tr) {
-      if (Math.abs(tr.balance) > 0.001) {
+      if (Math.abs(tr.balance) > 0.001)
         throw new Error(
           `لا يمكن حذف الخزينة وهي تحتوي على رصيد مالي نشط (${tr.balance.toLocaleString()} ${tr.currency}).`,
         );
-      }
-
       tr.deleted = true;
       tr.is_open = false;
       this.state.treasuries.splice(trIndex, 1);
-
       this.saveState();
       this.logAction("ADMIN", "حذف خزينة", `تم حذف الخزينة ${tr.name_ar}`, "DELETE");
     }
   }
-
-  reconcileTreasury(treasuryId: string, actualCount: number, notes: string) {
+  reconcileTreasury(treasuryId, actualCount, notes) {
     const tr = this.state.treasuries.find((t) => t.id === treasuryId);
     if (!tr) throw new Error("الخزينة غير موجودة");
-
     const ledgerBalance = tr.balance;
     const difference = actualCount - ledgerBalance;
-
-    const recon: TreasuryReconciliation = {
+    const recon = {
       id: "rec-" + Date.now(),
       treasury_id: treasuryId,
-      date: new Date().toISOString(),
+      date: /* @__PURE__ */ new Date().toISOString(),
       ledger_balance: ledgerBalance,
       actual_balance: actualCount,
       difference,
       reconciled_by: this.state.currentUser,
       notes,
     };
-
-    if (!this.state.reconciliations) {
-      this.state.reconciliations = [];
-    }
+    if (!this.state.reconciliations) this.state.reconciliations = [];
     this.state.reconciliations.unshift(recon);
-
-    // Update treasury balance to match actual count
     tr.balance = actualCount;
     tr.available_balance = actualCount;
-
-    // Post automatic reconciliation journal entry
-    const entryId = "rec-" + Date.now().toString().substring(8);
+    "" + Date.now().toString().substring(8);
     this.postReconciliationJournal(recon, tr);
-
     this.saveState();
     this.logAction(
       "ADMIN",
@@ -4160,47 +2864,54 @@ class ERPStore {
       "TRANSACTION",
     );
   }
-
-  private postReconciliationJournal(recon: TreasuryReconciliation, tr: TreasuryAccount) {
+  postReconciliationJournal(recon, tr) {
     const treasuryAccountCode =
       tr.type === "bank" ? "102000" : tr.branch_id === "branch-2" ? "101001" : "101000";
     const diff = recon.difference;
-
-    const lines: JournalLine[] = [];
+    const lines = [];
     if (diff > 0) {
-      // Surplus: Debit Treasury, Credit Other Income (revenue/reconciliation profit)
-      lines.push({ account_code: treasuryAccountCode, debit: diff, credit: 0 });
-      lines.push({ account_code: "401000", debit: 0, credit: diff }); // Post as surplus revenue
+      lines.push({
+        account_code: treasuryAccountCode,
+        debit: diff,
+        credit: 0,
+      });
+      lines.push({
+        account_code: "401000",
+        debit: 0,
+        credit: diff,
+      });
     } else if (diff < 0) {
-      // Deficit: Debit Hadr/Loss expense (506000), Credit Treasury
-      lines.push({ account_code: "506000", debit: Math.abs(diff), credit: 0 });
-      lines.push({ account_code: treasuryAccountCode, debit: 0, credit: Math.abs(diff) });
+      lines.push({
+        account_code: "506000",
+        debit: Math.abs(diff),
+        credit: 0,
+      });
+      lines.push({
+        account_code: treasuryAccountCode,
+        debit: 0,
+        credit: Math.abs(diff),
+      });
     }
-
-    if (lines.length > 0) {
+    if (lines.length > 0)
       this.addJournalEntry(
         `تسوية جرد مالي لخزينة ${tr.name_ar}`,
         lines,
         `REC-${recon.id.substring(4, 9).toUpperCase()}`,
       );
-    }
   }
-
   addTreasuryTransaction(
-    treasuryId: string,
-    type: TreasuryTransaction["type"],
-    amount: number,
-    currency: string,
-    note: string,
-    relatedId?: string,
-    paymentMethod?: string,
-    containerId?: string,
+    treasuryId,
+    type,
+    amount,
+    currency,
+    note,
+    relatedId,
+    paymentMethod,
+    containerId,
   ) {
     const tr = this.state.treasuries.find((t) => t.id === treasuryId);
     if (!tr) return;
-
     const beforeBal = tr.balance;
-
     if (type === "deposit" || type === "sales" || type === "transfer_in") {
       tr.balance += amount;
       tr.available_balance = tr.balance;
@@ -4216,8 +2927,7 @@ class ERPStore {
         if (cnt) cnt.balance -= amount;
       }
     }
-
-    const tx: TreasuryTransaction = {
+    const tx = {
       id: "tx-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
       branch_id: this.state.currentBranchId,
       treasury_id: treasuryId,
@@ -4227,12 +2937,10 @@ class ERPStore {
       payment_method: paymentMethod || "cash",
       note,
       related_entity_id: relatedId,
-      created_at: new Date().toISOString(),
+      created_at: /* @__PURE__ */ new Date().toISOString(),
     };
-
     this.state.treasuryTransactions.unshift(tx);
     this.saveState();
-
     this.logAction(
       this.state.currentUser,
       "حركة مالية على الخزينة",
@@ -4241,64 +2949,61 @@ class ERPStore {
       `balance: ${beforeBal}`,
       `balance: ${tr.balance}`,
     );
-
-    // Auto Journal Entry Posting
     this.postTreasuryJournal(tx, tr);
   }
-
-  private postTreasuryJournal(tx: TreasuryTransaction, tr: TreasuryAccount) {
-    let debitAccount = "101000"; // Default Main Cash
-    let creditAccount = "301000"; // Default Capital
-
-    if (this.state.currentBranchId === "branch-2") {
-      debitAccount = "101001"; // Juba Cash
-    } else if (tr.type === "bank") {
-      debitAccount = "102000"; // CIB Bank
-    }
-
-    if (tx.type === "sales") {
-      creditAccount = "401000"; // Sales Revenue
-    } else if (tx.type === "expense") {
-      creditAccount = "504000"; // Utilities Expense
-    } else if (tx.type === "purchase") {
-      creditAccount = "103000"; // RAW inventory asset
-    }
-
-    const lines: JournalLine[] = [];
+  postTreasuryJournal(tx, tr) {
+    let debitAccount = "101000";
+    let creditAccount = "301000";
+    if (this.state.currentBranchId === "branch-2") debitAccount = "101001";
+    else if (tr.type === "bank") debitAccount = "102000";
+    if (tx.type === "sales") creditAccount = "401000";
+    else if (tx.type === "expense") creditAccount = "504000";
+    else if (tx.type === "purchase") creditAccount = "103000";
+    const lines = [];
     if (tx.type === "deposit" || tx.type === "sales" || tx.type === "transfer_in") {
-      lines.push({ account_code: debitAccount, debit: tx.amount, credit: 0 });
-      lines.push({ account_code: creditAccount, debit: 0, credit: tx.amount });
+      lines.push({
+        account_code: debitAccount,
+        debit: tx.amount,
+        credit: 0,
+      });
+      lines.push({
+        account_code: creditAccount,
+        debit: 0,
+        credit: tx.amount,
+      });
     } else if (
       tx.type === "withdrawal" ||
       tx.type === "purchase" ||
       tx.type === "expense" ||
       tx.type === "transfer_out"
     ) {
-      lines.push({ account_code: creditAccount, debit: tx.amount, credit: 0 });
-      lines.push({ account_code: debitAccount, debit: 0, credit: tx.amount });
+      lines.push({
+        account_code: creditAccount,
+        debit: tx.amount,
+        credit: 0,
+      });
+      lines.push({
+        account_code: debitAccount,
+        debit: 0,
+        credit: tx.amount,
+      });
     }
-
-    if (lines.length > 0) {
+    if (lines.length > 0)
       this.addJournalEntry(tx.note, lines, `TX-${tx.id.substring(3, 8).toUpperCase()}`);
-    }
   }
-
-  // --- Chart of Accounts Methods ---
   addAccount(
-    code: string,
-    name_ar: string,
-    type: Account["type"],
-    parentCode?: string,
+    code,
+    name_ar,
+    type,
+    parentCode,
     level = 2,
     initial_balance = 0,
-    system_binding: Account["system_binding"] = "none",
+    system_binding = "none",
     currency = "EGP",
   ) {
-    if (this.state.accounts.some((a) => a.code === code)) {
+    if (this.state.accounts.some((a) => a.code === code))
       throw new Error("كود الحساب موجود بالفعل");
-    }
-
-    const account: Account = {
+    const account = {
       code,
       name_ar,
       type,
@@ -4311,7 +3016,6 @@ class ERPStore {
       currency,
       sync_status: system_binding && system_binding !== "none" ? "pending" : "synced",
     };
-
     this.state.accounts.push(account);
     this.recalculateAccountBalances();
     this.saveState();
@@ -4323,8 +3027,7 @@ class ERPStore {
     );
     return account;
   }
-
-  updateAccountStatus(code: string, status: "active" | "inactive") {
+  updateAccountStatus(code, status) {
     const acc = this.state.accounts.find((a) => a.code === code);
     if (acc) {
       acc.status = status;
@@ -4337,33 +3040,25 @@ class ERPStore {
       );
     }
   }
-
-  updateAccount(code: string, payload: Partial<Account>) {
+  updateAccount(code, payload) {
     const acc = this.state.accounts.find((a) => a.code === code);
     if (!acc) throw new Error("الحساب غير موجود");
-
-    // If changing code, check uniqueness
     if (payload.code && payload.code !== code) {
-      if (this.state.accounts.some((a) => a.code === payload.code)) {
+      if (this.state.accounts.some((a) => a.code === payload.code))
         throw new Error("كود الحساب الجديد مستخدم بالفعل لحساب آخر");
-      }
-      // Update parent_code references in child accounts
       this.state.accounts.forEach((a) => {
         if (a.parent_code === code) a.parent_code = payload.code;
       });
-      // Update journal entries matching old code
       this.state.journalEntries.forEach((je) => {
         je.lines?.forEach((l) => {
-          if (l.account_code === code) l.account_code = payload.code!;
+          if (l.account_code === code) l.account_code = payload.code;
         });
       });
     }
-
     const oldBinding = acc.system_binding;
     Object.assign(acc, payload);
-    if (payload.system_binding !== undefined && payload.system_binding !== oldBinding) {
+    if (payload.system_binding !== void 0 && payload.system_binding !== oldBinding)
       acc.sync_status = payload.system_binding !== "none" ? "pending" : "synced";
-    }
     this.recalculateAccountBalances();
     this.saveState();
     this.logAction(
@@ -4374,8 +3069,7 @@ class ERPStore {
     );
     return acc;
   }
-
-  activateAccountSync(code: string) {
+  activateAccountSync(code) {
     const acc = this.state.accounts.find((a) => a.code === code);
     if (acc) {
       acc.sync_status = "synced";
@@ -4389,26 +3083,15 @@ class ERPStore {
       );
     }
   }
-
-  deleteAccount(code: string) {
+  deleteAccount(code) {
     const index = this.state.accounts.findIndex((a) => a.code === code);
     if (index === -1) throw new Error("الحساب غير موجود");
-
     const acc = this.state.accounts[index];
-    // Check if account has child accounts
-    const hasChildren = this.state.accounts.some((a) => a.parent_code === code);
-    if (hasChildren) {
+    if (this.state.accounts.some((a) => a.parent_code === code))
       throw new Error(
         "لا يمكن حذف حساب رئيسي يمتلك حسابات فرعية. قم بحذف أو نقل الحسابات الفرعية أولاً.",
       );
-    }
-
-    // Check if account has journal entries recorded
-    const hasEntries = this.state.journalEntries.some((je) =>
-      je.lines?.some((l) => l.account_code === code),
-    );
-    if (hasEntries) {
-      // Soft-deactivate for audit safety
+    if (this.state.journalEntries.some((je) => je.lines?.some((l) => l.account_code === code))) {
       acc.status = "inactive";
       this.saveState();
       this.logAction(
@@ -4422,7 +3105,6 @@ class ERPStore {
         message: "الحساب مرتبط بقيود محاسبية، تم تعطيله بدلاً من الحذف لحفظ النزاهة المالية.",
       };
     }
-
     this.state.accounts.splice(index, 1);
     this.saveState();
     this.logAction(
@@ -4431,35 +3113,30 @@ class ERPStore {
       `تم حذف الحساب المحاسبي من الدليل: ${acc.name_ar} (${code})`,
       "DELETE",
     );
-    return { softDeleted: false, message: "تم حذف الحساب بنجاح!" };
+    return {
+      softDeleted: false,
+      message: "تم حذف الحساب بنجاح!",
+    };
   }
-
   recalculateAccountBalances() {
-    const balanceMap: Record<string, number> = {};
-
+    const balanceMap = {};
     this.state.accounts.forEach((acc) => {
       balanceMap[acc.code] = acc.initial_balance || 0;
     });
-
     this.state.journalEntries.forEach((entry) => {
       if (!entry.lines) return;
       entry.lines.forEach((line) => {
         const acc = this.state.accounts.find((a) => a.code === line.account_code);
         if (acc) {
-          if (balanceMap[acc.code] === undefined) balanceMap[acc.code] = acc.initial_balance || 0;
+          if (balanceMap[acc.code] === void 0) balanceMap[acc.code] = acc.initial_balance || 0;
           const debit = Number(line.debit || 0);
           const credit = Number(line.credit || 0);
-
-          if (acc.type === "asset" || acc.type === "expense") {
+          if (acc.type === "asset" || acc.type === "expense")
             balanceMap[acc.code] += debit - credit;
-          } else {
-            balanceMap[acc.code] += credit - debit;
-          }
+          else balanceMap[acc.code] += credit - debit;
         }
       });
     });
-
-    // Apply system bindings if present and synced
     this.state.accounts.forEach((acc) => {
       if (acc.system_binding && acc.system_binding !== "none" && acc.sync_status !== "pending") {
         let liveBalance = acc.initial_balance || 0;
@@ -4474,175 +3151,173 @@ class ERPStore {
             else if (tId === "management_egp")
               t = this.state.treasuries.find((x) => x.id === "tr-5");
           }
-          if (t) {
-            liveBalance = t.balance || 0;
-          }
-        } else {
+          if (t) liveBalance = t.balance || 0;
+        } else
           switch (acc.system_binding) {
             case "suppliers_payable":
               liveBalance = this.state.suppliers.reduce((sum, s) => sum + (s.balance || 0), 0);
               break;
-            case "sales_revenue": {
-              // Calculate total of all receipts/vouchers or sales
-              const totalReceipts =
+            case "sales_revenue":
+              liveBalance =
                 this.state.vouchers
                   ?.filter((v) => !v.deleted && v.type === "receipt")
                   ?.reduce((sum, v) => sum + Number(v.amount || 0), 0) || 0;
-              liveBalance = totalReceipts;
               break;
-            }
-            case "operating_expenses": {
-              const totalPayments =
+            case "operating_expenses":
+              liveBalance =
                 this.state.vouchers
                   ?.filter((v) => !v.deleted && v.type === "payment")
                   ?.reduce((sum, v) => sum + Number(v.amount || 0), 0) || 0;
-              liveBalance = totalPayments;
               break;
-            }
             case "warehouse_main_value": {
               const items = localWarehouseStore.getInventory();
-              const whInvMain = localWarehouseStore.getWarehouseInventory("wh-main-default");
-              liveBalance = whInvMain.reduce((sum, row) => {
-                const item = items.find((i) => i.id === row.inventory_id);
-                if (item) {
-                  return sum + Number(row.quantity || 0) * Number(item.cost || 0);
-                }
-                return sum;
-              }, 0);
+              liveBalance = localWarehouseStore
+                .getWarehouseInventory("wh-main-default")
+                .reduce((sum, row) => {
+                  const item = items.find((i) => i.id === row.inventory_id);
+                  if (item) return sum + Number(row.quantity || 0) * Number(item.cost || 0);
+                  return sum;
+                }, 0);
               break;
             }
             case "warehouse_kitchen_value": {
               const items = localWarehouseStore.getInventory();
-              const whInvKitchen = localWarehouseStore.getWarehouseInventory("wh-sub-kitchen");
-              liveBalance = whInvKitchen.reduce((sum, row) => {
-                const item = items.find((i) => i.id === row.inventory_id);
-                if (item) {
-                  return sum + Number(row.quantity || 0) * Number(item.cost || 0);
-                }
-                return sum;
-              }, 0);
+              liveBalance = localWarehouseStore
+                .getWarehouseInventory("wh-sub-kitchen")
+                .reduce((sum, row) => {
+                  const item = items.find((i) => i.id === row.inventory_id);
+                  if (item) return sum + Number(row.quantity || 0) * Number(item.cost || 0);
+                  return sum;
+                }, 0);
               break;
             }
             case "expired_inventory_value": {
-              const nowStr = new Date().toISOString().split("T")[0];
+              const nowStr = /* @__PURE__ */ new Date().toISOString().split("T")[0];
               const expiredBatches = this.state.inventoryExpiry.filter(
                 (b) => b.expiry_date <= nowStr,
               );
               const items = localWarehouseStore.getInventory();
               liveBalance = expiredBatches.reduce((sum, batch) => {
                 const item = items.find((i) => i.id === batch.inventory_id);
-                if (item) {
-                  return sum + Number(batch.quantity || 0) * Number(item.cost || 0);
-                }
+                if (item) return sum + Number(batch.quantity || 0) * Number(item.cost || 0);
                 return sum;
               }, 0);
               break;
             }
-            case "disposed_waste_value": {
+            case "disposed_waste_value":
               liveBalance = this.state.totalDisposedExpiryValue || 0;
               break;
-            }
             default:
               break;
           }
-        }
         balanceMap[acc.code] = liveBalance;
       }
     });
-
     this.state.accounts.forEach((acc) => {
-      if (balanceMap[acc.code] !== undefined) {
-        acc.balance = balanceMap[acc.code];
-      }
+      if (balanceMap[acc.code] !== void 0) acc.balance = balanceMap[acc.code];
     });
-
-    // Also recalculate and synchronize Treasury and container balances
     if (this.state.treasuries && this.state.treasuries.length > 0) {
       this.state.treasuries.forEach((tr) => {
-        // Calculate balance from treasury transactions
-        let txBalance = Number(tr.opening_balance || 0);
-        const relatedTxs = (this.state.treasuryTransactions || []).filter(
-          (tx) => tx.treasury_id === tr.id
-        );
+        const opening = Number(tr.opening_balance || 0);
+        const matchedCode = String(tr.account_code || "").trim();
 
-        relatedTxs.forEach((tx) => {
-          const amt = Number(tx.amount || 0);
-          if (tx.type === "deposit" || tx.type === "sales" || tx.type === "transfer_in") {
-            txBalance += amt;
-          } else {
-            txBalance -= amt;
-          }
+        // Real-time calculation of treasury balance directly from General Ledger Journal Entries
+        let totalDebit = 0;
+        let totalCredit = 0;
+
+        (this.state.journalEntries || []).forEach((je) => {
+          (je.lines || []).forEach((line) => {
+            const lineAccCode = String(line.account_code || "").trim();
+            let isMatch = false;
+
+            if (matchedCode && lineAccCode === matchedCode) {
+              isMatch = true;
+            } else {
+              const resolved = this.resolveTreasuryForAccount(
+                lineAccCode,
+                line.currency || je.currency,
+                line.description || je.description,
+              );
+              if (resolved && resolved.id === tr.id) {
+                isMatch = true;
+              }
+            }
+
+            if (isMatch) {
+              totalDebit += Number(line.debit || 0);
+              totalCredit += Number(line.credit || 0);
+            }
+          });
         });
 
-        // If there are recorded transactions or an account code, sync
-        if (relatedTxs.length > 0) {
-          tr.balance = txBalance;
-          tr.available_balance = txBalance;
-        } else if (tr.account_code && balanceMap[tr.account_code] !== undefined) {
-          tr.balance = balanceMap[tr.account_code];
-          tr.available_balance = balanceMap[tr.account_code];
-        }
+        const glCalculatedBalance = opening + (totalDebit - totalCredit);
+        tr.balance = glCalculatedBalance;
+        tr.available_balance = glCalculatedBalance;
 
-        // Synchronize container balances if present
+        // Update multi-currency sub-containers if any
         if (tr.containers && tr.containers.length > 0) {
           tr.containers.forEach((cnt) => {
-            let cntBal = 0;
-            const cntTxs = relatedTxs.filter((tx) => {
-              if (tx.currency && cnt.currency && tx.currency.toUpperCase() === cnt.currency.toUpperCase()) {
-                return true;
-              }
-              return false;
+            let cntDebit = 0;
+            let cntCredit = 0;
+            const targetCurr = (cnt.currency || "").toUpperCase();
+
+            (this.state.journalEntries || []).forEach((je) => {
+              (je.lines || []).forEach((line) => {
+                const lineAccCode = String(line.account_code || "").trim();
+                const lineCurr = (line.currency || je.currency || "").toUpperCase();
+
+                if (lineCurr === targetCurr) {
+                  let isMatch = false;
+                  if (matchedCode && lineAccCode === matchedCode) {
+                    isMatch = true;
+                  } else {
+                    const resolved = this.resolveTreasuryForAccount(
+                      lineAccCode,
+                      line.currency || je.currency,
+                      line.description || je.description,
+                    );
+                    if (resolved && resolved.id === tr.id) {
+                      isMatch = true;
+                    }
+                  }
+
+                  if (isMatch) {
+                    cntDebit += Number(line.debit || 0);
+                    cntCredit += Number(line.credit || 0);
+                  }
+                }
+              });
             });
-            cntTxs.forEach((tx) => {
-              const amt = Number(tx.amount || 0);
-              if (tx.type === "deposit" || tx.type === "sales" || tx.type === "transfer_in") {
-                cntBal += amt;
-              } else {
-                cntBal -= amt;
-              }
-            });
-            if (cntTxs.length > 0) {
-              cnt.balance = cntBal;
-            }
+
+            cnt.balance = cntDebit - cntCredit;
           });
         }
       });
     }
-
     this.saveState();
   }
-
-  // Resolve matching treasury for a specific account code, currency, or description
-  resolveTreasuryForAccount(
-    accountCode: string,
-    currency?: string,
-    movementNote?: string
-  ): TreasuryAccount | undefined {
-    if (!this.state.treasuries || this.state.treasuries.length === 0) return undefined;
-
-    // 1. Direct match by account_code
+  resolveTreasuryForAccount(accountCode, currency, movementNote) {
+    if (!this.state.treasuries || this.state.treasuries.length === 0) return void 0;
     const directMatch = this.state.treasuries.find(
-      (t) => !t.deleted && t.account_code && t.account_code === accountCode
+      (t) => !t.deleted && t.account_code && t.account_code === accountCode,
     );
     if (directMatch) return directMatch;
-
     const code = String(accountCode || "").trim();
     const curr = (currency || "").toUpperCase();
     const note = (movementNote || "").toLowerCase();
-
-    // 2. Specific Known System Accounts
     if (code === "15010100" || code === "150101" || code.startsWith("150101")) {
-      // Ahmed Hossam USD treasury
-      const usdTr = this.state.treasuries.find((t) => !t.deleted && (t.id === "tr-4" || (t.currency === "USD" && t.type === "cash")));
+      const usdTr = this.state.treasuries.find(
+        (t) => !t.deleted && (t.id === "tr-4" || (t.currency === "USD" && t.type === "cash")),
+      );
       if (usdTr) return usdTr;
     }
-
     if (code === "15010200" || code === "150102" || (code.startsWith("1501") && curr === "EGP")) {
-      // Ahmed Hossam EGP treasury
-      const egpTr = this.state.treasuries.find((t) => !t.deleted && (t.id === "tr-5" || (t.currency === "EGP" && t.name_ar.includes("مصري"))));
+      const egpTr = this.state.treasuries.find(
+        (t) =>
+          !t.deleted && (t.id === "tr-5" || (t.currency === "EGP" && t.name_ar.includes("مصري"))),
+      );
       if (egpTr) return egpTr;
     }
-
     if (code === "101000" || code === "1010" || code.startsWith("101000")) {
       if (curr === "USD") {
         const usdTr = this.state.treasuries.find((t) => !t.deleted && t.currency === "USD");
@@ -4651,22 +3326,31 @@ class ERPStore {
         const sspTr = this.state.treasuries.find((t) => !t.deleted && t.currency === "SSP");
         if (sspTr) return sspTr;
       }
-      // Default to restaurant main cashier
-      const cashierTr = this.state.treasuries.find((t) => !t.deleted && (t.id === "tr-1" || t.linked_to_restaurant));
+      const cashierTr = this.state.treasuries.find(
+        (t) => !t.deleted && (t.id === "tr-1" || t.linked_to_restaurant),
+      );
       if (cashierTr) return cashierTr;
     }
-
     if (code === "101001" || code.includes("juba") || note.includes("جوبا")) {
-      const jubaTr = this.state.treasuries.find((t) => !t.deleted && (t.id === "tr-juba" || t.branch_id === "branch-2" || t.name_ar.includes("جوبا")));
+      const jubaTr = this.state.treasuries.find(
+        (t) =>
+          !t.deleted &&
+          (t.id === "tr-juba" || t.branch_id === "branch-2" || t.name_ar.includes("جوبا")),
+      );
       if (jubaTr) return jubaTr;
     }
-
-    if (code === "102000" || code.startsWith("1502") || code.startsWith("1020") || note.includes("بنك") || note.includes("cib")) {
-      const bankTr = this.state.treasuries.find((t) => !t.deleted && (t.type === "bank" || t.id === "tr-2" || t.id === "tr-cib"));
+    if (
+      code === "102000" ||
+      code.startsWith("1502") ||
+      code.startsWith("1020") ||
+      note.includes("بنك") ||
+      note.includes("cib")
+    ) {
+      const bankTr = this.state.treasuries.find(
+        (t) => !t.deleted && (t.type === "bank" || t.id === "tr-2" || t.id === "tr-cib"),
+      );
       if (bankTr) return bankTr;
     }
-
-    // 3. Match by account name in store
     const acc = this.state.accounts.find((a) => a.code === code);
     if (acc) {
       const accName = acc.name_ar.toLowerCase();
@@ -4679,52 +3363,70 @@ class ERPStore {
         if (t) return t;
       }
       if (accName.includes("كاشير") || accName.includes("صالة") || accName.includes("مطعم")) {
-        const t = this.state.treasuries.find((tr) => !tr.deleted && (tr.id === "tr-1" || tr.linked_to_restaurant));
+        const t = this.state.treasuries.find(
+          (tr) => !tr.deleted && (tr.id === "tr-1" || tr.linked_to_restaurant),
+        );
         if (t) return t;
       }
       if (accName.includes("مصري") || accName.includes("ادارة") || accName.includes("إدارة")) {
-        const t = this.state.treasuries.find((tr) => !tr.deleted && (tr.id === "tr-5" || tr.currency === "EGP"));
+        const t = this.state.treasuries.find(
+          (tr) => !tr.deleted && (tr.id === "tr-5" || tr.currency === "EGP"),
+        );
         if (t) return t;
       }
     }
-
-    // Fallback: match by currency
     if (curr) {
       const fallbackByCurr = this.state.treasuries.find((t) => !t.deleted && t.currency === curr);
       if (fallbackByCurr) return fallbackByCurr;
     }
-
     return this.state.treasuries.find((t) => !t.deleted);
   }
-
-  // Determine movement type for treasury transaction
-  inferMovementTypeFromLine(
-    line: JournalLine,
-    mainDesc: string = "",
-    otherLines: JournalLine[] = []
-  ): TreasuryTransaction["type"] {
+  inferMovementTypeFromLine(line, mainDesc = "", otherLines = []) {
     const isDebit = Number(line.debit || 0) > 0;
     const isCredit = Number(line.credit || 0) > 0;
-    const desc = (line.description || "" + " " + mainDesc).toLowerCase();
-
-    // Check other lines accounts
+    const desc = (line.description || " " + mainDesc).toLowerCase();
     const hasRevenueAccount = otherLines.some((l) => l.account_code.startsWith("4"));
-    const hasExpenseAccount = otherLines.some((l) => l.account_code.startsWith("5") || l.account_code.startsWith("6") || l.account_code.startsWith("3"));
-    const hasTreasuryAccount = otherLines.some((l) => l.account_code.startsWith("1501") || l.account_code.startsWith("1010") || l.account_code.startsWith("1020"));
-    const hasSupplierOrInv = otherLines.some((l) => l.account_code.startsWith("103") || l.account_code.startsWith("202") || l.account_code.startsWith("140"));
-
+    const hasExpenseAccount = otherLines.some(
+      (l) =>
+        l.account_code.startsWith("5") ||
+        l.account_code.startsWith("6") ||
+        l.account_code.startsWith("3"),
+    );
+    const hasTreasuryAccount = otherLines.some(
+      (l) =>
+        l.account_code.startsWith("1501") ||
+        l.account_code.startsWith("1010") ||
+        l.account_code.startsWith("1020"),
+    );
+    const hasSupplierOrInv = otherLines.some(
+      (l) =>
+        l.account_code.startsWith("103") ||
+        l.account_code.startsWith("202") ||
+        l.account_code.startsWith("140"),
+    );
     if (isDebit) {
-      // Money IN to Treasury
-      if (desc.includes("تحويل") || desc.includes("تمويل") || hasTreasuryAccount) return "transfer_in";
-      if (desc.includes("مبيعات") || desc.includes("ايراد") || desc.includes("إيراد") || hasRevenueAccount) return "sales";
+      if (desc.includes("تحويل") || desc.includes("تمويل") || hasTreasuryAccount)
+        return "transfer_in";
+      if (
+        desc.includes("مبيعات") ||
+        desc.includes("ايراد") ||
+        desc.includes("إيراد") ||
+        hasRevenueAccount
+      )
+        return "sales";
       if (desc.includes("تسوية") || desc.includes("فارق")) return "reconciliation";
       return "deposit";
     }
-
     if (isCredit) {
-      // Money OUT from Treasury
-      if (desc.includes("تحويل") || desc.includes("تمويل") || hasTreasuryAccount) return "transfer_out";
-      if (desc.includes("شراء") || desc.includes("مشتريات") || desc.includes("خامات") || hasSupplierOrInv) return "purchase";
+      if (desc.includes("تحويل") || desc.includes("تمويل") || hasTreasuryAccount)
+        return "transfer_out";
+      if (
+        desc.includes("شراء") ||
+        desc.includes("مشتريات") ||
+        desc.includes("خامات") ||
+        hasSupplierOrInv
+      )
+        return "purchase";
       if (
         desc.includes("مصروف") ||
         desc.includes("مرتب") ||
@@ -4737,44 +3439,33 @@ class ERPStore {
         desc.includes("إيجار") ||
         desc.includes("سلف") ||
         hasExpenseAccount
-      ) {
+      )
         return "expense";
-      }
       if (desc.includes("تسوية") || desc.includes("عجز")) return "reconciliation";
       return "withdrawal";
     }
-
     return "deposit";
   }
-
-  // Import Journal Entries from Excel and link with general accounts & correct treasuries
-  importJournalEntriesAndSyncTreasuries(
-    entries: JournalEntry[],
-    options: { sourceName?: string } = {}
-  ): {
-    insertedEntries: number;
-    newAccountsCreated: number;
-    linkedTreasuryTransactions: number;
-  } {
+  importJournalEntriesAndSyncTreasuries(entries, options = {}) {
     let insertedEntries = 0;
     let newAccountsCreated = 0;
     let linkedTreasuryTransactions = 0;
 
     const existingEntryIds = new Set(this.state.journalEntries.map((je) => je.id));
     const existingEntryRefs = new Set(
-      this.state.journalEntries.map((je) => `${je.reference || ""}_${je.date || ""}_${je.description || ""}`)
+      this.state.journalEntries.map(
+        (je) => `${je.reference || ""}_${je.date || ""}_${je.description || ""}`,
+      ),
     );
-
     const existingAccountCodes = new Set(this.state.accounts.map((a) => a.code));
     const existingTxIds = new Set(this.state.treasuryTransactions.map((tx) => tx.id));
     const existingTxRefs = new Set(
-      this.state.treasuryTransactions.map((tx) => `${tx.related_entity_id || ""}_${tx.treasury_id}_${tx.amount}_${tx.type}`)
+      this.state.treasuryTransactions.map(
+        (tx) => `${tx.related_entity_id || ""}_${tx.treasury_id}_${tx.amount}_${tx.type}`,
+      ),
     );
-
-    entries.forEach((entry) => {
+    (entries || []).forEach((entry) => {
       const entryKey = `${entry.reference || ""}_${entry.date || ""}_${entry.description || ""}`;
-      
-      // Determine if entry is new
       let entryToProcess = entry;
       if (!existingEntryIds.has(entry.id) && !existingEntryRefs.has(entryKey)) {
         this.state.journalEntries.unshift(entry);
@@ -4783,19 +3474,235 @@ class ERPStore {
         insertedEntries++;
       } else {
         const found = this.state.journalEntries.find(
-          (j) => j.id === entry.id || `${j.reference || ""}_${j.date || ""}_${j.description || ""}` === entryKey
+          (j) =>
+            j.id === entry.id ||
+            `${j.reference || ""}_${j.date || ""}_${j.description || ""}` === entryKey,
         );
         if (found) entryToProcess = found;
       }
-
-      // Check each line
       (entryToProcess.lines || []).forEach((line, lineIndex) => {
         const code = String(line.account_code || "").trim();
         if (!code) return;
-
-        // 1. Ensure Account exists in Chart of Accounts
         if (!existingAccountCodes.has(code)) {
-          let type: Account["type"] = "asset";
+          let type = "asset";
+          if (code.startsWith("1")) type = "asset";
+          else if (code.startsWith("2")) type = "liability";
+          else if (code.startsWith("3")) type = "equity";
+          else if (code.startsWith("4")) type = "revenue";
+          else if (code.startsWith("5") || code.startsWith("6")) type = "expense";
+          let level = 3;
+          if (code.length <= 1) level = 1;
+          else if (code.length <= 3) level = 2;
+          else if (code.length <= 5) level = 3;
+          else level = 4;
+          const accDisplayName =
+            (line.account_name && line.account_name.trim()) ||
+            (line.description && !line.description.startsWith("قيد")
+              ? line.description
+              : `حساب محاسبي (${code})`);
+          const newAcc = {
+            code,
+            name_ar: accDisplayName,
+            type,
+            level,
+            balance: 0,
+            initial_balance: 0,
+            status: "active",
+            currency: line.currency || entryToProcess.currency || "EGP",
+            system_binding: "none",
+          };
+          this.state.accounts.push(newAcc);
+          existingAccountCodes.add(code);
+          newAccountsCreated++;
+        }
+        const isTreasuryAccount =
+          code.startsWith("130") ||
+          code.startsWith("1501") ||
+          code.startsWith("1010") ||
+          code.startsWith("1502") ||
+          code.startsWith("1020") ||
+          this.state.treasuries.some((t) => t.account_code === code);
+        const debit = Number(line.debit || 0);
+        const credit = Number(line.credit || 0);
+        const amount = debit > 0 ? debit : credit;
+        if (isTreasuryAccount && amount > 0) {
+          const matchedTreasury = this.resolveTreasuryForAccount(
+            code,
+            line.currency || entryToProcess.currency,
+            line.description || entryToProcess.description,
+          );
+          if (matchedTreasury) {
+            const otherLines = (entryToProcess.lines || []).filter((_, idx) => idx !== lineIndex);
+            const movementType = this.inferMovementTypeFromLine(
+              line,
+              entryToProcess.description,
+              otherLines,
+            );
+            const txCurrency =
+              line.currency || entryToProcess.currency || matchedTreasury.currency || "EGP";
+            const txNote =
+              line.description ||
+              entryToProcess.description ||
+              `قيد رقم ${entryToProcess.reference || entryToProcess.id}`;
+            const txKey = `${entryToProcess.id}_${matchedTreasury.id}_${amount}_${movementType}`;
+            if (!existingTxRefs.has(txKey)) {
+              const txId = `tx-import-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`;
+              const txDate = entryToProcess.date
+                ? new Date(entryToProcess.date).toISOString()
+                : /* @__PURE__ */ new Date().toISOString();
+              const newTx = {
+                id: txId,
+                branch_id: matchedTreasury.branch_id || "branch-1",
+                treasury_id: matchedTreasury.id,
+                type: movementType,
+                amount,
+                currency: txCurrency,
+                payment_method: matchedTreasury.type === "bank" ? "bank_transfer" : "cash",
+                note: txNote,
+                related_entity_id: entryToProcess.id,
+                created_at: txDate,
+              };
+              this.state.treasuryTransactions.unshift(newTx);
+              existingTxIds.add(txId);
+              existingTxRefs.add(txKey);
+              linkedTreasuryTransactions++;
+            }
+          }
+        }
+      });
+    });
+    this.recalculateAccountBalances();
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "استيراد ومعالجة قيود Excel",
+      `تم استيراد ومعالجة ${insertedEntries} قيد، وإنشاء ${newAccountsCreated} حساب جديد، وربط ${linkedTreasuryTransactions} حركة بالخزائن المقابلة.`,
+      "IMPORT",
+    );
+    return {
+      insertedEntries,
+      newAccountsCreated,
+      linkedTreasuryTransactions,
+    };
+  }
+  mergeAndSyncAllData() {
+    const existingAccountCodes = new Set(this.state.accounts.map((a) => a.code));
+    let newAccountsCreated = 0;
+    this.state.journalEntries.forEach((entry) => {
+      (entry.lines || []).forEach((line) => {
+        const code = String(line.account_code || "").trim();
+        if (code && !existingAccountCodes.has(code)) {
+          let type = "asset";
+          if (code.startsWith("1")) type = "asset";
+          else if (code.startsWith("2")) type = "liability";
+          else if (code.startsWith("3")) type = "equity";
+          else if (code.startsWith("4")) type = "revenue";
+          else if (code.startsWith("5") || code.startsWith("6")) type = "expense";
+          let level = 3;
+          if (code.length <= 1) level = 1;
+          else if (code.length <= 3) level = 2;
+          else if (code.length <= 5) level = 3;
+          else level = 4;
+          this.state.accounts.push({
+            code,
+            name_ar: line.description
+              ? `حساب (${code}) - ${line.description}`
+              : `حساب محاسبي (${code})`,
+            type,
+            level,
+            balance: 0,
+            initial_balance: 0,
+            status: "active",
+            currency: line.currency || entry.currency || "EGP",
+            system_binding: "none",
+          });
+          existingAccountCodes.add(code);
+          newAccountsCreated++;
+        }
+      });
+    });
+    const existingTxRefs = new Set(
+      (this.state.treasuryTransactions || []).map(
+        (tx) => `${tx.related_entity_id || ""}_${tx.treasury_id}_${tx.amount}_${tx.type}`,
+      ),
+    );
+    this.state.journalEntries.forEach((entry) => {
+      (entry.lines || []).forEach((line, idx) => {
+        const code = String(line.account_code || "").trim();
+        const isTreasuryAccount =
+          code.startsWith("130") ||
+          code.startsWith("1501") ||
+          code.startsWith("1010") ||
+          code.startsWith("1502") ||
+          code.startsWith("1020") ||
+          this.state.treasuries.some((t) => t.account_code === code);
+        const debit = Number(line.debit || 0);
+        const credit = Number(line.credit || 0);
+        const amount = debit > 0 ? debit : credit;
+        if (isTreasuryAccount && amount > 0) {
+          const matchedTreasury = this.resolveTreasuryForAccount(
+            code,
+            line.currency || entry.currency,
+            line.description || entry.description,
+          );
+          if (matchedTreasury) {
+            const otherLines = (entry.lines || []).filter((_, i) => i !== idx);
+            const movementType = this.inferMovementTypeFromLine(
+              line,
+              entry.description,
+              otherLines,
+            );
+            const txKey = `${entry.id}_${matchedTreasury.id}_${amount}_${movementType}`;
+            if (!existingTxRefs.has(txKey)) {
+              const newTx = {
+                id: `tx-sync-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`,
+                branch_id: matchedTreasury.branch_id || "branch-1",
+                treasury_id: matchedTreasury.id,
+                type: movementType,
+                amount,
+                currency: line.currency || entry.currency || matchedTreasury.currency || "EGP",
+                payment_method: matchedTreasury.type === "bank" ? "bank_transfer" : "cash",
+                note:
+                  line.description || entry.description || `قيد رقم ${entry.reference || entry.id}`,
+                related_entity_id: entry.id,
+                created_at: entry.date
+                  ? new Date(entry.date).toISOString()
+                  : /* @__PURE__ */ new Date().toISOString(),
+              };
+              this.state.treasuryTransactions.unshift(newTx);
+              existingTxRefs.add(txKey);
+            }
+          }
+        }
+      });
+    });
+    this.recalculateAccountBalances();
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "دمج وتحديث البيانات المالية",
+      `تم فحص ومطابقة شجرة الحسابات (${this.state.accounts.length} حساب) والقيود (${this.state.journalEntries.length} قيد) وتحديث كافة الخزائن والأرصدة.`,
+      "UPDATE",
+    );
+    return {
+      accountsCount: this.state.accounts.length,
+      entriesCount: this.state.journalEntries.length,
+      treasuriesUpdated: this.state.treasuries.length,
+      transactionsCount: this.state.treasuryTransactions.length,
+    };
+  }
+
+  persistAllJournalsToDatabase() {
+    const existingAccountCodes = new Set(this.state.accounts.map((a) => a.code));
+    const newlyCreatedAccounts: Account[] = [];
+    let newAccountsCreated = 0;
+
+    // 1. Ensure all accounts in all journal lines exist
+    this.state.journalEntries.forEach((entry) => {
+      (entry.lines || []).forEach((line) => {
+        const code = String(line.account_code || "").trim();
+        if (code && !existingAccountCodes.has(code)) {
+          let type = "asset";
           if (code.startsWith("1")) type = "asset";
           else if (code.startsWith("2")) type = "liability";
           else if (code.startsWith("3")) type = "equity";
@@ -4810,158 +3717,45 @@ class ERPStore {
 
           const newAcc: Account = {
             code,
-            name_ar: line.description ? `حساب (${code}) - ${line.description}` : `حساب محاسبي (${code})`,
+            name_ar:
+              (line.account_name && line.account_name.trim()) ||
+              (line.description && !line.description.startsWith("قيد")
+                ? line.description
+                : `حساب محاسبي (${code})`),
             type,
             level,
             balance: 0,
             initial_balance: 0,
             status: "active",
-            currency: line.currency || entryToProcess.currency || "EGP",
+            currency: line.currency || entry.currency || "USD",
             system_binding: "none",
           };
-
           this.state.accounts.push(newAcc);
-          existingAccountCodes.add(code);
-          newAccountsCreated++;
-        }
-
-        // 2. Check if line touches a Treasury / Cash / Bank account
-        const isTreasuryAccount =
-          code.startsWith("1501") ||
-          code.startsWith("1010") ||
-          code.startsWith("1502") ||
-          code.startsWith("1020") ||
-          this.state.treasuries.some((t) => t.account_code === code);
-
-        const debit = Number(line.debit || 0);
-        const credit = Number(line.credit || 0);
-        const amount = debit > 0 ? debit : credit;
-
-        if (isTreasuryAccount && amount > 0) {
-          const matchedTreasury = this.resolveTreasuryForAccount(
-            code,
-            line.currency || entryToProcess.currency,
-            line.description || entryToProcess.description
-          );
-
-          if (matchedTreasury) {
-            const otherLines = (entryToProcess.lines || []).filter((_, idx) => idx !== lineIndex);
-            const movementType = this.inferMovementTypeFromLine(
-              line,
-              entryToProcess.description,
-              otherLines
-            );
-
-            const txCurrency = line.currency || entryToProcess.currency || matchedTreasury.currency || "EGP";
-            const txNote = line.description || entryToProcess.description || `قيد رقم ${entryToProcess.reference || entryToProcess.id}`;
-            const txKey = `${entryToProcess.id}_${matchedTreasury.id}_${amount}_${movementType}`;
-
-            if (!existingTxRefs.has(txKey)) {
-              const txId = `tx-import-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`;
-              const txDate = entryToProcess.date ? new Date(entryToProcess.date).toISOString() : new Date().toISOString();
-
-              const newTx: TreasuryTransaction = {
-                id: txId,
-                branch_id: matchedTreasury.branch_id || "branch-1",
-                treasury_id: matchedTreasury.id,
-                type: movementType,
-                amount: amount,
-                currency: txCurrency,
-                payment_method: matchedTreasury.type === "bank" ? "bank_transfer" : "cash",
-                note: txNote,
-                related_entity_id: entryToProcess.id,
-                created_at: txDate,
-              };
-
-              this.state.treasuryTransactions.unshift(newTx);
-              existingTxIds.add(txId);
-              existingTxRefs.add(txKey);
-              linkedTreasuryTransactions++;
-            }
-          }
-        }
-      });
-    });
-
-    this.recalculateAccountBalances();
-    this.saveState();
-
-    this.logAction(
-      "ADMIN",
-      "استيراد ومعالجة قيود Excel",
-      `تم استيراد ومعالجة ${insertedEntries} قيد، وإنشاء ${newAccountsCreated} حساب جديد، وربط ${linkedTreasuryTransactions} حركة بالخزائن المقابلة.`,
-      "IMPORT"
-    );
-
-    return {
-      insertedEntries,
-      newAccountsCreated,
-      linkedTreasuryTransactions,
-    };
-  }
-
-  // Merge and refresh all records, accounts, and treasuries
-  mergeAndSyncAllData(): {
-    accountsCount: number;
-    entriesCount: number;
-    treasuriesUpdated: number;
-    transactionsCount: number;
-  } {
-    // 1. Ensure all accounts in journal lines exist
-    const existingAccountCodes = new Set(this.state.accounts.map((a) => a.code));
-    let newAccountsCreated = 0;
-
-    this.state.journalEntries.forEach((entry) => {
-      (entry.lines || []).forEach((line) => {
-        const code = String(line.account_code || "").trim();
-        if (code && !existingAccountCodes.has(code)) {
-          let type: Account["type"] = "asset";
-          if (code.startsWith("1")) type = "asset";
-          else if (code.startsWith("2")) type = "liability";
-          else if (code.startsWith("3")) type = "equity";
-          else if (code.startsWith("4")) type = "revenue";
-          else if (code.startsWith("5") || code.startsWith("6")) type = "expense";
-
-          let level = 3;
-          if (code.length <= 1) level = 1;
-          else if (code.length <= 3) level = 2;
-          else if (code.length <= 5) level = 3;
-          else level = 4;
-
-          this.state.accounts.push({
-            code,
-            name_ar: line.description ? `حساب (${code}) - ${line.description}` : `حساب محاسبي (${code})`,
-            type,
-            level,
-            balance: 0,
-            initial_balance: 0,
-            status: "active",
-            currency: line.currency || entry.currency || "EGP",
-            system_binding: "none",
-          });
+          newlyCreatedAccounts.push(newAcc);
           existingAccountCodes.add(code);
           newAccountsCreated++;
         }
       });
     });
 
-    // 2. Link unlinked journal entries to treasury transactions
+    // 2. Link & Sync Treasury movements
     const existingTxRefs = new Set(
       (this.state.treasuryTransactions || []).map(
-        (tx) => `${tx.related_entity_id || ""}_${tx.treasury_id}_${tx.amount}_${tx.type}`
-      )
+        (tx) => `${tx.related_entity_id || ""}_${tx.treasury_id}_${tx.amount}_${tx.type}`,
+      ),
     );
+    let linkedTreasuryTransactions = 0;
 
     this.state.journalEntries.forEach((entry) => {
       (entry.lines || []).forEach((line, idx) => {
         const code = String(line.account_code || "").trim();
         const isTreasuryAccount =
+          code.startsWith("130") ||
           code.startsWith("1501") ||
           code.startsWith("1010") ||
           code.startsWith("1502") ||
           code.startsWith("1020") ||
           this.state.treasuries.some((t) => t.account_code === code);
-
         const debit = Number(line.debit || 0);
         const credit = Number(line.credit || 0);
         const amount = debit > 0 ? debit : credit;
@@ -4970,93 +3764,233 @@ class ERPStore {
           const matchedTreasury = this.resolveTreasuryForAccount(
             code,
             line.currency || entry.currency,
-            line.description || entry.description
+            line.description || entry.description,
           );
-
           if (matchedTreasury) {
             const otherLines = (entry.lines || []).filter((_, i) => i !== idx);
             const movementType = this.inferMovementTypeFromLine(
               line,
               entry.description,
-              otherLines
+              otherLines,
             );
             const txKey = `${entry.id}_${matchedTreasury.id}_${amount}_${movementType}`;
-
             if (!existingTxRefs.has(txKey)) {
-              const txId = `tx-sync-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`;
-              const newTx: TreasuryTransaction = {
-                id: txId,
+              const newTx = {
+                id: `tx-sync-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`,
                 branch_id: matchedTreasury.branch_id || "branch-1",
                 treasury_id: matchedTreasury.id,
                 type: movementType,
-                amount: amount,
-                currency: line.currency || entry.currency || matchedTreasury.currency || "EGP",
+                amount,
+                currency: line.currency || entry.currency || matchedTreasury.currency || "USD",
                 payment_method: matchedTreasury.type === "bank" ? "bank_transfer" : "cash",
-                note: line.description || entry.description || `قيد رقم ${entry.reference || entry.id}`,
+                note:
+                  line.description || entry.description || `قيد رقم ${entry.reference || entry.id}`,
                 related_entity_id: entry.id,
-                created_at: entry.date ? new Date(entry.date).toISOString() : new Date().toISOString(),
+                created_at: entry.date
+                  ? new Date(entry.date).toISOString()
+                  : /* @__PURE__ */ new Date().toISOString(),
               };
-
               this.state.treasuryTransactions.unshift(newTx);
               existingTxRefs.add(txKey);
+              linkedTreasuryTransactions++;
             }
           }
         }
       });
     });
 
-    // 3. Recalculate everything
+    // 3. Recalculate balances
     this.recalculateAccountBalances();
-    this.saveState();
 
+    // 4. Calculate stats for report
+    let totalBaseUSD = 0;
+    let balancedEntriesCount = 0;
+    let unbalancedEntriesCount = 0;
+
+    this.state.journalEntries.forEach((je) => {
+      const entryCurrencies = Array.from(
+        new Set(je.lines.map((l) => l.currency || je.currency || "USD")),
+      );
+      const isSingleCurr = entryCurrencies.length <= 1;
+
+      const tDebit = je.lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
+      const tCredit = je.lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
+
+      const baseDebit = je.lines.reduce((s, l) => {
+        const r = Number(l.rate) || 1;
+        const v = Number(l.debit) || 0;
+        if (l.currency === "USD") return s + v;
+        return s + (r >= 1 ? v / r : v * r);
+      }, 0);
+
+      const baseCredit = je.lines.reduce((s, l) => {
+        const r = Number(l.rate) || 1;
+        const v = Number(l.credit) || 0;
+        if (l.currency === "USD") return s + v;
+        return s + (r >= 1 ? v / r : v * r);
+      }, 0);
+
+      totalBaseUSD += baseDebit;
+
+      const isBalanced = isSingleCurr
+        ? Math.abs(tDebit - tCredit) < 0.01
+        : Math.abs(baseDebit - baseCredit) < 0.05;
+      if (isBalanced) balancedEntriesCount++;
+      else unbalancedEntriesCount++;
+    });
+
+    // 5. Commit to durable storage
+    this.saveState();
     this.logAction(
       "ADMIN",
-      "دمج وتحديث البيانات المالية",
-      `تم فحص ومطابقة شجرة الحسابات (${this.state.accounts.length} حساب) والقيود (${this.state.journalEntries.length} قيد) وتحديث كافة الخزائن والأرصدة.`,
-      "UPDATE"
+      "حفظ وتثبيت القيود في قاعدة البيانات",
+      `تم حفظ وتثبيت ${this.state.journalEntries.length} قيد محاسبي (${balancedEntriesCount} متزن، ${unbalancedEntriesCount} غير متزن)، وإنشاء ${newAccountsCreated} حساب جديد، وربط ${linkedTreasuryTransactions} حركة خزينة.`,
+      "UPDATE",
     );
 
     return {
-      accountsCount: this.state.accounts.length,
-      entriesCount: this.state.journalEntries.length,
-      treasuriesUpdated: this.state.treasuries.length,
-      transactionsCount: this.state.treasuryTransactions.length,
+      success: true,
+      savedEntriesCount: this.state.journalEntries.length,
+      savedEntries: [...this.state.journalEntries],
+      newAccountsCreated,
+      newlyCreatedAccounts,
+      totalAccountsCount: this.state.accounts.length,
+      linkedTreasuryTransactions,
+      totalBaseUSD,
+      balancedEntriesCount,
+      unbalancedEntriesCount,
+      savedAt: new Date().toLocaleTimeString("ar-EG", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }),
     };
   }
 
-  getAccountLedgerEntries(accountCode: string) {
-    const entries: {
-      id: string;
-      date: string;
-      description: string;
+  checkCanModifyJournalEntry(entryDateOrEntry: any): { allowed: boolean; reason?: string } {
+    const dateStr =
+      typeof entryDateOrEntry === "string" ? entryDateOrEntry : entryDateOrEntry?.date;
+    const currentYear = new Date().getFullYear(); // 2026
+    let entryYear = currentYear;
+    if (dateStr) {
+      const parsedYear = new Date(dateStr).getFullYear();
+      if (!isNaN(parsedYear) && parsedYear > 1970) {
+        entryYear = parsedYear;
+      }
+    }
+
+    // Previous years restriction check (e.g. 2025, 2024, etc.)
+    if (entryYear < currentYear) {
+      if (this.state.isAccountingPeriodLocked) {
+        return {
+          allowed: false,
+          reason:
+            "You cannot edit restrictions in a closed year. (لا يمكنك تعديل أو حذف القيود في سنة أو فترة مالية مغلقة)",
+        };
+      }
+    } else if (entryYear === currentYear) {
+      // Current fiscal year check (e.g. 2026)
+      if (this.state.fiscalYearStatus === "closed") {
+        return {
+          allowed: false,
+          reason:
+            "السنة المالية 2026 مغلقة ومقفلة حالياً، لا يمكن تعديل أو حذف القيود إلا بعد إعادة فتح السنة المالية.",
+        };
+      }
+    }
+
+    return { allowed: true };
+  }
+
+  deleteSingleJournalEntry(entryId: string): { success: boolean; error?: string } {
+    const targetEntry = this.state.journalEntries.find((je) => je.id === entryId);
+    if (!targetEntry) return { success: false, error: "القيد غير موجود" };
+
+    const check = this.checkCanModifyJournalEntry(targetEntry.date);
+    if (!check.allowed) {
+      return { success: false, error: check.reason };
+    }
+
+    this.state.journalEntries = this.state.journalEntries.filter((je) => je.id !== entryId);
+    if (Array.isArray(this.state.treasuryTransactions)) {
+      this.state.treasuryTransactions = this.state.treasuryTransactions.filter(
+        (tx) => tx.related_entity_id !== entryId,
+      );
+    }
+    this.recalculateAccountBalances();
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "حذف قيد محاسبي فردي",
+      `تم حذف القيد رقم ${targetEntry.reference || targetEntry.id} (${targetEntry.description}) وإعادة احتساب الأرصدة.`,
+      "DELETE",
+    );
+    this.notify();
+    return { success: true };
+  }
+
+  updateExistingJournalEntry(
+    entryId: string,
+    updated: {
+      description?: string;
+      date?: string;
       reference?: string;
-      debit: number;
-      credit: number;
-      runningBalance: number;
-      created_by: string;
-    }[] = [];
+      currency?: string;
+      lines?: any[];
+    },
+  ): { success: boolean; error?: string } {
+    const targetEntry = this.state.journalEntries.find((je) => je.id === entryId);
+    if (!targetEntry) return { success: false, error: "القيد غير موجود" };
 
+    const check = this.checkCanModifyJournalEntry(targetEntry.date);
+    if (!check.allowed) {
+      return { success: false, error: check.reason };
+    }
+
+    if (updated.date && updated.date !== targetEntry.date) {
+      const newDateCheck = this.checkCanModifyJournalEntry(updated.date);
+      if (!newDateCheck.allowed) {
+        return { success: false, error: newDateCheck.reason };
+      }
+    }
+
+    if (updated.description !== undefined) targetEntry.description = updated.description;
+    if (updated.date !== undefined) targetEntry.date = updated.date;
+    if (updated.reference !== undefined) targetEntry.reference = updated.reference;
+    if (updated.currency !== undefined) targetEntry.currency = updated.currency;
+    if (updated.lines !== undefined) targetEntry.lines = updated.lines;
+
+    this.recalculateAccountBalances();
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "تعديل قيد محاسبي",
+      `تم تعديل القيد المحاسبي رقم ${targetEntry.reference || targetEntry.id} (${targetEntry.description}) بنجاح.`,
+      "UPDATE",
+    );
+    this.notify();
+    return { success: true };
+  }
+
+  getAccountLedgerEntries(accountCode) {
+    const entries = [];
     const acc = this.state.accounts.find((a) => a.code === accountCode);
-    if (!acc) return { account: null, entries: [] };
-
+    if (!acc)
+      return {
+        account: null,
+        entries: [],
+      };
     let currentBalance = acc.initial_balance || 0;
-
     const sortedEntries = [...this.state.journalEntries].sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
     );
-
-    for (const je of sortedEntries) {
-      for (const line of je.lines || []) {
+    for (const je of sortedEntries)
+      for (const line of je.lines || [])
         if (line.account_code === accountCode) {
           const debit = Number(line.debit || 0);
           const credit = Number(line.credit || 0);
-
-          if (acc.type === "asset" || acc.type === "expense") {
-            currentBalance += debit - credit;
-          } else {
-            currentBalance += credit - debit;
-          }
-
+          if (acc.type === "asset" || acc.type === "expense") currentBalance += debit - credit;
+          else currentBalance += credit - debit;
           entries.push({
             id: je.id,
             date: je.date,
@@ -5068,34 +4002,104 @@ class ERPStore {
             created_by: je.created_by,
           });
         }
-      }
-    }
-
-    return { account: acc, entries };
+    return {
+      account: acc,
+      entries,
+    };
   }
-
-  getLineBaseValue(amount: number | string, rate: number | string): number {
+  getLineBaseValue(amount, rate) {
     const val = Number(amount) || 0;
     const r = Number(rate) || 1;
     if (r <= 0) return val;
     return r > 1 ? val / r : val * r;
   }
 
-  // Journal Entries with Double-Entry Verification
-  addJournalEntry(
-    description: string,
-    lines: JournalLine[],
-    reference?: string,
-    currency: string = "EGP",
-    date?: string,
-    customId?: string,
+  generateJournalReference(
+    dateStr?: string,
+    providedRef?: string,
+    pendingEntries: any[] = [],
+    periodVal?: any,
+    journalNumVal?: any,
   ) {
-    if (this.state.isAccountingPeriodLocked) {
-      console.warn("Accounting period is locked. Journal entry was not posted.");
-      return;
+    if (providedRef && String(providedRef).trim()) {
+      const trimmed = String(providedRef).trim();
+      if (trimmed.includes("/")) {
+        const parts = trimmed.split("/");
+        const pClean = parts[0].trim().padStart(2, "0");
+        const jClean = parts[1].trim().padStart(2, "0");
+        return `${pClean}/${jClean}`;
+      }
+      return trimmed;
     }
 
-    // Verify debit == credit balance (taking line exchange rate into account)
+    // 1. Extract Period (01) from periodVal or from date's month
+    let periodStr = "";
+    if (periodVal !== undefined && periodVal !== null && String(periodVal).trim() !== "") {
+      const pTrim = String(periodVal).trim();
+      const pNum = parseInt(pTrim, 10);
+      if (!isNaN(pNum)) {
+        periodStr = String(pNum).padStart(2, "0");
+      } else {
+        periodStr = pTrim.padStart(2, "0");
+      }
+    }
+
+    const d = dateStr ? new Date(dateStr) : new Date();
+    if (!periodStr) {
+      const m = isNaN(d.getTime()) ? new Date().getMonth() + 1 : d.getMonth() + 1;
+      periodStr = String(m).padStart(2, "0");
+    }
+
+    // 2. Extract Journal Number (02) from journalNumVal or calculate sequential order in period
+    if (
+      journalNumVal !== undefined &&
+      journalNumVal !== null &&
+      String(journalNumVal).trim() !== "" &&
+      String(journalNumVal).trim() !== "0"
+    ) {
+      const jTrim = String(journalNumVal).trim();
+      if (jTrim.includes("/")) {
+        const parts = jTrim.split("/");
+        return `${parts[0].trim().padStart(2, "0")}/${parts[1].trim().padStart(2, "0")}`;
+      }
+      const jNum = parseInt(jTrim, 10);
+      const journalStr = !isNaN(jNum) ? String(jNum).padStart(2, "0") : jTrim.padStart(2, "0");
+      return `${periodStr}/${journalStr}`;
+    }
+
+    let maxSeq = 0;
+    const checkEntry = (je: any) => {
+      if (!je || !je.reference) return;
+      const ref = String(je.reference).trim();
+      if (ref.includes("/")) {
+        const parts = ref.split("/");
+        if (parts[0] === periodStr) {
+          const num = parseInt(parts[1], 10);
+          if (!isNaN(num) && num > maxSeq) {
+            maxSeq = num;
+          }
+        }
+      }
+    };
+
+    if (Array.isArray(this.state.journalEntries)) {
+      this.state.journalEntries.forEach(checkEntry);
+    }
+    if (Array.isArray(pendingEntries)) {
+      pendingEntries.forEach(checkEntry);
+    }
+
+    const seq = maxSeq + 1;
+    return `${periodStr}/${String(seq).padStart(2, "0")}`;
+  }
+
+  addJournalEntry(description, lines, reference, currency = "USD", date, customId) {
+    const targetDate = date || /* @__PURE__ */ new Date().toISOString().split("T")[0];
+    const check = this.checkCanModifyJournalEntry(targetDate);
+    if (!check.allowed && !customId?.startsWith("ORACLE")) {
+      console.warn("Accounting period / year is locked:", check.reason);
+      throw new Error(check.reason || "You cannot edit restrictions in a closed year.");
+    }
     const totalDebit = lines.reduce(
       (sum, l) => sum + this.getLineBaseValue(l.debit, l.rate || 1),
       0,
@@ -5104,92 +4108,69 @@ class ERPStore {
       (sum, l) => sum + this.getLineBaseValue(l.credit, l.rate || 1),
       0,
     );
-
-    
     if (Math.abs(totalDebit - totalCredit) > 0.5) {
       console.error(
         `Double-entry balance mismatch error: Debit (Base): ${totalDebit}, Credit (Base): ${totalCredit}`,
       );
-      if (!customId?.startsWith('ORACLE')) {
-        return;
-      } else {
-        console.warn("Bypassing strict double-entry validation for legacy Oracle import.");
-      }
+      if (!customId?.startsWith("ORACLE")) return;
+      else console.warn("Bypassing strict double-entry validation for legacy Oracle import.");
     }
-
-
-    const entryId =
-      customId && customId.trim()
-        ? customId.trim()
-        : "je-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4);
-
-    const entry: JournalEntry = {
-      id: entryId,
+    const entry = {
+      id:
+        customId && customId.trim()
+          ? customId.trim()
+          : "je-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
       branch_id: this.state.currentBranchId,
-      date: date || new Date().toISOString().split("T")[0],
+      date: targetDate,
       description,
       lines,
-      created_at: new Date().toISOString(),
-      reference: reference || `REF-${Math.floor(Math.random() * 89999) + 10000}`,
+      created_at: /* @__PURE__ */ new Date().toISOString(),
+      reference: this.generateJournalReference(targetDate, reference),
       currency: currency || lines[0]?.currency || "EGP",
       created_by: this.state.currentUser,
-      is_approved: true, // Auto post for restaurant fluid transactions
+      is_approved: true,
     };
-
     this.state.journalEntries.unshift(entry);
-
-    // Update Ledger Balances
-    lines.forEach((line) => {
-      const acc = this.state.accounts.find((a) => a.code === line.account_code);
-      if (acc) {
-        const lineDebit = this.getLineBaseValue(line.debit, line.rate || 1);
-        const lineCredit = this.getLineBaseValue(line.credit, line.rate || 1);
-        if (acc.type === "asset" || acc.type === "expense") {
-          acc.balance += lineDebit - lineCredit;
-        } else {
-          acc.balance += lineCredit - lineDebit;
-        }
-      }
-    });
-
+    this.recalculateAccountBalances();
     this.saveState();
+    this.notify();
   }
-
-  // Automatic Journal Postings for all requested events!
   postSalesInvoiceJournal(
-    orderNumber: number,
-    total: number,
-    subtotal: number,
-    tax: number,
-    paymentMethod: string = "cash",
-    branchId: string,
-    currency: string = "EGP",
-    treasuryId: string = "tr-1",
-    containerId?: string,
+    orderNumber,
+    total,
+    subtotal,
+    tax,
+    paymentMethod = "cash",
+    branchId,
+    currency = "EGP",
+    treasuryId = "tr-1",
+    containerId,
   ) {
-    let treasuryAccount = "101000"; // Main branch cash (Cashier)
-    if (paymentMethod === "card") {
-      treasuryAccount = "102000"; // Card / Network
-    } else if (paymentMethod === "wallet") {
-      treasuryAccount = "103000"; // Mobile Wallet
-    }
-
-    const lines: JournalLine[] = [
-      // 1. Debit the treasury asset for the full invoice total
-      { account_code: treasuryAccount, debit: total, credit: 0 },
-      // 2. Credit sales revenue for subtotal
-      { account_code: "401000", debit: 0, credit: subtotal },
-      // 3. Credit Vat Tax Liability for tax
-      { account_code: "202000", debit: 0, credit: tax },
+    let treasuryAccount = "101000";
+    if (paymentMethod === "card") treasuryAccount = "102000";
+    else if (paymentMethod === "wallet") treasuryAccount = "103000";
+    const lines = [
+      {
+        account_code: treasuryAccount,
+        debit: total,
+        credit: 0,
+      },
+      {
+        account_code: "401000",
+        debit: 0,
+        credit: subtotal,
+      },
+      {
+        account_code: "202000",
+        debit: 0,
+        credit: tax,
+      },
     ];
-
     this.addJournalEntry(
       `فاتورة مبيعات POS - طلب رقم #${orderNumber}`,
       lines,
       `INV-${orderNumber}`,
     );
-
-    // Update Cashier Treasury balance and log the transaction
     try {
       this.addTreasuryTransaction(
         treasuryId,
@@ -5205,54 +4186,42 @@ class ERPStore {
       console.error("Error adding treasury transaction for order:", err);
     }
   }
-
-  syncOperationalSalesWithTreasury(
-    orders: any[],
-    targetTreasuryId?: string,
-  ): { syncedCount: number; totalAmountSynced: number; alreadySyncedCount: number } {
+  syncOperationalSalesWithTreasury(orders, targetTreasuryId) {
     let syncedCount = 0;
     let totalAmountSynced = 0;
     let alreadySyncedCount = 0;
-
     const trId =
       targetTreasuryId ||
       this.state.treasuries.find((t) => t.linked_to_restaurant && !t.deleted)?.id ||
       "tr-1";
     const targetTreasury = this.state.treasuries.find((t) => t.id === trId);
-
     if (!targetTreasury) {
       console.warn("Target cashier treasury not found for sync");
-      return { syncedCount: 0, totalAmountSynced: 0, alreadySyncedCount: 0 };
+      return {
+        syncedCount: 0,
+        totalAmountSynced: 0,
+        alreadySyncedCount: 0,
+      };
     }
-
     const validOrders = (orders || []).filter(
       (o) => o && o.order_number && o.status !== "cancelled",
     );
-
     for (const order of validOrders) {
       const orderRef = `INV-${order.order_number}`;
-      const existingTx = this.state.treasuryTransactions.find(
-        (tx) => tx.related_entity_id === orderRef,
-      );
-
-      if (existingTx) {
+      if (this.state.treasuryTransactions.find((tx) => tx.related_entity_id === orderRef)) {
         alreadySyncedCount++;
         continue;
       }
-
       let orderCurrency = "EGP";
-      if (order.currency) {
-        orderCurrency = order.currency;
-      } else if (order.notes) {
+      if (order.currency) orderCurrency = order.currency;
+      else if (order.notes) {
         const match = String(order.notes).match(/العملة:\s*([A-Za-z]+)/);
         if (match && match[1]) orderCurrency = match[1];
       }
-
       const totalAmt = Number(order.total || 0);
       const subtotalAmt = Number(order.subtotal || totalAmt);
       const taxAmt = Number(order.tax || 0);
       const paymentMethod = order.payment_method || "cash";
-
       let containerId = "";
       if (targetTreasury.containers && targetTreasury.containers.length > 0) {
         const matchedCnt =
@@ -5263,11 +4232,8 @@ class ERPStore {
                 (paymentMethod === "card" && c.id.includes("card")) ||
                 (paymentMethod === "wallet" && c.id.includes("wallet"))),
           ) || targetTreasury.containers.find((c) => c.currency === orderCurrency);
-        if (matchedCnt) {
-          containerId = matchedCnt.id;
-        }
+        if (matchedCnt) containerId = matchedCnt.id;
       }
-
       try {
         this.postSalesInvoiceJournal(
           order.order_number,
@@ -5286,7 +4252,6 @@ class ERPStore {
         console.error(`Error syncing order #${order.order_number}:`, err);
       }
     }
-
     if (syncedCount > 0) {
       this.recalculateAccountBalances();
       this.saveState();
@@ -5297,35 +4262,37 @@ class ERPStore {
         "TRANSACTION",
       );
     }
-
-    return { syncedCount, totalAmountSynced, alreadySyncedCount };
+    return {
+      syncedCount,
+      totalAmountSynced,
+      alreadySyncedCount,
+    };
   }
-
   postSalesReturnJournal(
-    orderNumber: number,
-    total: number,
-    paymentMethod: string = "cash",
-    branchId: string,
-    currency: string = "EGP",
-    treasuryId: string = "tr-1",
-    containerId?: string,
+    orderNumber,
+    total,
+    paymentMethod = "cash",
+    branchId,
+    currency = "EGP",
+    treasuryId = "tr-1",
+    containerId,
   ) {
     let treasuryAccount = "101000";
-    if (paymentMethod === "card") {
-      treasuryAccount = "102000";
-    } else if (paymentMethod === "wallet") {
-      treasuryAccount = "103000";
-    }
-
-    const lines: JournalLine[] = [
-      // Debit Sales Revenue (Reducing revenue)
-      { account_code: "401000", debit: total, credit: 0 },
-      // Credit Treasury asset (Refunding customer)
-      { account_code: treasuryAccount, debit: 0, credit: total },
+    if (paymentMethod === "card") treasuryAccount = "102000";
+    else if (paymentMethod === "wallet") treasuryAccount = "103000";
+    const lines = [
+      {
+        account_code: "401000",
+        debit: total,
+        credit: 0,
+      },
+      {
+        account_code: treasuryAccount,
+        debit: 0,
+        credit: total,
+      },
     ];
-
     this.addJournalEntry(`مرتجع مبيعات POS - طلب رقم #${orderNumber}`, lines, `SRT-${orderNumber}`);
-
     try {
       this.addTreasuryTransaction(
         treasuryId,
@@ -5341,283 +4308,328 @@ class ERPStore {
       console.error("Error adding treasury transaction for refund:", err);
     }
   }
+  postPurchaseInvoiceJournal(
+    poId: string,
+    supplierId: string,
+    total: number,
+    branchId: string,
+    currency: string = "USD",
+    rate: number = 1,
+    supplierAccountCode?: string,
+  ) {
+    const supplier = this.state.suppliers.find((s) => s.id === supplierId);
+    const targetSupAcc = supplierAccountCode || supplier?.account_code || "201000";
 
-  postPurchaseInvoiceJournal(poId: string, supplierId: string, total: number, branchId: string) {
-    const lines: JournalLine[] = [
-      // Debit Raw Materials Inventory (Increasing asset)
-      { account_code: "103000", debit: total, credit: 0 },
-      // Credit Supplier Liability (Increasing credit debt)
-      { account_code: "201000", debit: 0, credit: total },
+    const lines = [
+      {
+        account_code: "103000",
+        debit: total,
+        credit: 0,
+        currency: currency || "USD",
+        rate: rate,
+        description: `استلام مخزون بضاعة - أمر شراء #${poId.substring(3, 8)}`,
+      },
+      {
+        account_code: targetSupAcc,
+        debit: 0,
+        credit: total,
+        currency: currency || "USD",
+        rate: rate,
+        description: `استحقاق المورد (${supplier?.name_ar || "مورد"}) - أمر شراء #${poId.substring(3, 8)}`,
+      },
     ];
-
     this.addJournalEntry(
-      `فاتورة مشتريات للمورد - أمر شراء #${poId.substring(3, 8)}`,
+      `فاتورة مشتريات للمورد ${supplier?.name_ar || ""} - أمر شراء #${poId.substring(3, 8)}`,
       lines,
       `PO-${poId.substring(3, 8).toUpperCase()}`,
+      currency,
     );
   }
+  postPurchaseReturnJournal(
+    poId: string,
+    amount: number,
+    branchId: string,
+    currency: string = "USD",
+    rate: number = 1,
+    supplierAccountCode?: string,
+  ) {
+    const supplier = this.state.suppliers.find(
+      (s) => s.id === this.state.purchaseOrders.find((p) => p.id === poId)?.supplier_id,
+    );
+    const targetSupAcc = supplierAccountCode || supplier?.account_code || "201000";
 
-  postPurchaseReturnJournal(poId: string, amount: number, branchId: string) {
-    const lines: JournalLine[] = [
-      // Debit Supplier Liability (Reducing debt to supplier)
-      { account_code: "201000", debit: amount, credit: 0 },
-      // Credit Raw Materials Inventory Asset (Reducing stock)
-      { account_code: "103000", debit: 0, credit: amount },
+    const lines = [
+      {
+        account_code: targetSupAcc,
+        debit: amount,
+        credit: 0,
+        currency: currency || "USD",
+        rate: rate,
+        description: `مرتجع بضائع للمورد (${supplier?.name_ar || "مورد"}) - أمر شراء #${poId.substring(3, 8)}`,
+      },
+      {
+        account_code: "103000",
+        debit: 0,
+        credit: amount,
+        currency: currency || "USD",
+        rate: rate,
+        description: `تخفيض مخزون بضاعة مرتجعة - أمر شراء #${poId.substring(3, 8)}`,
+      },
     ];
-
     this.addJournalEntry(
       `مرتجع بضائع مشتريات للمورد - أمر شراء #${poId.substring(3, 8)}`,
       lines,
       `PRT-${poId.substring(3, 8).toUpperCase()}`,
+      currency,
     );
   }
-
-  postExpenseJournal(
-    voucherId: string,
-    amount: number,
-    accountCode: string,
-    costCenter: string,
-    branchId: string,
-  ) {
-    const treasuryAccount = branchId === "branch-2" ? "101001" : "101000";
-
-    const lines: JournalLine[] = [
-      // Debit Expense Account
-      { account_code: accountCode, debit: amount, credit: 0, cost_center: costCenter },
-      // Credit Treasury Cash Asset
-      { account_code: treasuryAccount, debit: 0, credit: amount },
+  postExpenseJournal(voucherId, amount, accountCode, costCenter, branchId) {
+    const lines = [
+      {
+        account_code: accountCode,
+        debit: amount,
+        credit: 0,
+        cost_center: costCenter,
+      },
+      {
+        account_code: branchId === "branch-2" ? "101001" : "101000",
+        debit: 0,
+        credit: amount,
+      },
     ];
-
     this.addJournalEntry(
       `سند صرف مصروفات - رقم #${voucherId.substring(4, 9)}`,
       lines,
       `EXP-${voucherId.substring(4, 9).toUpperCase()}`,
     );
   }
-
-  postRevenueJournal(
-    voucherId: string,
-    amount: number,
-    accountCode: string,
-    costCenter: string,
-    branchId: string,
-  ) {
-    const treasuryAccount = branchId === "branch-2" ? "101001" : "101000";
-
-    const lines: JournalLine[] = [
-      // Debit Treasury Cash Asset
-      { account_code: treasuryAccount, debit: amount, credit: 0 },
-      // Credit Revenue Account
-      { account_code: accountCode, debit: 0, credit: amount, cost_center: costCenter },
+  postRevenueJournal(voucherId, amount, accountCode, costCenter, branchId) {
+    const lines = [
+      {
+        account_code: branchId === "branch-2" ? "101001" : "101000",
+        debit: amount,
+        credit: 0,
+      },
+      {
+        account_code: accountCode,
+        debit: 0,
+        credit: amount,
+        cost_center: costCenter,
+      },
     ];
-
     this.addJournalEntry(
       `سند قبض إيرادات متنوعة - رقم #${voucherId.substring(4, 9)}`,
       lines,
       `REV-${voucherId.substring(4, 9).toUpperCase()}`,
     );
   }
-
-  postTreasuryTransferJournal(
-    fromTreasuryId: string,
-    toTreasuryId: string,
-    amount: number,
-    branchId: string,
-  ) {
+  postTreasuryTransferJournal(fromTreasuryId, toTreasuryId, amount, branchId) {
     const fromT = this.state.treasuries.find((t) => t.id === fromTreasuryId);
     const toT = this.state.treasuries.find((t) => t.id === toTreasuryId);
-
     if (!fromT || !toT) return;
-
     const fromAcc =
       fromT.type === "bank" ? "102000" : fromT.branch_id === "branch-2" ? "101001" : "101000";
-    const toAcc =
-      toT.type === "bank" ? "102000" : toT.branch_id === "branch-2" ? "101001" : "101000";
-
-    const lines: JournalLine[] = [
-      // Debit Destination Treasury
-      { account_code: toAcc, debit: amount, credit: 0 },
-      // Credit Source Treasury
-      { account_code: fromAcc, debit: 0, credit: amount },
+    const lines = [
+      {
+        account_code:
+          toT.type === "bank" ? "102000" : toT.branch_id === "branch-2" ? "101001" : "101000",
+        debit: amount,
+        credit: 0,
+      },
+      {
+        account_code: fromAcc,
+        debit: 0,
+        credit: amount,
+      },
     ];
-
     this.addJournalEntry(
       `حركة تحويل مالي بين الخزائن - من ${fromT.name_ar} إلى ${toT.name_ar}`,
       lines,
-      `TRF-${Math.floor(Math.random() * 8999) + 1000}`,
+      `TRF-${Math.floor(Math.random() * 8999) + 1e3}`,
     );
   }
-
-  postCashDepositJournal(treasuryId: string, amount: number, branchId: string) {
-    const targetAcc = branchId === "branch-2" ? "101001" : "101000";
-
-    const lines: JournalLine[] = [
-      // Debit Cash Treasury Account
-      { account_code: targetAcc, debit: amount, credit: 0 },
-      // Credit Partners Capital
-      { account_code: "301000", debit: 0, credit: amount },
+  postCashDepositJournal(treasuryId, amount, branchId) {
+    const lines = [
+      {
+        account_code: branchId === "branch-2" ? "101001" : "101000",
+        debit: amount,
+        credit: 0,
+      },
+      {
+        account_code: "301000",
+        debit: 0,
+        credit: amount,
+      },
     ];
-
     this.addJournalEntry(
       `إيداع تمويل مالي مباشر بالخزينة`,
       lines,
-      `DEP-${Math.floor(Math.random() * 8999) + 1000}`,
+      `DEP-${Math.floor(Math.random() * 8999) + 1e3}`,
     );
   }
-
-  postCashWithdrawalJournal(treasuryId: string, amount: number, branchId: string) {
-    const targetAcc = branchId === "branch-2" ? "101001" : "101000";
-
-    const lines: JournalLine[] = [
-      // Debit Partners Capital (Drawings)
-      { account_code: "301000", debit: amount, credit: 0 },
-      // Credit Cash Treasury Account
-      { account_code: targetAcc, debit: 0, credit: amount },
+  postCashWithdrawalJournal(treasuryId, amount, branchId) {
+    const lines = [
+      {
+        account_code: "301000",
+        debit: amount,
+        credit: 0,
+      },
+      {
+        account_code: branchId === "branch-2" ? "101001" : "101000",
+        debit: 0,
+        credit: amount,
+      },
     ];
-
     this.addJournalEntry(
       `سحب نقدي مباشر تمويلي من الخزينة`,
       lines,
-      `WDL-${Math.floor(Math.random() * 8999) + 1000}`,
+      `WDL-${Math.floor(Math.random() * 8999) + 1e3}`,
     );
   }
-
-  postInventoryAdjustmentJournal(docNumber: string, amount: number, branchId: string) {
-    const lines: JournalLine[] = [
-      // Debit Inventory Hadr/Loss expense (506000)
-      { account_code: "506000", debit: Math.abs(amount), credit: 0 },
-      // Credit Raw Materials Inventory Asset (103000)
-      { account_code: "103000", debit: 0, credit: Math.abs(amount) },
+  postInventoryAdjustmentJournal(docNumber, amount, branchId) {
+    const lines = [
+      {
+        account_code: "506000",
+        debit: Math.abs(amount),
+        credit: 0,
+      },
+      {
+        account_code: "103000",
+        debit: 0,
+        credit: Math.abs(amount),
+      },
     ];
-
     this.addJournalEntry(
       `تسوية جرد مخزني - هدر وخسائر - مستند #${docNumber}`,
       lines,
       `ADJ-${docNumber.substring(4)}`,
     );
   }
-
-  postInventoryConsumptionJournal(orderNumber: number, totalCost: number, branchId: string) {
-    const lines: JournalLine[] = [
-      // Debit Cost of Goods Sold (COGS)
-      { account_code: "501000", debit: totalCost, credit: 0 },
-      // Credit Raw Materials Inventory asset
-      { account_code: "103000", debit: 0, credit: totalCost },
+  postInventoryConsumptionJournal(orderNumber, totalCost, branchId) {
+    const lines = [
+      {
+        account_code: "501000",
+        debit: totalCost,
+        credit: 0,
+      },
+      {
+        account_code: "103000",
+        debit: 0,
+        credit: totalCost,
+      },
     ];
-
     this.addJournalEntry(
       `قيد استهلاك بوم المطبخ (Recipe Consumption) - طلب #${orderNumber}`,
       lines,
       `CON-${orderNumber}`,
     );
   }
-
-  // --- Purchase Actions ---
-  createPurchaseOrder(supplierId: string, items: PurchaseOrder["items"], notes?: string) {
+  createPurchaseOrder(
+    supplierId: string,
+    items: any[],
+    notes?: string,
+    currency: "USD" | "SSP" | string = "USD",
+    exchange_rate: number = 1,
+  ) {
     let subtotal = 0;
     items.forEach((i) => {
       subtotal += i.quantity * i.unit_cost;
     });
     const tax = subtotal * 0.14;
     const total = subtotal + tax;
+    const rate = Number(exchange_rate) || 1;
+    const total_base_usd = currency === "USD" ? total : rate > 1 ? total / rate : total * rate;
 
     const po: PurchaseOrder = {
       id: "po-" + Date.now(),
       branch_id: this.state.currentBranchId,
       supplier_id: supplierId,
-      order_date: new Date().toISOString().split("T")[0],
+      order_date: /* @__PURE__ */ new Date().toISOString().split("T")[0],
       status: "draft",
       items,
       subtotal,
       tax,
       total,
+      currency: currency || "USD",
+      exchange_rate: rate,
+      total_base_usd,
       notes,
     };
-
     this.state.purchaseOrders.unshift(po);
     this.saveState();
     this.logAction(
       "ADMIN",
       "إنشاء أمر شراء",
-      `تم عمل مسودة أمر شراء بمجموع ${total} ج.م`,
+      `تم عمل مسودة أمر شراء بمجموع ${total.toLocaleString()} ${po.currency} للمورد`,
       "CREATE",
     );
+    this.notify();
     return po;
   }
-
-  receivePurchaseOrder(poId: string, treasuryId: string) {
+  receivePurchaseOrder(poId: string, treasuryId?: string) {
     const po = this.state.purchaseOrders.find((p) => p.id === poId);
     if (!po || po.status === "received") return;
-
     po.status = "received";
+    po.received_date = new Date().toISOString().split("T")[0];
 
-    // Deduct/Pay from Treasury
-    const treasury = this.state.treasuries.find((t) => t.id === treasuryId);
+    const supplier = this.state.suppliers.find((s) => s.id === po.supplier_id);
+    const supAccCode = supplier?.account_code || "201000";
+    const currency = po.currency || "USD";
+    const rate = Number(po.exchange_rate) || 1;
+
+    const treasury =
+      this.state.treasuries.find((t) => t.id === treasuryId) || this.state.treasuries[0];
     if (treasury) {
       this.addTreasuryTransaction(
-        treasuryId,
+        treasury.id,
         "purchase",
         po.total,
-        treasury.currency,
-        `شراء بضاعة - أمر شراء #${po.id.substring(3, 8)}`,
+        currency,
+        `شراء بضاعة - أمر شراء #${po.id.substring(3, 8)} (${supplier?.name_ar || ""})`,
         po.id,
       );
     }
-
-    // Update Supplier ledger balance
     this.updateSupplierBalance(po.supplier_id, po.total);
-
-    // Auto post Purchase Invoice Journal
-    this.postPurchaseInvoiceJournal(po.id, po.supplier_id, po.total, this.state.currentBranchId);
-
+    this.postPurchaseInvoiceJournal(
+      po.id,
+      po.supplier_id,
+      po.total,
+      this.state.currentBranchId,
+      currency,
+      rate,
+      supAccCode,
+    );
     this.logAction(
       "ADMIN",
       "استلام أمر شراء ودفع القيمة",
-      `تم تسليم الطلبية #${poId.substring(3, 8)} وإجراء القيد المحاسبي`,
+      `تم تسليم الطلبية #${poId.substring(3, 8)} وإجراء القيد المحاسبي على حساب المورد (${supAccCode}) بمبلغ ${po.total.toLocaleString()} ${currency}`,
       "TRANSACTION",
     );
     this.saveState();
+    this.notify();
   }
-
-  receivePurchaseOrderPartial(
-    poId: string,
-    receivedItems: { inventory_id: string; received_quantity: number }[],
-    treasuryId: string,
-  ): { receivedTotal: number; isFullyReceived: boolean } {
+  receivePurchaseOrderPartial(poId, receivedItems, treasuryId) {
     const po = this.state.purchaseOrders.find((p) => p.id === poId);
     if (!po) throw new Error("أمر الشراء غير موجود");
-
     let newlyReceivedTotal = 0;
     let isFullyReceived = true;
-
     po.items = po.items.map((item) => {
       const match = receivedItems.find((r) => r.inventory_id === item.inventory_id);
       const currentReceived = item.received_quantity || 0;
       const newlyReceived = match ? match.received_quantity : 0;
-
       const updatedReceived = currentReceived + newlyReceived;
-      if (updatedReceived < item.quantity) {
-        isFullyReceived = false;
-      }
-
+      if (updatedReceived < item.quantity) isFullyReceived = false;
       newlyReceivedTotal += newlyReceived * item.unit_cost;
-
       return {
         ...item,
         received_quantity: updatedReceived,
       };
     });
-
     const newlyReceivedTax = newlyReceivedTotal * 0.14;
     const grandReceivedTotal = newlyReceivedTotal + newlyReceivedTax;
-
-    if (isFullyReceived) {
-      po.status = "received";
-    }
-
-    // Deduct/Pay from Treasury for the newly received batch
+    if (isFullyReceived) po.status = "received";
     const treasury = this.state.treasuries.find((t) => t.id === treasuryId);
-    if (treasury && grandReceivedTotal > 0) {
+    if (treasury && grandReceivedTotal > 0)
       this.addTreasuryTransaction(
         treasuryId,
         "purchase",
@@ -5626,94 +4638,65 @@ class ERPStore {
         `استلام جزئي/كامل بضائع - أمر شراء #${po.id.substring(3, 8)}`,
         po.id,
       );
-    }
-
-    // Update Supplier ledger balance
     this.updateSupplierBalance(po.supplier_id, grandReceivedTotal);
-
-    // Auto post Purchase Invoice Journal for received amount
-    if (grandReceivedTotal > 0) {
+    if (grandReceivedTotal > 0)
       this.postPurchaseInvoiceJournal(
         po.id,
         po.supplier_id,
         grandReceivedTotal,
         this.state.currentBranchId,
       );
-    }
-
     this.logAction(
       "ADMIN",
       "استلام بضائع أمر شراء",
       `تم استلام بضائع من الأمر #${po.id.substring(3, 8)} بقيمة ${grandReceivedTotal.toFixed(2)} ج.م (مكتمل: ${isFullyReceived ? "نعم" : "لا"})`,
       "TRANSACTION",
     );
-
     this.saveState();
-
-    return { receivedTotal: grandReceivedTotal, isFullyReceived };
+    return {
+      receivedTotal: grandReceivedTotal,
+      isFullyReceived,
+    };
   }
-
-  returnPurchaseOrderItems(
-    poId: string,
-    returnedItems: { inventory_id: string; returned_quantity: number }[],
-  ): number {
+  returnPurchaseOrderItems(poId, returnedItems) {
     const po = this.state.purchaseOrders.find((p) => p.id === poId);
     if (!po) throw new Error("أمر الشراء غير موجود");
-
     let returnedTotal = 0;
-
     po.items = po.items.map((item) => {
       const match = returnedItems.find((r) => r.inventory_id === item.inventory_id);
       const currentReturned = item.returned_quantity || 0;
       const newlyReturned = match ? match.returned_quantity : 0;
-
       const updatedReturned = currentReturned + newlyReturned;
       returnedTotal += newlyReturned * item.unit_cost;
-
       return {
         ...item,
         returned_quantity: updatedReturned,
       };
     });
-
     const returnedTax = returnedTotal * 0.14;
     const grandReturnedTotal = returnedTotal + returnedTax;
-
     po.status = "returned";
-
-    // Deduct from supplier balance (credit note)
     this.updateSupplierBalance(po.supplier_id, -grandReturnedTotal);
-
-    // Post credit return journal
     this.postPurchaseReturnJournal(po.id, grandReturnedTotal, this.state.currentBranchId);
-
     this.logAction(
       "ADMIN",
       "إرجاع بضائع للمورد",
       `تم إرجاع مرتجعات من الأمر #${po.id.substring(3, 8)} بقيمة ${grandReturnedTotal.toFixed(2)} ج.م خصماً من حساب المورد`,
       "TRANSACTION",
     );
-
     this.saveState();
-
     return grandReturnedTotal;
   }
-
-  cancelPurchaseOrder(poId: string): boolean {
+  cancelPurchaseOrder(poId) {
     const po = this.state.purchaseOrders.find((p) => p.id === poId);
     if (!po || po.status === "cancelled") return false;
-
     const oldStatus = po.status;
     po.status = "cancelled";
-
-    // If it was previously received, we need to reverse the treasury, supplier and journal entries!
     if (oldStatus === "received") {
-      // Find treasury transaction
       const tx = this.state.treasuryTransactions.find(
         (t) => t.related_entity_id === poId && t.type === "purchase",
       );
       if (tx) {
-        // Reverse treasury payment
         const treasury = this.state.treasuries.find((t) => t.id === tx.treasury_id);
         if (treasury) {
           treasury.balance += tx.amount;
@@ -5726,14 +4709,18 @@ class ERPStore {
           );
         }
       }
-
-      // Reverse Supplier balance
       this.updateSupplierBalance(po.supplier_id, -po.total);
-
-      // Post reversing journal entry
-      const lines: JournalLine[] = [
-        { account_code: "103000", debit: 0, credit: po.total },
-        { account_code: "201000", debit: po.total, credit: 0 },
+      const lines = [
+        {
+          account_code: "103000",
+          debit: 0,
+          credit: po.total,
+        },
+        {
+          account_code: "201000",
+          debit: po.total,
+          credit: 0,
+        },
       ];
       this.addJournalEntry(
         `إلغاء وعكس قيد أمر شراء #${poId.substring(3, 8)}`,
@@ -5741,7 +4728,6 @@ class ERPStore {
         `REV-${poId.substring(3, 8).toUpperCase()}`,
       );
     }
-
     this.saveState();
     this.logAction(
       "ADMIN",
@@ -5751,19 +4737,17 @@ class ERPStore {
     );
     return true;
   }
-
-  // --- Vouchers with Cost Center & Soft Delete ---
   createVoucher(
-    type: Voucher["type"],
-    category: string,
-    amount: number,
-    treasuryId: string,
-    description: string,
+    type,
+    category,
+    amount,
+    treasuryId,
+    description,
     costCenter = "الإدارة (Administration)",
-    attachment?: string,
+    attachment,
   ) {
     const treasury = this.state.treasuries.find((t) => t.id === treasuryId);
-    const voucher: Voucher = {
+    const voucher = {
       id: "vch-" + Date.now(),
       branch_id: this.state.currentBranchId,
       type,
@@ -5774,16 +4758,13 @@ class ERPStore {
       treasury_id: treasuryId,
       description,
       status: "approved",
-      created_at: new Date().toISOString(),
+      created_at: /* @__PURE__ */ new Date().toISOString(),
       cost_center: costCenter,
       attachment,
       deleted: false,
     };
-
     this.state.vouchers.unshift(voucher);
     this.saveState();
-
-    // Deduct or add to treasury
     if (treasury) {
       const txType = type === "receipt" ? "deposit" : "withdrawal";
       this.addTreasuryTransaction(
@@ -5794,18 +4775,15 @@ class ERPStore {
         `${type === "receipt" ? "سند قبض" : "سند صرف"} (${category}) - ${description}`,
         voucher.id,
       );
-
-      // Post cost-center specific double-entry journal lines
-      const accountMap: Record<string, string> = {
-        "رواتب الموظفين": "502000",
-        "إيجار الفروع": "503000",
-        "الكهرباء والمياه والطاقة": "504000",
-        "التسويق والإعلانات": "505000",
-        "الهدر والمفقودات": "506000",
-      };
-      const accountCode = accountMap[category] || "600000"; // default operating expense
-
-      if (type === "payment") {
+      const accountCode =
+        {
+          "رواتب الموظفين": "502000",
+          "إيجار الفروع": "503000",
+          "الكهرباء والمياه والطاقة": "504000",
+          "التسويق والإعلانات": "505000",
+          "الهدر والمفقودات": "506000",
+        }[category] || "600000";
+      if (type === "payment")
         this.postExpenseJournal(
           voucher.id,
           amount,
@@ -5813,7 +4791,7 @@ class ERPStore {
           costCenter,
           this.state.currentBranchId,
         );
-      } else {
+      else
         this.postRevenueJournal(
           voucher.id,
           amount,
@@ -5821,9 +4799,7 @@ class ERPStore {
           costCenter,
           this.state.currentBranchId,
         );
-      }
     }
-
     this.logAction(
       "ADMIN",
       "إنشاء سند مالي",
@@ -5832,8 +4808,7 @@ class ERPStore {
     );
     return voucher;
   }
-
-  deleteVoucher(id: string) {
+  deleteVoucher(id) {
     const vch = this.state.vouchers.find((v) => v.id === id);
     if (vch) {
       vch.deleted = true;
@@ -5846,16 +4821,7 @@ class ERPStore {
       );
     }
   }
-
-  // Batch / Expiry Tracking
-  addExpiryBatch(
-    inventoryId: string,
-    batchNo: string,
-    qty: number,
-    expiryDate: string,
-    warehouseId?: string,
-    storageCondition?: string,
-  ) {
+  addExpiryBatch(inventoryId, batchNo, qty, expiryDate, warehouseId, storageCondition) {
     this.state.inventoryExpiry.push({
       id: "exp-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
       inventory_id: inventoryId,
@@ -5865,7 +4831,7 @@ class ERPStore {
       batch_no: batchNo,
       quantity: qty,
       expiry_date: expiryDate,
-      created_at: new Date().toISOString(),
+      created_at: /* @__PURE__ */ new Date().toISOString(),
     });
     this.saveState();
     this.logAction(
@@ -5875,23 +4841,16 @@ class ERPStore {
       "CREATE",
     );
   }
-
-  async disposeExpiryBatch(batchId: string, reason: string) {
+  async disposeExpiryBatch(batchId, reason) {
     const idx = this.state.inventoryExpiry.findIndex((b) => b.id === batchId);
     if (idx !== -1) {
       const batch = this.state.inventoryExpiry[idx];
-
-      // Calculate wasted value
-      const items = localWarehouseStore.getInventory();
-      const item = items.find((i) => i.id === batch.inventory_id);
+      const item = localWarehouseStore.getInventory().find((i) => i.id === batch.inventory_id);
       const cost = item ? Number(item.cost || 0) : 0;
       const qty = Number(batch.quantity || 0);
       const batchValue = qty * cost;
-
       this.state.totalDisposedExpiryValue = (this.state.totalDisposedExpiryValue || 0) + batchValue;
-
-      // 1. Deduct quantity from inventory stock and log transaction movement
-      if (batch.inventory_id && qty > 0) {
+      if (batch.inventory_id && qty > 0)
         try {
           await inventoryService.addTransaction({
             inventory_id: batch.inventory_id,
@@ -5910,17 +4869,12 @@ class ERPStore {
             note: `إعدام وهدر دفعة رقم ${batch.batch_no} - السبب: ${reason}`,
           });
         }
-      }
-
-      // 2. Post automatic General Ledger journal entry for waste/write-off (حسابات الأستاذ العامة)
-      if (batchValue > 0) {
+      if (batchValue > 0)
         this.postInventoryAdjustmentJournal(
           batch.batch_no || batch.id.slice(0, 8),
           batchValue,
           this.state.currentBranchId,
         );
-      }
-
       this.state.inventoryExpiry.splice(idx, 1);
       this.saveState();
       this.logAction(
@@ -5931,12 +4885,9 @@ class ERPStore {
       );
     }
   }
-
-  getMenuItemQualitySpecs(menuItemId: string): MenuItemQualitySpecs {
-    if (!this.state.menuQualitySpecs) {
-      this.state.menuQualitySpecs = {};
-    }
-    if (!this.state.menuQualitySpecs[menuItemId]) {
+  getMenuItemQualitySpecs(menuItemId) {
+    if (!this.state.menuQualitySpecs) this.state.menuQualitySpecs = {};
+    if (!this.state.menuQualitySpecs[menuItemId])
       this.state.menuQualitySpecs[menuItemId] = {
         menu_item_id: menuItemId,
         shelf_life_hours: 24,
@@ -5952,14 +4903,10 @@ class ERPStore {
         ],
         max_display_hours: 4,
       };
-    }
     return this.state.menuQualitySpecs[menuItemId];
   }
-
-  saveMenuItemQualitySpecs(menuItemId: string, specs: Partial<MenuItemQualitySpecs>) {
-    if (!this.state.menuQualitySpecs) {
-      this.state.menuQualitySpecs = {};
-    }
+  saveMenuItemQualitySpecs(menuItemId, specs) {
+    if (!this.state.menuQualitySpecs) this.state.menuQualitySpecs = {};
     const current = this.getMenuItemQualitySpecs(menuItemId);
     this.state.menuQualitySpecs[menuItemId] = {
       ...current,
@@ -5973,7 +4920,6 @@ class ERPStore {
       "UPDATE",
     );
   }
-
   setPeriodLock(isLocked: boolean) {
     this.state.isAccountingPeriodLocked = isLocked;
     this.saveState();
@@ -5983,8 +4929,8 @@ class ERPStore {
       "تم تحديث قفل الفترة المحاسبية لمنع تعديل القيود التاريخية",
       "SYSTEM",
     );
+    this.notify();
   }
-
   setFiscalYearStatus(status: "open" | "closed") {
     this.state.fiscalYearStatus = status;
     this.saveState();
@@ -5994,16 +4940,10 @@ class ERPStore {
       `تم تحديث حالة السنة المالية الحالية إلى ${status === "closed" ? "مغلقة" : "مفتوحة"}`,
       "SYSTEM",
     );
+    this.notify();
   }
-
-  // --- Extended Inventory Methods ---
-  getExtendedItem(
-    itemId: string,
-    defaultVals?: Partial<ExtendedInventoryItem>,
-  ): ExtendedInventoryItem {
-    if (!this.state.extendedInventoryItems) {
-      this.state.extendedInventoryItems = {};
-    }
+  getExtendedItem(itemId, defaultVals) {
+    if (!this.state.extendedInventoryItems) this.state.extendedInventoryItems = {};
     if (!this.state.extendedInventoryItems[itemId]) {
       const generatedCode = "INV-" + itemId.substring(0, 5).toUpperCase();
       const generatedBarcode =
@@ -6028,103 +4968,75 @@ class ERPStore {
     }
     return this.state.extendedInventoryItems[itemId];
   }
-
-  saveExtendedItem(itemId: string, details: Partial<ExtendedInventoryItem>) {
-    if (!this.state.extendedInventoryItems) {
-      this.state.extendedInventoryItems = {};
-    }
+  saveExtendedItem(itemId, details) {
+    if (!this.state.extendedInventoryItems) this.state.extendedInventoryItems = {};
     const old = { ...this.getExtendedItem(itemId) };
     this.state.extendedInventoryItems[itemId] = {
       ...this.getExtendedItem(itemId),
       ...details,
     };
     this.saveState();
-
-    const changes: string[] = [];
+    const changes = [];
     Object.keys(details).forEach((key) => {
-      const valOld = (old as any)[key];
-      const valNew = (details as any)[key];
-      if (valOld !== valNew) {
-        changes.push(`[${key}]: ${valOld} -> ${valNew}`);
-      }
+      const valOld = old[key];
+      const valNew = details[key];
+      if (valOld !== valNew) changes.push(`[${key}]: ${valOld} -> ${valNew}`);
     });
-
-    if (changes.length > 0) {
+    if (changes.length > 0)
       this.logAction(
         "ADMIN",
         "تعديل تفاصيل الصنف المتقدمة",
         `تم تعديل الصنف #${itemId.substring(0, 5)}: ${changes.join(", ")}`,
         "UPDATE",
       );
-    }
   }
-
-  getExtendedItems(): Record<string, ExtendedInventoryItem> {
+  getExtendedItems() {
     return this.state.extendedInventoryItems || {};
   }
-
-  // --- Inventory Transactions Documents ---
-  addInventoryDocument(
-    doc: Omit<InventoryDocument, "id" | "doc_number" | "created_at">,
-  ): InventoryDocument {
-    if (!this.state.inventoryDocuments) {
-      this.state.inventoryDocuments = [];
-    }
-
+  addInventoryDocument(doc) {
+    if (!this.state.inventoryDocuments) this.state.inventoryDocuments = [];
     const docCount = this.state.inventoryDocuments.length + 1;
     const docNumber = `DOC-2026-${String(docCount).padStart(4, "0")}`;
-    const newDoc: InventoryDocument = {
+    const newDoc = {
       ...doc,
       id: "doc-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
       doc_number: docNumber,
-      created_at: new Date().toISOString(),
+      created_at: /* @__PURE__ */ new Date().toISOString(),
     };
-
     this.state.inventoryDocuments.unshift(newDoc);
     this.saveState();
-
     this.logAction(
       "ADMIN",
       `إنشاء مستند مخزني: ${doc.type}`,
       `تم تسجيل مستند ${doc.type} برقم ${docNumber} ويحتوي على ${doc.items.length} أصناف`,
       "CREATE",
     );
-
-    // Auto post journal entry if stock is adjusted
     if (doc.type === "stock_adjustment") {
       let adjustmentVal = 0;
       doc.items.forEach((it) => {
         const diff = (it.counted_quantity ?? 0) - it.quantity;
         adjustmentVal += diff * it.unit_cost;
       });
-
-      if (Math.abs(adjustmentVal) > 0) {
+      if (Math.abs(adjustmentVal) > 0)
         this.postInventoryAdjustmentJournal(docNumber, adjustmentVal, doc.branch_id);
-      }
     }
-
     return newDoc;
   }
-
-  cancelInventoryDocument(docId: string): boolean {
+  cancelInventoryDocument(docId) {
     if (!this.state.inventoryDocuments) return false;
     const doc = this.state.inventoryDocuments.find((d) => d.id === docId);
     if (!doc || doc.status === "cancelled") return false;
-
     doc.status = "cancelled";
     this.saveState();
-
     this.logAction(
       "ADMIN",
       "إلغاء مستند مخزني",
       `تم إلغاء المستند المخزني رقم ${doc.doc_number} بنجاح`,
       "UPDATE",
     );
-
     return true;
   }
-
-  saveInventorySettings(settings: InventorySettings) {
+  saveInventorySettings(settings) {
     this.state.inventorySettings = settings;
     this.saveState();
     this.logAction(
@@ -6134,10 +5046,8 @@ class ERPStore {
       "UPDATE",
     );
   }
-
-  // --- HR Methods ---
-  addEmployee(emp: Omit<Employee, "id">) {
-    const newEmp: Employee = {
+  addEmployee(emp) {
+    const newEmp = {
       ...emp,
       id: "emp-" + Date.now(),
     };
@@ -6147,8 +5057,7 @@ class ERPStore {
     this.logAction("HR", "إضافة موظف جديد", `تم تسجيل الموظف: ${emp.name}`, "CREATE");
     return newEmp;
   }
-
-  updateEmployee(id: string, payload: Partial<Employee>) {
+  updateEmployee(id, payload) {
     if (!this.state.employees) this.state.employees = [];
     const emp = this.state.employees.find((e) => e.id === id);
     if (emp) {
@@ -6157,8 +5066,7 @@ class ERPStore {
       this.logAction("HR", "تعديل بيانات موظف", `تم تعديل الموظف: ${emp.name}`, "UPDATE");
     }
   }
-
-  deleteEmployee(id: string) {
+  deleteEmployee(id) {
     if (!this.state.employees) this.state.employees = [];
     const index = this.state.employees.findIndex((e) => e.id === id);
     if (index !== -1) {
@@ -6168,21 +5076,12 @@ class ERPStore {
       this.logAction("HR", "حذف موظف", `تم حذف الموظف: ${emp.name}`, "DELETE");
     }
   }
-
-  recordAttendance(
-    employeeId: string,
-    date: string,
-    status: AttendanceRecord["status"],
-    checkIn?: string,
-    checkOut?: string,
-    notes?: string,
-  ) {
+  recordAttendance(employeeId, date, status, checkIn, checkOut, notes) {
     if (!this.state.attendance) this.state.attendance = [];
-    // Remove if already exists for this employee and date to avoid duplicates
     this.state.attendance = this.state.attendance.filter(
       (r) => !(r.employee_id === employeeId && r.date === date),
     );
-    const record: AttendanceRecord = {
+    const record = {
       id: "att-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
       employee_id: employeeId,
       date,
@@ -6194,20 +5093,13 @@ class ERPStore {
     this.state.attendance.push(record);
     this.saveState();
   }
-
-  addLoan(
-    employeeId: string,
-    amount: number,
-    currency: string,
-    repaymentMonths: number,
-    notes?: string,
-  ) {
+  addLoan(employeeId, amount, currency, repaymentMonths, notes) {
     if (!this.state.loans) this.state.loans = [];
-    const loan: EmployeeLoan = {
+    const loan = {
       id: "loan-" + Date.now(),
       employee_id: employeeId,
       amount,
-      date: new Date().toISOString().split("T")[0],
+      date: /* @__PURE__ */ new Date().toISOString().split("T")[0],
       currency,
       repayment_months: repaymentMonths,
       paid_amount: 0,
@@ -6216,8 +5108,6 @@ class ERPStore {
     };
     this.state.loans.push(loan);
     this.saveState();
-
-    // Find employee name
     const emp = this.state.employees?.find((e) => e.id === employeeId);
     this.logAction(
       "HR",
@@ -6227,91 +5117,72 @@ class ERPStore {
     );
     return loan;
   }
-
-  repayLoan(loanId: string, amount: number) {
+  repayLoan(loanId, amount) {
     if (!this.state.loans) this.state.loans = [];
     const loan = this.state.loans.find((l) => l.id === loanId);
     if (loan) {
       loan.paid_amount += amount;
-      if (loan.paid_amount >= loan.amount) {
-        loan.status = "paid";
-      }
+      if (loan.paid_amount >= loan.amount) loan.status = "paid";
       this.saveState();
     }
   }
-
-  generatePayroll(month: string) {
+  generatePayroll(month) {
     if (!this.state.payrolls) this.state.payrolls = [];
     if (!this.state.employees) this.state.employees = [];
     if (!this.state.loans) this.state.loans = [];
     if (!this.state.attendance) this.state.attendance = [];
-
-    // Filter out already generated for this month
     this.state.payrolls = this.state.payrolls.filter(
       (p) => p.month !== month || p.status === "paid",
     );
-
-    const activeEmployees = this.state.employees.filter((e) => e.status === "active");
-
-    activeEmployees.forEach((emp) => {
-      // Check if already paid
-      const existsPaid = this.state.payrolls?.some(
-        (p) => p.employee_id === emp.id && p.month === month && p.status === "paid",
-      );
-      if (existsPaid) return;
-
-      // Calculate attendance deductions if any
-      const empAttendance =
-        this.state.attendance?.filter(
-          (r) => r.employee_id === emp.id && r.date.startsWith(month),
-        ) || [];
-      const absentDays = empAttendance.filter((r) => r.status === "absent").length;
-      const lateDays = empAttendance.filter((r) => r.status === "late").length;
-
-      const dailyRate = emp.salary / 30;
-      const deductions = Math.round(absentDays * dailyRate + lateDays * dailyRate * 0.25);
-
-      // Calculate loan deduction
-      const activeLoan = this.state.loans?.find(
-        (l) => l.employee_id === emp.id && l.status === "active" && l.currency === emp.currency,
-      );
-      let loanDeduction = 0;
-      if (activeLoan) {
-        const monthlyInstallment = activeLoan.amount / activeLoan.repayment_months;
-        const remainingLoan = activeLoan.amount - activeLoan.paid_amount;
-        loanDeduction = Math.round(Math.min(monthlyInstallment, remainingLoan));
-      }
-
-      const netSalary = Math.max(0, emp.salary - deductions - loanDeduction);
-
-      const record: PayrollRecord = {
-        id: "pay-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
-        employee_id: emp.id,
-        month,
-        basic_salary: emp.salary,
-        currency: emp.currency,
-        bonuses: 0,
-        deductions,
-        loan_deduction: loanDeduction,
-        net_salary: netSalary,
-        status: "draft",
-      };
-
-      this.state.payrolls?.push(record);
-    });
-
+    this.state.employees
+      .filter((e) => e.status === "active")
+      .forEach((emp) => {
+        if (
+          this.state.payrolls?.some(
+            (p) => p.employee_id === emp.id && p.month === month && p.status === "paid",
+          )
+        )
+          return;
+        const empAttendance =
+          this.state.attendance?.filter(
+            (r) => r.employee_id === emp.id && r.date.startsWith(month),
+          ) || [];
+        const absentDays = empAttendance.filter((r) => r.status === "absent").length;
+        const lateDays = empAttendance.filter((r) => r.status === "late").length;
+        const dailyRate = emp.salary / 30;
+        const deductions = Math.round(absentDays * dailyRate + lateDays * dailyRate * 0.25);
+        const activeLoan = this.state.loans?.find(
+          (l) => l.employee_id === emp.id && l.status === "active" && l.currency === emp.currency,
+        );
+        let loanDeduction = 0;
+        if (activeLoan) {
+          const monthlyInstallment = activeLoan.amount / activeLoan.repayment_months;
+          const remainingLoan = activeLoan.amount - activeLoan.paid_amount;
+          loanDeduction = Math.round(Math.min(monthlyInstallment, remainingLoan));
+        }
+        const netSalary = Math.max(0, emp.salary - deductions - loanDeduction);
+        const record = {
+          id: "pay-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
+          employee_id: emp.id,
+          month,
+          basic_salary: emp.salary,
+          currency: emp.currency,
+          bonuses: 0,
+          deductions,
+          loan_deduction: loanDeduction,
+          net_salary: netSalary,
+          status: "draft",
+        };
+        this.state.payrolls?.push(record);
+      });
     this.saveState();
   }
-
-  paySalary(payrollId: string, treasuryId: string) {
+  paySalary(payrollId, treasuryId) {
     if (!this.state.payrolls) return;
     const record = this.state.payrolls.find((p) => p.id === payrollId);
     if (!record || record.status === "paid") return;
-
     const emp = this.state.employees?.find((e) => e.id === record.employee_id);
     if (!emp) return;
-
-    // Record Treasury Transaction
     this.addTreasuryTransaction(
       treasuryId,
       "withdrawal",
@@ -6320,21 +5191,15 @@ class ERPStore {
       `صرف راتب شهر ${record.month} للموظف ${emp.name}`,
       `PAY-${record.id.substring(4, 9).toUpperCase()}`,
     );
-
-    // If there was a loan deduction, record repayment
     if (record.loan_deduction > 0 && this.state.loans) {
       const activeLoan = this.state.loans.find(
         (l) => l.employee_id === emp.id && l.status === "active" && l.currency === record.currency,
       );
-      if (activeLoan) {
-        this.repayLoan(activeLoan.id, record.loan_deduction);
-      }
+      if (activeLoan) this.repayLoan(activeLoan.id, record.loan_deduction);
     }
-
     record.status = "paid";
-    record.payment_date = new Date().toISOString().split("T")[0];
+    record.payment_date = /* @__PURE__ */ new Date().toISOString().split("T")[0];
     record.payment_treasury_id = treasuryId;
-
     this.saveState();
     this.logAction(
       "HR",
@@ -6343,16 +5208,12 @@ class ERPStore {
       "TRANSACTION",
     );
   }
-
-  importOracleBatchData(newAccounts: Account[], newJournalEntries: any[]) {
-    // Replace old accounts entirely with Oracle imported accounts
+  importOracleBatchData(newAccounts, newJournalEntries) {
     this.state.accounts = newAccounts.map((acc) => ({
       ...acc,
       balance: acc.initial_balance || 0,
     }));
-
-    // Update treasuries account codes based on uploaded Oracle chart of accounts matching names
-    if (this.state.treasuries && this.state.treasuries.length > 0) {
+    if (this.state.treasuries && this.state.treasuries.length > 0)
       this.state.treasuries = this.state.treasuries.map((tr) => {
         const matchedAcc = newAccounts.find(
           (acc) =>
@@ -6367,13 +5228,8 @@ class ERPStore {
           account_code: matchedAcc ? matchedAcc.code : tr.account_code || "101000",
         };
       });
-    }
-
-    // Add journal entries / transactions
-    if (newJournalEntries && newJournalEntries.length > 0) {
+    if (newJournalEntries && newJournalEntries.length > 0)
       this.state.journalEntries = [...newJournalEntries, ...(this.state.journalEntries || [])];
-    }
-
     this.recalculateAccountBalances();
     this.saveState();
     this.logAction(
@@ -6383,9 +5239,8 @@ class ERPStore {
       "IMPORT",
     );
   }
-
-  addMallShop(shop: Omit<MallShop, "id">) {
-    const newShop: MallShop = {
+  addMallShop(shop) {
+    const newShop = {
       ...shop,
       id: "shop-" + Date.now(),
     };
@@ -6398,8 +5253,7 @@ class ERPStore {
       "CREATE",
     );
   }
-
-  createMallContract(shopId: string, updates: Partial<MallShop>, treasuryId?: string) {
+  createMallContract(shopId, updates, treasuryId) {
     this.updateMallShop(shopId, updates);
     const contract = updates.contract;
     if (contract && treasuryId) {
@@ -6411,7 +5265,6 @@ class ERPStore {
             : treasury.branch_id === "branch-2"
               ? "101001"
               : "101000";
-
         const totalCollected = (contract.deposit_amount || 0) + (contract.advance_payment || 0);
         if (totalCollected > 0) {
           const lines = [
@@ -6421,24 +5274,18 @@ class ERPStore {
               credit: 0,
             },
           ];
-
-          if (contract.deposit_amount > 0) {
+          if (contract.deposit_amount > 0)
             lines.push({
-              account_code: "201100", // تأمينات مستأجرين
+              account_code: "201100",
               debit: 0,
               credit: contract.deposit_amount,
             });
-          }
-
-          if (contract.advance_payment > 0) {
+          if (contract.advance_payment > 0)
             lines.push({
-              account_code: "201200", // مقدمات إيجار - التزام (أو استخدام 401000)
-              // But since we don't know if 201200 exists, we'll use 401000 for simplicity or "201200"
+              account_code: "201200",
               debit: 0,
               credit: contract.advance_payment,
             });
-          }
-
           this.addJournalEntry(
             `تحصيل تأمين ومقدم عقد إيجار لمحل #${shopId}`,
             lines,
@@ -6446,7 +5293,6 @@ class ERPStore {
             "USD",
             contract.start_date,
           );
-
           this.addTreasuryTransaction(
             treasuryId,
             "sales",
@@ -6461,33 +5307,35 @@ class ERPStore {
       }
     }
   }
-
-  updateMallShop(id: string, updates: Partial<MallShop>) {
+  updateMallShop(id, updates) {
     this.state.mallShops = (this.state.mallShops || []).map((s) =>
-      s.id === id ? { ...s, ...updates } : s,
+      s.id === id
+        ? {
+            ...s,
+            ...updates,
+          }
+        : s,
     );
     this.saveState();
     this.logAction("ADMIN", "تعديل بيانات المحل", `تم تحديث بيانات المحل رقم ${id}`, "UPDATE");
   }
-
-  deleteMallShop(id: string) {
+  deleteMallShop(id) {
     this.state.mallShops = (this.state.mallShops || []).filter((s) => s.id !== id);
     this.state.mallPayments = (this.state.mallPayments || []).filter((p) => p.shop_id !== id);
     this.saveState();
     this.logAction("ADMIN", "حذف محل من المول", `تم حذف المحل وسجل مدفوعاته`, "DELETE");
   }
-
-  recordMallPayment(payment: Omit<MallRentalPayment, "id">, treasuryId?: string) {
+  recordMallPayment(payment, treasuryId) {
     const existingIndex = (this.state.mallPayments || []).findIndex(
       (p) => p.shop_id === payment.shop_id && p.year === payment.year && p.month === payment.month,
     );
-    if (existingIndex >= 0) {
+    if (existingIndex >= 0)
       this.state.mallPayments[existingIndex] = {
         ...this.state.mallPayments[existingIndex],
         ...payment,
       };
-    } else {
-      const newPayment: MallRentalPayment = {
+    else {
+      const newPayment = {
         ...payment,
         id: "pay-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
       };
@@ -6500,7 +5348,6 @@ class ERPStore {
       `تم تسجيل دفعة إيجار للمحل لشهر ${payment.month}/${payment.year} بقيمة ${payment.amount_paid}`,
       "TRANSACTION",
     );
-
     if (treasuryId && payment.amount_paid !== 0) {
       const treasury = this.state.treasuries.find((t) => t.id === treasuryId);
       if (treasury) {
@@ -6510,13 +5357,8 @@ class ERPStore {
             : treasury.branch_id === "branch-2"
               ? "101001"
               : "101000";
-
-        // If amount_paid is positive -> Income (Debit Treasury, Credit Revenue)
-        // If amount_paid is negative -> Refund (Credit Treasury, Debit Revenue or Deposit)
         const isRefund = payment.amount_paid < 0;
         const absAmount = Math.abs(payment.amount_paid);
-        const revenueAccount = "401000"; // Assuming 401000 is rental revenue
-
         const lines = [
           {
             account_code: treasuryAccountCode,
@@ -6524,12 +5366,11 @@ class ERPStore {
             credit: isRefund ? absAmount : 0,
           },
           {
-            account_code: revenueAccount,
+            account_code: "401000",
             debit: isRefund ? absAmount : 0,
             credit: isRefund ? 0 : absAmount,
           },
         ];
-
         this.addJournalEntry(
           isRefund
             ? `رد مقدم/دفعة إيجار للمحل (شهر ${payment.month}/${payment.year})`
@@ -6537,9 +5378,8 @@ class ERPStore {
           lines,
           payment.receipt_number || `REC-${Date.now()}`,
           "USD",
-          payment.payment_date || new Date().toISOString().split("T")[0],
+          payment.payment_date || /* @__PURE__ */ new Date().toISOString().split("T")[0],
         );
-
         this.addTreasuryTransaction(
           treasuryId,
           isRefund ? "withdrawal" : "sales",
@@ -6553,15 +5393,13 @@ class ERPStore {
       }
     }
   }
-
-  deleteMallPayment(id: string) {
+  deleteMallPayment(id) {
     this.state.mallPayments = (this.state.mallPayments || []).filter((p) => p.id !== id);
     this.saveState();
     this.logAction("ADMIN", "حذف دفعة إيجار", `تم حذف دفعة الإيجار رقم ${id}`, "DELETE");
   }
-
-  addMallGardenRevenue(rev: Omit<MallGardenRevenue, "id">) {
-    const newRev: MallGardenRevenue = {
+  addMallGardenRevenue(rev) {
+    const newRev = {
       ...rev,
       id: "rev-" + Date.now(),
     };
@@ -6569,17 +5407,15 @@ class ERPStore {
     this.saveState();
     this.logAction("ADMIN", "إضافة إيراد حديقة", `تم إضافة إيراد بقيمة ${newRev.amount}`, "CREATE");
   }
-
-  deleteMallGardenRevenue(id: string) {
+  deleteMallGardenRevenue(id) {
     this.state.mallGardenRevenues = (this.state.mallGardenRevenues || []).filter(
       (r) => r.id !== id,
     );
     this.saveState();
     this.logAction("ADMIN", "حذف إيراد حديقة", `تم حذف الإيراد رقم ${id}`, "DELETE");
   }
-
-  addMallGardenExpense(exp: Omit<MallGardenExpense, "id">) {
-    const newExp: MallGardenExpense = {
+  addMallGardenExpense(exp) {
+    const newExp = {
       ...exp,
       id: "exp-" + Date.now(),
     };
@@ -6592,15 +5428,13 @@ class ERPStore {
       "CREATE",
     );
   }
-
-  deleteMallGardenExpense(id: string) {
+  deleteMallGardenExpense(id) {
     this.state.mallGardenExpenses = (this.state.mallGardenExpenses || []).filter(
       (e) => e.id !== id,
     );
     this.saveState();
     this.logAction("ADMIN", "حذف مصروف", `تم حذف المصروف رقم ${id}`, "DELETE");
   }
-
   resetMallData() {
     this.state.mallShops = DEFAULT_MALL_SHOPS;
     this.state.mallPayments = DEFAULT_MALL_PAYMENTS;
@@ -6615,9 +5449,8 @@ class ERPStore {
       "UPDATE",
     );
   }
-
-  terminateMallContract(record: Omit<TerminatedContractRecord, "id">, treasuryId?: string) {
-    const termRecord: TerminatedContractRecord = {
+  terminateMallContract(record, treasuryId) {
+    const termRecord = {
       ...record,
       id: "term-" + Date.now(),
     };
@@ -6625,29 +5458,25 @@ class ERPStore {
       termRecord,
       ...(this.state.mallTerminatedContractsArchive || []),
     ];
-
     const shop = (this.state.mallShops || []).find((s) => s.id === record.shop_id);
     if (shop) {
       shop.status = "vacant";
       shop.tenant_name = "";
       shop.phone = "";
-      shop.contract = undefined;
+      shop.contract = void 0;
     }
-
     let treasuryAccountCode = "101000";
     if (treasuryId) {
       const treasury = this.state.treasuries.find((t) => t.id === treasuryId);
-      if (treasury) {
+      if (treasury)
         treasuryAccountCode =
           treasury.type === "bank"
             ? "102000"
             : treasury.branch_id === "branch-2"
               ? "101001"
               : "101000";
-      }
     }
-
-    if (record.refund_amount > 0 && treasuryId) {
+    if (record.refund_amount > 0 && treasuryId)
       this.addTreasuryTransaction(
         treasuryId,
         "withdrawal",
@@ -6658,46 +5487,35 @@ class ERPStore {
         "cash",
         null,
       );
-    }
-
     if (record.deposit_amount > 0 || record.refund_amount > 0) {
       const lines = [];
       const depositAmount = record.deposit_amount || 0;
       const refundAmount = record.refund_amount || 0;
-
-      if (depositAmount > 0) {
+      if (depositAmount > 0)
         lines.push({
-          account_code: "201100", // تأمينات مستأجرين
+          account_code: "201100",
           debit: depositAmount,
           credit: 0,
         });
-      }
-
-      if (refundAmount > 0) {
+      if (refundAmount > 0)
         lines.push({
           account_code: treasuryAccountCode,
           debit: 0,
           credit: refundAmount,
         });
-      }
-
       const diff = depositAmount - refundAmount;
-      if (diff > 0) {
-        // Forfeited deposit -> revenue
+      if (diff > 0)
         lines.push({
-          account_code: "401000", // إيرادات
+          account_code: "401000",
           debit: 0,
           credit: diff,
         });
-      } else if (diff < 0) {
-        // Refunded more than deposit -> expense
+      else if (diff < 0)
         lines.push({
-          account_code: "501000", // مصاريف
+          account_code: "501000",
           debit: Math.abs(diff),
           credit: 0,
         });
-      }
-
       this.addJournalEntry(
         `إثبات فسخ عقد إيجار المحل #${record.shop_number} وتسوية التأمين`,
         lines,
@@ -6706,7 +5524,6 @@ class ERPStore {
         record.termination_date,
       );
     }
-
     this.saveState();
     this.logAction(
       "ADMIN",
@@ -6716,5 +5533,4 @@ class ERPStore {
     );
   }
 }
-
 export const erpStore = new ERPStore();

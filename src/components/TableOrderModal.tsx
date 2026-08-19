@@ -535,14 +535,22 @@ export function TableOrderModal({
                         {line.item.name_ar}
                       </h5>
                       <span className="text-[11px] font-bold text-indigo-600 block mt-0.5">
-                        {formatPrice((line.item.price + (line.selectedAdditions?.reduce((s, a) => s + (a.price||0), 0) || 0)) * line.quantity)}
+                        {formatPrice(
+                          (line.item.price +
+                            (line.selectedAdditions?.reduce((s, a) => s + (a.price || 0), 0) ||
+                              0)) *
+                            line.quantity,
+                        )}
                       </span>
-                      {((line.selectedAdditions && line.selectedAdditions.length > 0) || line.notes) && (
+                      {((line.selectedAdditions && line.selectedAdditions.length > 0) ||
+                        line.notes) && (
                         <div className="text-[10px] text-slate-500 mt-1 space-y-0.5 leading-tight">
                           {line.selectedAdditions && line.selectedAdditions.length > 0 && (
                             <div>
                               <span className="font-bold mr-1">إضافات:</span>
-                              {line.selectedAdditions.map(a => `${a.icon||""} ${a.name_ar}`).join("، ")}
+                              {line.selectedAdditions
+                                .map((a) => `${a.icon || ""} ${a.name_ar}`)
+                                .join("، ")}
                             </div>
                           )}
                           {line.notes && (

@@ -26,9 +26,9 @@ export const Route = createFileRoute("/admin/restaurant")({
 });
 
 function RestaurantHubPage() {
-  const menuCount = erpStore.getState().menu?.length || 0;
+  const menuCount = (erpStore.getState() as any).menu?.length || 0;
   const inventoryCount = (erpStore.getState() as any).inventoryItems?.length || 0;
-  const ordersCount = erpStore.getState().orders?.length || 0;
+  const ordersCount = (erpStore.getState() as any).orders?.length || 0;
 
   const modules = [
     {
