@@ -2474,12 +2474,13 @@ function LedgerPage() {
                               {!isBalanced && (
                                 <Button
                                   variant="outline"
-                                  size="icon"
-                                  className="h-7 w-7 rounded-md text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40"
+                                  size="sm"
+                                  className="h-7 rounded-md px-2 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40"
                                   title={`تسوية فرق القيد ${formatCurrency(balanceDiff, "USD")}`}
                                   onClick={() => setBalanceAdjustmentEntry(entry)}
                                 >
                                   <PlusCircle className="h-3.5 w-3.5" />
+                                  <span className="mr-1 text-[11px] font-semibold">تسوية الفرق</span>
                                 </Button>
                               )}
                               <Button
