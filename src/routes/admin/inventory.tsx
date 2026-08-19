@@ -42,6 +42,7 @@ import {
 import { WarehouseManagement } from "@/features/inventory/components/WarehouseManagement";
 import { SupplierManagement } from "@/features/inventory/components/SupplierManagement";
 import { PurchaseManagement } from "@/features/inventory/components/PurchaseManagement";
+import { BackToRestaurantButton } from "@/components/admin/BackToRestaurantButton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -1031,6 +1032,7 @@ function InventoryPage() {
 
   return (
     <div className="space-y-6 text-right" dir="rtl">
+      <BackToRestaurantButton />
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">

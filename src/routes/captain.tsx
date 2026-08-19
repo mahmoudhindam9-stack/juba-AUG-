@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArrowRight, UtensilsCrossed, Plus, Settings2, Trash2, Save, X } from "lucide-react";
 import { TableOrderModal } from "@/components/TableOrderModal";
+import { BackToRestaurantButton } from "@/components/admin/BackToRestaurantButton";
 import {
   Dialog,
   DialogContent,
@@ -381,6 +382,9 @@ function CaptainPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-cairo">
+      <div className="max-w-7xl mx-auto w-full px-4 pt-4">
+        <BackToRestaurantButton />
+      </div>
       {/* Header */}
       <header className="bg-slate-900 text-white p-4 shadow-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex items-center justify-between">

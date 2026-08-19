@@ -42,6 +42,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTableOrders } from "@/shared/hooks/useTableOrders";
 import { tableOrdersStore, TableOrder } from "@/shared/services/tableOrdersStore";
 import { MenuExportModal } from "@/components/MenuExportModal";
+import { BackToRestaurantButton } from "@/components/admin/BackToRestaurantButton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -898,6 +899,9 @@ function Index() {
       style={{ fontFamily: '"Tajawal", "Cairo", system-ui, sans-serif' }}
     >
       <div className="flex-1 flex flex-col min-w-0">
+        <div className="px-6 pt-4">
+          <BackToRestaurantButton />
+        </div>
         <header
           className="px-8 py-5 border-b border-border flex items-center justify-between gap-6"
           style={{ background: "var(--gradient-primary)" }}

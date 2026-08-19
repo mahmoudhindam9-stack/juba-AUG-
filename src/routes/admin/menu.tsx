@@ -45,6 +45,7 @@ import {
 import { menuService } from "@/features/menu/services/menuService";
 import { inventoryService } from "@/features/inventory/services/inventoryService";
 import { erpStore, MenuItemQualitySpecs } from "@/shared/services/erpStore";
+import { BackToRestaurantButton } from "@/components/admin/BackToRestaurantButton";
 
 export const Route = createFileRoute("/admin/menu")({
   head: () => ({ meta: [{ title: "إدارة المنيو" }] }),
@@ -352,6 +353,7 @@ function MenuPage() {
 
   return (
     <div className="space-y-6 text-right" dir="rtl">
+      <BackToRestaurantButton />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-black text-foreground">إدارة المنيو والتكلفة</h1>

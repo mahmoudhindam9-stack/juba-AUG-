@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { OrderTimer } from "@/components/OrderTimer";
 import { useToast } from "@/hooks/use-toast";
+import { BackToRestaurantButton } from "@/components/admin/BackToRestaurantButton";
 
 export const Route = createFileRoute("/oven")({
   head: () => ({ meta: [{ title: "شاشة الفرن والمطبخ (KDS)" }] }),
@@ -210,6 +211,9 @@ function OvenPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-cairo" dir="rtl">
+      <div className="max-w-7xl mx-auto w-full px-4 pt-4">
+        <BackToRestaurantButton />
+      </div>
       <header className="bg-slate-900 text-white p-4 shadow-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">

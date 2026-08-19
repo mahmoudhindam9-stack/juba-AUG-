@@ -32,6 +32,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { BackToRestaurantButton } from "@/components/admin/BackToRestaurantButton";
 
 export const Route = createFileRoute("/admin/orders")({
   head: () => ({ meta: [{ title: "متابعة الطلبات" }] }),
@@ -247,6 +248,7 @@ function OrdersPage() {
 
   return (
     <div className="p-6 space-y-6 font-cairo bg-slate-50 min-h-screen" dir="rtl">
+      <BackToRestaurantButton />
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-3xl shadow-xs border border-border/60">
         <div className="flex items-center gap-4">

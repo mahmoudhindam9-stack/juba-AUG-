@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { erpStore } from "@/shared/services/erpStore";
 import { useSettings } from "@/hooks/use-settings";
 import { Button } from "@/components/ui/button";
+import { BackToRestaurantButton } from "@/components/admin/BackToRestaurantButton";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { inventoryService } from "@/features/inventory/services/inventoryService";
@@ -734,6 +735,9 @@ function CashierTreasuryPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans" dir="rtl">
+      <div className="px-6 pt-4 max-w-7xl mx-auto w-full">
+        <BackToRestaurantButton />
+      </div>
       {/* Header - Bright Light Theme */}
       <header className="px-6 py-5 bg-white border-b border-slate-200/80 sticky top-0 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
