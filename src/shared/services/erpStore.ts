@@ -4011,7 +4011,11 @@ export class ERPStore {
     const val = Number(amount) || 0;
     const r = Number(rate) || 1;
     if (r <= 0) return val;
-    return r > 1 ? val / r : val * r;
+    // The currency coefficient ("معامل") always converts a native amount to the
+    // BASE currency by DIVISION, regardless of whether it is above or below 1.
+    // (r > 1 ? val / r : val * r) mis-applies coefficients < 1 and made save
+    // validation disagree with the on-screen balance indicator.
+    return val / r;
   }
 
   generateJournalReference(

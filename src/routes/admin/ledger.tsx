@@ -266,22 +266,12 @@ function LedgerPage() {
     try {
       setIsSavingToDb(true);
       const invalidEntries = (erpStore.getState().journalEntries || []).filter((entry) => {
-        const currencies = new Set(
-          (entry.lines || []).map((line) => line.currency || entry.currency || "USD"),
-        );
-        const debit = (entry.lines || []).reduce((sum, line) => sum + (Number(line.debit) || 0), 0);
-        const credit = (entry.lines || []).reduce((sum, line) => sum + (Number(line.credit) || 0), 0);
-        const baseDebit = (entry.lines || []).reduce(
-          (sum, line) => sum + getLineBaseValue(line.debit, line.rate || 1),
-          0,
-        );
-        const baseCredit = (entry.lines || []).reduce(
-          (sum, line) => sum + getLineBaseValue(line.credit, line.rate || 1),
-          0,
-        );
-        return currencies.size <= 1
-          ? Math.abs(debit - credit) >= 0.01
-          : Math.abs(baseDebit - baseCredit) >= 0.05;
+        // Validate using the SAME balance computation as the on-screen indicator
+        // (getEntryBalanceInfo / checkIsEntryBalanced). Using a separate
+        // "getLineBaseValue" path here was the source of the display-vs-save
+        // mismatch: an entry looked balanced on screen but failed validation on
+        // save, especially when a line carried a currency coefficient < 1.
+        return !checkIsEntryBalanced(entry);
       });
 
       if (invalidEntries.length > 0) {
