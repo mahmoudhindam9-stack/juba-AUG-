@@ -4007,10 +4007,11 @@ export class ERPStore {
       entries,
     };
   }
-  getLineBaseValue(amount, rate) {
+  getLineBaseValue(amount, rate, currency = "USD") {
     const val = Number(amount) || 0;
     const r = Number(rate) || 1;
-    if (r <= 0) return val;
+    const curr = currency || "USD";
+    if (curr === "USD" || r <= 0) return val;
     return val / r;
   }
 
@@ -4101,11 +4102,11 @@ export class ERPStore {
       throw new Error(check.reason || "You cannot edit restrictions in a closed year.");
     }
     const totalDebit = lines.reduce(
-      (sum, l) => sum + this.getLineBaseValue(l.debit, l.rate || 1),
+      (sum, l) => sum + this.getLineBaseValue(l.debit, l.rate || 1, l.currency || "USD"),
       0,
     );
     const totalCredit = lines.reduce(
-      (sum, l) => sum + this.getLineBaseValue(l.credit, l.rate || 1),
+      (sum, l) => sum + this.getLineBaseValue(l.credit, l.rate || 1, l.currency || "USD"),
       0,
     );
     if (Math.abs(totalDebit - totalCredit) > 0.5) {

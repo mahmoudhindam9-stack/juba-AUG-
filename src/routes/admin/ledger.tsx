@@ -15,8 +15,8 @@ import {
   type ParsedOracleRow,
 } from "@/shared/utils/oracleParser";
 
-const getLineBaseValue = (amount: number | string, rate: number | string): number => {
-  return erpStore.getLineBaseValue(amount, rate);
+const getLineBaseValue = (amount: number | string, rate: number | string, currency = "USD"): number => {
+  return erpStore.getLineBaseValue(amount, rate, currency);
 };
 import { AccountSearchSelect } from "@/components/AccountSearchSelect";
 import { useToast } from "@/hooks/use-toast";
@@ -492,12 +492,10 @@ function LedgerPage() {
 
       const currency = template.currency || entry.currency || "USD";
       const rate = Number(template.rate) > 0 ? Number(template.rate) : 1;
-      // `info.difference` is expressed in the BASE currency. To add it to a line
-      // that is in a foreign currency, convert base -> native by DIVIDING by the
-      // rate (native = base / rate). A heuristic like (rate > 1 ? v * rate : v /
-      // rate) mis-applies coefficients and can leave a multi-currency entry
-      // still unbalanced after clicking OK.
-      const amount = info.difference / rate;
+      // `info.difference` is expressed in the BASE currency (USD). To add it to a line
+      // that is in a foreign currency, convert base -> native by MULTIPLYING by the
+      // rate (native = base * rate).
+      const amount = info.difference * rate;
 
       if (targetIndex < 0) {
         targetIndex = lines.length;
@@ -996,11 +994,11 @@ function LedgerPage() {
   // Compute manual entry balance details with multi-currency exchange rates
   const newEntryTotals = useMemo(() => {
     const debitsBase = newEntryLines.reduce(
-      (sum, l) => sum + getLineBaseValue(l.debit, l.rate || 1),
+      (sum, l) => sum + getLineBaseValue(l.debit, l.rate || 1, l.currency || "USD"),
       0,
     );
     const creditsBase = newEntryLines.reduce(
-      (sum, l) => sum + getLineBaseValue(l.credit, l.rate || 1),
+      (sum, l) => sum + getLineBaseValue(l.credit, l.rate || 1, l.currency || "USD"),
       0,
     );
     const difference = Math.abs(debitsBase - creditsBase);
@@ -1015,11 +1013,11 @@ function LedgerPage() {
   // Compute edit entry balance details
   const editEntryTotals = useMemo(() => {
     const debitsBase = editEntryLines.reduce(
-      (sum, l) => sum + getLineBaseValue(l.debit, l.rate || 1),
+      (sum, l) => sum + getLineBaseValue(l.debit, l.rate || 1, l.currency || "USD"),
       0,
     );
     const creditsBase = editEntryLines.reduce(
-      (sum, l) => sum + getLineBaseValue(l.credit, l.rate || 1),
+      (sum, l) => sum + getLineBaseValue(l.credit, l.rate || 1, l.currency || "USD"),
       0,
     );
     const difference = Math.abs(debitsBase - creditsBase);
@@ -1640,10 +1638,11 @@ function LedgerPage() {
                                 className="font-mono text-[10px] bg-primary/10 text-primary border-primary/20"
                               >
                                 المعادل بالعملة الأساسية (USD):{" "}
-                                {getLineBaseValue(
-                                  line.debit || line.credit || 0,
-                                  line.rate || 1,
-                                ).toLocaleString(undefined, {
+                                 {getLineBaseValue(
+                                   line.debit || line.credit || 0,
+                                   line.rate || 1,
+                                   line.currency || "USD",
+                                 ).toLocaleString(undefined, {
                                   minimumFractionDigits: 2,
                                   maximumFractionDigits: 2,
                                 })}
@@ -1810,7 +1809,7 @@ function LedgerPage() {
                       const acc = (accounts || []).find((a) => a.code === line.account_code);
                       const isDebit = (line.debit || 0) > 0;
                       const origAmt = isDebit ? line.debit : line.credit;
-                      const baseVal = getLineBaseValue(origAmt || 0, line.rate || 1);
+                      const baseVal = getLineBaseValue(origAmt || 0, line.rate || 1, line.currency || "USD");
                       return (
                         <div key={idx} className="p-2.5 flex items-center justify-between text-xs">
                           <div className="flex items-center gap-2">
