@@ -1,52 +1,2521 @@
-addJournalEntry(description, lines, reference, currency = "USD", date, customId) {
-  const targetDate = date || new Date().toISOString().split("T")[0];
-  const check = this.checkCanModifyJournalEntry(targetDate);
-  if (!check.allowed && !customId?.startsWith("ORACLE")) {
-    throw new Error(check.reason || "You cannot edit restrictions in a closed year.");
+// @ts-nocheck
+import { Order, MenuItem, InventoryItem } from "../types";
+import { localWarehouseStore } from "../../features/inventory/services/warehouseStore";
+import { inventoryService } from "../../features/inventory/services/inventoryService";
+import { ORACLE_MIGRATION_ACCOUNTS } from "../data/oracleAccounts";
+
+export interface Branch {
+  id: string;
+  name: string;
+  name_ar: string;
+  code: string;
+}
+
+export interface TreasuryContainer {
+  id: string;
+  name: string;
+  currency: string;
+  balance?: number;
+}
+
+export interface TreasuryAccount {
+  id: string;
+  account_code?: string;
+  containers?: TreasuryContainer[];
+  linked_to_restaurant?: boolean;
+  branch_id: string;
+  name_ar: string;
+  type: "cash" | "bank";
+  currency: string;
+  balance: number;
+  is_open: boolean;
+  opening_balance: number;
+  available_balance?: number;
+  responsible_employee?: string;
+  status?: "active" | "inactive" | "closed";
+  deleted?: boolean;
+}
+
+export interface Supplier {
+  id: string;
+  name_ar: string;
+  phone?: string;
+  balance: number; // supplier ledger balance
+  account_code?: string; // Linked Chart of Accounts code (e.g. 24010100)
+  currency?: string;
+  deleted?: boolean;
+}
+
+export interface InventorySettings {
+  allowNegativeStock: boolean;
+  defaultUnit: string;
+}
+
+export interface ExtendedInventoryItem {
+  id: string;
+  item_code: string;
+  barcode: string;
+  name_en: string;
+  category: string;
+  preferred_supplier_id?: string;
+  average_cost: number;
+  last_purchase_price: number;
+  status: "active" | "inactive";
+  max_level?: number;
+  storage_location?: string;
+  notes?: string;
+}
+
+export interface MenuItemQualitySpecs {
+  menu_item_id: string;
+  shelf_life_hours: number;
+  storage_condition: "chilled_4c" | "frozen_18c" | "hot_hold_60c" | "room_temp";
+  storage_condition_label?: string;
+  prep_instructions?: string;
+  allergens?: string[];
+  quality_checklist?: string[];
+  max_display_hours?: number;
+}
+
+export interface InventoryDocumentItem {
+  inventory_id: string;
+  quantity: number;
+  unit_cost: number;
+  counted_quantity?: number;
+  difference?: number;
+}
+
+export interface InventoryDocument {
+  id: string;
+  doc_number: string;
+  type:
+    | "goods_receipt"
+    | "goods_issue"
+    | "stock_transfer"
+    | "stock_adjustment"
+    | "inventory_count"
+    | "opening_balance";
+  date: string;
+  branch_id: string;
+  to_branch_id?: string;
+  supplier_id?: string;
+  items: InventoryDocumentItem[];
+  notes?: string;
+  status: "draft" | "approved" | "cancelled";
+  created_at: string;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  branch_id: string;
+  supplier_id: string;
+  order_date: string;
+  status: "draft" | "sent" | "received" | "returned" | "cancelled";
+  items: {
+    inventory_id: string;
+    quantity: number;
+    unit_cost: number;
+    received_quantity?: number;
+    returned_quantity?: number;
+  }[];
+  subtotal: number;
+  tax: number;
+  total: number;
+  currency?: "USD" | "SSP" | string;
+  exchange_rate?: number;
+  total_base_usd?: number;
+  notes?: string;
+  received_date?: string;
+}
+
+export interface TreasuryTransaction {
+  id: string;
+  branch_id: string;
+  treasury_id: string;
+  type:
+    | "deposit"
+    | "withdrawal"
+    | "transfer_in"
+    | "transfer_out"
+    | "sales"
+    | "purchase"
+    | "expense"
+    | "reconciliation";
+  amount: number;
+  currency: string;
+  related_entity_id?: string; // Order ID, Purchase ID, Voucher ID
+  payment_method?: string; // cash | card | wallet
+  note: string;
+  created_at: string;
+}
+
+export interface Voucher {
+  id: string;
+  branch_id: string;
+  type: "receipt" | "payment" | "transfer";
+  category: string; // e.g., Rent, Salaries, Electricity, Water
+  amount: number;
+  currency: string;
+  payment_method: string;
+  treasury_id: string;
+  description: string;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+  cost_center?: string;
+  attachment?: string;
+  deleted?: boolean;
+}
+
+export interface Account {
+  code: string;
+  name_ar: string;
+  type: "asset" | "liability" | "equity" | "revenue" | "expense";
+  balance: number;
+  parent_code?: string;
+  level: number;
+  status: "active" | "inactive";
+  initial_balance?: number;
+  system_binding?:
+    | "none"
+    | "treasury_main"
+    | "treasury_cib"
+    | "treasury_extra"
+    | "treasury_usd"
+    | "suppliers_payable"
+    | "sales_revenue"
+    | "operating_expenses"
+    | "warehouse_main_value"
+    | "warehouse_kitchen_value"
+    | "expired_inventory_value"
+    | "disposed_waste_value"
+    | string;
+  currency?: string;
+  sync_status?: "pending" | "synced";
+}
+
+export interface JournalLine {
+  account_code: string;
+  debit: number;
+  credit: number;
+  currency?: string;
+  rate?: number;
+  cost_center?: string;
+  description?: string;
+  id?: string;
+}
+
+export interface JournalEntry {
+  id: string;
+  branch_id: string;
+  date: string;
+  description: string;
+  lines: JournalLine[];
+  created_at: string;
+  reference?: string;
+  currency: string;
+  created_by: string;
+  is_approved: boolean;
+  sequence?: number;
+  attachments?: string[];
+}
+
+export interface AuditLog {
+  id: string;
+  user_email: string;
+  action: string;
+  details: string;
+  created_at: string;
+  before_value?: string;
+  after_value?: string;
+  ip_address?: string;
+  action_type: "CREATE" | "UPDATE" | "DELETE" | "TRANSACTION" | "SYSTEM";
+}
+
+export interface TreasuryReconciliation {
+  id: string;
+  treasury_id: string;
+  date: string;
+  ledger_balance: number;
+  actual_balance: number;
+  difference: number;
+  reconciled_by: string;
+  notes: string;
+}
+
+export interface SystemUser {
+  id: string;
+  full_name: string;
+  username: string; // Used for login (email or plain text)
+  phone: string;
+  role: string;
+  password?: string;
+  created_at: string;
+}
+
+export interface UserPermission {
+  // Legacy / top-level permissions
+  orders?: boolean;
+  pos?: boolean;
+  captain?: boolean;
+  kitchen?: boolean;
+  delivery?: boolean;
+  inventory?: boolean;
+  hr?: boolean;
+  purchasing?: boolean;
+  production?: boolean;
+  treasury?: boolean;
+  accounting?: boolean;
+  journal_approval?: boolean;
+  expense_approval?: boolean;
+  revenue_approval?: boolean;
+  reports?: boolean;
+  cost_centers?: boolean;
+  branch_mgmt?: boolean;
+  audit_logs?: boolean;
+  users_roles?: boolean;
+
+  // Granular Sub-permissions & Super Admin Controls
+  // 1. Orders & Sales
+  orders_view?: boolean;
+  orders_create_custom?: boolean;
+  orders_cancel_modify?: boolean;
+  orders_manage_carts?: boolean;
+  orders_generate_qr?: boolean;
+
+  // 2. POS
+  pos_access?: boolean;
+  pos_create_custom_order?: boolean;
+  pos_apply_discounts?: boolean;
+  pos_void_items?: boolean;
+
+  // 3. Captain Order
+  captain_access?: boolean;
+  captain_create_order?: boolean;
+  captain_transfer_tables?: boolean;
+  captain_modify_items?: boolean;
+
+  // 4. Kitchen / KDS & Oven
+  kitchen_view?: boolean;
+  kitchen_change_status?: boolean;
+  kitchen_modify_order?: boolean;
+
+  // 5. Delivery
+  delivery_view?: boolean;
+  delivery_update_status?: boolean;
+
+  // 6. Inventory
+  inventory_view?: boolean;
+  inventory_adjust_transfer?: boolean;
+  inventory_waste_dispose?: boolean;
+
+  // 7. Purchasing
+  purchasing_view?: boolean;
+  purchasing_add_invoice?: boolean;
+  purchasing_returns?: boolean;
+
+  // 8. Production
+  production_view?: boolean;
+  production_execute?: boolean;
+
+  // 9. HR
+  hr_view_attendance?: boolean;
+  hr_manage_payroll_loans?: boolean;
+
+  // 10. Treasury
+  treasury_view?: boolean;
+  treasury_open_close?: boolean;
+  treasury_transfer_reconcile?: boolean;
+
+  // 11. Accounting & General Ledger
+  accounting_view?: boolean;
+  accounting_post_journal?: boolean;
+  accounting_lock_period?: boolean;
+
+  // 12. Approvals
+  approval_journals?: boolean;
+  approval_expenses?: boolean;
+  approval_revenues?: boolean;
+
+  // 13. Mall & Garden
+  mall_manage_shops?: boolean;
+  mall_garden_finance?: boolean;
+
+  // 14. Reports
+  reports_view_sales?: boolean;
+  reports_view_financials?: boolean;
+
+  // 15. Super Admin & System
+  super_admin_full_access?: boolean;
+  system_manage_users?: boolean;
+  system_backup_update?: boolean;
+  system_audit_logs?: boolean;
+}
+
+export interface Employee {
+  id: string;
+  name: string;
+  job_title: string;
+  department: string;
+  phone: string;
+  email?: string;
+  hire_date: string;
+  salary: number;
+  currency: string;
+  status: "active" | "inactive" | "suspended";
+}
+
+export interface AttendanceRecord {
+  id: string;
+  employee_id: string;
+  date: string;
+  status: "present" | "absent" | "leave" | "late";
+  check_in?: string;
+  check_out?: string;
+  notes?: string;
+}
+
+export interface EmployeeLoan {
+  id: string;
+  employee_id: string;
+  amount: number;
+  date: string;
+  currency: string;
+  repayment_months: number;
+  paid_amount: number;
+  status: "active" | "paid";
+  notes?: string;
+}
+
+export interface PayrollRecord {
+  id: string;
+  employee_id: string;
+  month: string;
+  basic_salary: number;
+  currency: string;
+  bonuses: number;
+  deductions: number;
+  loan_deduction: number;
+  net_salary: number;
+  payment_date?: string;
+  payment_treasury_id?: string;
+  status: "draft" | "paid";
+  notes?: string;
+}
+
+export const DEFAULT_EMPLOYEES: Employee[] = [
+  {
+    id: "emp-1",
+    name: "وليد أحمد محمد دويك",
+    job_title: "رئيس الطهاة (Chef)",
+    department: "المطبخ",
+    phone: "01023456789",
+    hire_date: "2024-01-15",
+    salary: 8000,
+    currency: "EGP",
+    status: "active",
+  },
+  {
+    id: "emp-2",
+    name: "هشام نور",
+    job_title: "مدير التشغيل العام",
+    department: "الإدارة",
+    phone: "01124578963",
+    hire_date: "2023-05-10",
+    salary: 15000,
+    currency: "EGP",
+    status: "active",
+  },
+  {
+    id: "emp-3",
+    name: "جمال عطا الله",
+    job_title: "المحاسب المالي",
+    department: "الإدارة",
+    phone: "01235689741",
+    hire_date: "2024-03-01",
+    salary: 12000,
+    currency: "EGP",
+    status: "active",
+  },
+  {
+    id: "emp-4",
+    name: "محمد شريف",
+    job_title: "كاشير الصالة",
+    department: "الصالة والتوصيل",
+    phone: "01547896321",
+    hire_date: "2024-06-15",
+    salary: 7000,
+    currency: "EGP",
+    status: "active",
+  },
+  {
+    id: "emp-5",
+    name: "أحمد حسام",
+    job_title: "مشرف الفروع",
+    department: "الإدارة",
+    phone: "01098765432",
+    hire_date: "2023-11-01",
+    salary: 10000,
+    currency: "EGP",
+    status: "active",
+  },
+];
+
+export interface MallShop {
+  id: string;
+  shop_number: string;
+  name_ar: string;
+  account_number: string;
+  tenant_name: string;
+  phone: string;
+  monthly_rent: number;
+  status: "rented" | "vacant" | "maintenance";
+  space_sqm?: number;
+  notes?: string;
+  contract?: {
+    start_date: string;
+    end_date: string;
+    deposit_amount: number;
+    advance_payment?: number;
+    nationality?: string;
+    id_number?: string;
+    terms?: string;
+    contract_image?: string;
+    id_image?: string;
+    language: "ar" | "en";
+    created_at: string;
+  };
+}
+
+export interface TerminatedContractRecord {
+  id: string;
+  shop_id: string;
+  shop_number: string;
+  shop_name: string;
+  tenant_name: string;
+  phone: string;
+  monthly_rent: number;
+  deposit_amount: number;
+  refund_amount: number;
+  start_date: string;
+  end_date: string;
+  termination_date: string;
+  contract_image?: string;
+  termination_image: string;
+  notes?: string;
+}
+
+export interface MallRentalPayment {
+  id: string;
+  shop_id: string;
+  year: number;
+  month: number;
+  amount_due: number;
+  amount_paid: number;
+  status: "paid" | "partial" | "unpaid";
+  payment_date?: string;
+  payment_method?: string;
+  receipt_number?: string;
+  notes?: string;
+}
+
+export interface MallGardenRevenue {
+  id: string;
+  year: number;
+  month: number;
+  category: "garden_ticket" | "garden_event" | "parking" | "other";
+  description: string;
+  amount: number;
+  date: string;
+  receipt_number?: string;
+  notes?: string;
+}
+
+export interface MallGardenExpense {
+  id: string;
+  year: number;
+  month: number;
+  category: "maintenance" | "electricity" | "water" | "security" | "cleaning" | "salary" | "other";
+  title: string;
+  amount: number;
+  date: string;
+  paid_to?: string;
+  notes?: string;
+}
+
+const DEFAULT_GARDEN_REVENUES: MallGardenRevenue[] = [
+  {
+    id: "rev-1",
+    year: 2026,
+    month: 1,
+    category: "garden_ticket",
+    description: "تذاكر دخول الحديقة - يناير",
+    amount: 4500,
+    date: "2026-01-31",
+    receipt_number: "REC-G-101",
+  },
+  {
+    id: "rev-2",
+    year: 2026,
+    month: 2,
+    category: "garden_ticket",
+    description: "تذاكر دخول الحديقة - فبراير",
+    amount: 5200,
+    date: "2026-02-28",
+    receipt_number: "REC-G-102",
+  },
+  {
+    id: "rev-3",
+    year: 2026,
+    month: 3,
+    category: "garden_event",
+    description: "حفل عائلي وتأجير مساحة بالحديقة",
+    amount: 8000,
+    date: "2026-03-15",
+    receipt_number: "REC-G-103",
+  },
+];
+
+const DEFAULT_GARDEN_EXPENSES: MallGardenExpense[] = [
+  {
+    id: "exp-1",
+    year: 2026,
+    month: 1,
+    category: "maintenance",
+    title: "صيانة إنارة الحديقة والممرات",
+    amount: 1200,
+    date: "2026-01-10",
+    paid_to: "شركة الصيانة الحديثة",
+  },
+  {
+    id: "exp-2",
+    year: 2026,
+    month: 1,
+    category: "electricity",
+    title: "فاتورة كهرباء المول والحديقة",
+    amount: 2500,
+    date: "2026-01-15",
+    paid_to: "شركة الكهرباء",
+  },
+  {
+    id: "exp-3",
+    year: 2026,
+    month: 2,
+    category: "cleaning",
+    title: "أدوات ومواد تنظيف المول",
+    amount: 800,
+    date: "2026-02-05",
+    paid_to: "توريدات النظافة",
+  },
+  {
+    id: "exp-4",
+    year: 2026,
+    month: 2,
+    category: "security",
+    title: "رواتب أمن وحراسة المول",
+    amount: 3500,
+    date: "2026-02-28",
+    paid_to: "فريق الأمن",
+  },
+];
+
+const DEFAULT_MALL_SHOPS: MallShop[] = [
+  {
+    id: "shop-d1",
+    shop_number: "D1",
+    name_ar: "ملابس أطفال M/Akok atak akol",
+    account_number: "14030102",
+    tenant_name: "M/Akok atak akol",
+    phone: "-",
+    monthly_rent: 800,
+    status: "rented",
+    space_sqm: 40,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d2",
+    shop_number: "D2",
+    name_ar: "صيدلية Abdalla Majok",
+    account_number: "14030111",
+    tenant_name: "Abdalla Majok",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 45,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d3",
+    shop_number: "D3",
+    name_ar: "Mr / Thabo patrick Macagala",
+    account_number: "14030124",
+    tenant_name: "Thabo patrick",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 35,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d4",
+    shop_number: "D4",
+    name_ar: "عطور Achail mabok lang",
+    account_number: "14030122",
+    tenant_name: "Achail mabok lang",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 30,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d5",
+    shop_number: "D5",
+    name_ar: "عطور Achail mabok lang (نفس العميل)",
+    account_number: "14030122",
+    tenant_name: "Achail mabok lang",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 30,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d6",
+    shop_number: "D6",
+    name_ar: "عطور Achail mabok lang",
+    account_number: "14030142",
+    tenant_name: "Achail mabok lang",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 35,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d7",
+    shop_number: "D7",
+    name_ar: "ملابس أطفال Niting marin abwak",
+    account_number: "14030152",
+    tenant_name: "Niting marin",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 40,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d8",
+    shop_number: "D8",
+    name_ar: "عطور Mrs / Sara enoch machiex",
+    account_number: "14030162",
+    tenant_name: "Sara enoch",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 30,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d9",
+    shop_number: "D9",
+    name_ar: "عطور Mrs / Sara enoch machiex",
+    account_number: "14030171",
+    tenant_name: "Sara enoch",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 30,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d10",
+    shop_number: "D10",
+    name_ar: "وكالة طبية M/Erik danial dot",
+    account_number: "14030192",
+    tenant_name: "Erik danial",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 50,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d11",
+    shop_number: "D11",
+    name_ar: "konoro enterprises co",
+    account_number: "14030411",
+    tenant_name: "konoro enterprises",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 60,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d12",
+    shop_number: "D12",
+    name_ar: "مخزن الشركة",
+    account_number: "14030201",
+    tenant_name: "مخزن الشركة",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 80,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d13",
+    shop_number: "D13",
+    name_ar: "استيراد وتصدير Wanloi Ktl Invesment",
+    account_number: "14030198",
+    tenant_name: "Wanloi Ktl Invesment",
+    phone: "-",
+    monthly_rent: 700,
+    status: "rented",
+    space_sqm: 55,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d14",
+    shop_number: "D14",
+    name_ar: "مغسلة Mrs / Aluel Deng Awoul",
+    account_number: "14030230",
+    tenant_name: "Aluel Deng Awoul",
+    phone: "-",
+    monthly_rent: 500,
+    status: "rented",
+    space_sqm: 50,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d15",
+    shop_number: "D15",
+    name_ar: "مغسلة Mrs / Aluel Deng Awoul (نفس العميل)",
+    account_number: "14030230",
+    tenant_name: "Aluel Deng Awoul",
+    phone: "-",
+    monthly_rent: 500,
+    status: "rented",
+    space_sqm: 50,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d16",
+    shop_number: "D16",
+    name_ar: "مغسلة Mrs / Aluel Deng Awoul (نفس العميل)",
+    account_number: "14030230",
+    tenant_name: "Aluel Deng Awoul",
+    phone: "-",
+    monthly_rent: 500,
+    status: "rented",
+    space_sqm: 50,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d17",
+    shop_number: "D17",
+    name_ar: "شركة سياحه M/S Awar athuai akok (سيميا)",
+    account_number: "14030240",
+    tenant_name: "M/S Awar athuai",
+    phone: "-",
+    monthly_rent: 600,
+    status: "rented",
+    space_sqm: 65,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d18",
+    shop_number: "D18",
+    name_ar: "Hafza Cur Deng",
+    account_number: "14030250",
+    tenant_name: "Hafza Cur Deng",
+    phone: "-",
+    monthly_rent: 900,
+    status: "rented",
+    space_sqm: 70,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d19",
+    shop_number: "D19",
+    name_ar: "نظارات Mr / Harish Koudula",
+    account_number: "14030300",
+    tenant_name: "Harish Koudula",
+    phone: "-",
+    monthly_rent: 500,
+    status: "rented",
+    space_sqm: 40,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d20",
+    shop_number: "D20",
+    name_ar: "نظارات Mr / Harish Koudula (نفس العميل)",
+    account_number: "14030300",
+    tenant_name: "Harish Koudula",
+    phone: "-",
+    monthly_rent: 500,
+    status: "rented",
+    space_sqm: 40,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d21",
+    shop_number: "D21",
+    name_ar: "مكتبة internet International Trade",
+    account_number: "14030320",
+    tenant_name: "internet International Trade",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 45,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d30",
+    shop_number: "D30",
+    name_ar: "شركة سياحه easy travel and tours ltd",
+    account_number: "14030432",
+    tenant_name: "easy travel",
+    phone: "-",
+    monthly_rent: 550,
+    status: "rented",
+    space_sqm: 50,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d31",
+    shop_number: "D31",
+    name_ar: "شركة سياحه easy travel and tours ltd",
+    account_number: "14030442",
+    tenant_name: "easy travel",
+    phone: "-",
+    monthly_rent: 550,
+    status: "rented",
+    space_sqm: 50,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-d32",
+    shop_number: "D32",
+    name_ar: "John Juma Peter Alphonse",
+    account_number: "14030451",
+    tenant_name: "John Juma Peter",
+    phone: "-",
+    monthly_rent: 550,
+    status: "rented",
+    space_sqm: 50,
+    notes: "سنتر بوب",
+  },
+  {
+    id: "shop-b1",
+    shop_number: "B1",
+    name_ar: "مطعم Maged Gorg Ado",
+    account_number: "14010651",
+    tenant_name: "Maged Gorg Ado",
+    phone: "-",
+    monthly_rent: 0,
+    status: "rented",
+    space_sqm: 120,
+    notes: "المول",
+  },
+  {
+    id: "shop-b2",
+    shop_number: "B2",
+    name_ar: "lilico engineering service",
+    account_number: "25030200",
+    tenant_name: "lilico engineering",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 60,
+    notes: "المول",
+  },
+  {
+    id: "shop-b3",
+    shop_number: "B3",
+    name_ar: "lilico engineering service",
+    account_number: "14010470",
+    tenant_name: "lilico engineering",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 60,
+    notes: "المول",
+  },
+  {
+    id: "shop-b4",
+    shop_number: "B4",
+    name_ar: "بنك ايدين",
+    account_number: "25030110",
+    tenant_name: "بنك ايدين",
+    phone: "-",
+    monthly_rent: 1200,
+    status: "rented",
+    space_sqm: 150,
+    notes: "المول",
+  },
+  {
+    id: "shop-b5",
+    shop_number: "B5",
+    name_ar: "بنك ايدين",
+    account_number: "25030110",
+    tenant_name: "بنك ايدين",
+    phone: "-",
+    monthly_rent: 1200,
+    status: "rented",
+    space_sqm: 150,
+    notes: "المول",
+  },
+  {
+    id: "shop-b6",
+    shop_number: "B6",
+    name_ar: "وحدة تجارية B6",
+    account_number: "14010450-B6",
+    tenant_name: "-",
+    phone: "-",
+    monthly_rent: 750,
+    status: "vacant",
+    space_sqm: 65,
+    notes: "المول",
+  },
+  {
+    id: "shop-b7",
+    shop_number: "B7",
+    name_ar: "مطعم Aluel Deng Awoul",
+    account_number: "14010450",
+    tenant_name: "Aluel Deng Awoul",
+    phone: "-",
+    monthly_rent: 750,
+    status: "rented",
+    space_sqm: 90,
+    notes: "المول",
+  },
+  {
+    id: "shop-b8",
+    shop_number: "B8",
+    name_ar: "مطعم Aluel Deng Awoul (نفس العميل)",
+    account_number: "14010450",
+    tenant_name: "Aluel Deng Awoul",
+    phone: "-",
+    monthly_rent: 750,
+    status: "rented",
+    space_sqm: 90,
+    notes: "المول",
+  },
+  {
+    id: "shop-b9",
+    shop_number: "B9",
+    name_ar: "مطعم Aluel Deng Awoul (نفس العميل)",
+    account_number: "14010450",
+    tenant_name: "Aluel Deng Awoul",
+    phone: "-",
+    monthly_rent: 750,
+    status: "rented",
+    space_sqm: 90,
+    notes: "المول",
+  },
+  {
+    id: "shop-b10",
+    shop_number: "B10",
+    name_ar: "مطعم Aluel Deng Awoul (نفس العميل)",
+    account_number: "14010450",
+    tenant_name: "Aluel Deng Awoul",
+    phone: "-",
+    monthly_rent: 750,
+    status: "rented",
+    space_sqm: 90,
+    notes: "المول",
+  },
+  {
+    id: "shop-g2",
+    shop_number: "G2",
+    name_ar: "تصوير وطباعة image world",
+    account_number: "14010280",
+    tenant_name: "image world",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 40,
+    notes: "المول",
+  },
+  {
+    id: "shop-g3",
+    shop_number: "G3",
+    name_ar: "شركة سياحه Steven + sara Nile travel",
+    account_number: "14010140",
+    tenant_name: "Steven + sara",
+    phone: "-",
+    monthly_rent: 550,
+    status: "rented",
+    space_sqm: 50,
+    notes: "المول",
+  },
+  {
+    id: "shop-g4",
+    shop_number: "G4",
+    name_ar: "شركة سياحه Steven + sara Nile travel",
+    account_number: "14010140",
+    tenant_name: "Steven + sara",
+    phone: "-",
+    monthly_rent: 500,
+    status: "rented",
+    space_sqm: 50,
+    notes: "المول",
+  },
+  {
+    id: "shop-g5",
+    shop_number: "G5",
+    name_ar: "اتليه teraza daniel lado",
+    account_number: "14010313",
+    tenant_name: "teraza daniel lado",
+    phone: "-",
+    monthly_rent: 500,
+    status: "rented",
+    space_sqm: 45,
+    notes: "المول",
+  },
+  {
+    id: "shop-g6",
+    shop_number: "G6",
+    name_ar: "كوافير حريمي Wiaamramadan",
+    account_number: "14010316",
+    tenant_name: "Wiaamramadan",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 50,
+    notes: "المول",
+  },
+  {
+    id: "shop-g7",
+    shop_number: "G7",
+    name_ar: "كوافير رجالي Wiaamramadan",
+    account_number: "14010316",
+    tenant_name: "Wiaamramadan",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 50,
+    notes: "المول",
+  },
+  {
+    id: "shop-g8",
+    shop_number: "G8",
+    name_ar: "eagle enterprise",
+    account_number: "14010330",
+    tenant_name: "eagle enterprise",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 55,
+    notes: "المول",
+  },
+  {
+    id: "shop-g9",
+    shop_number: "G9",
+    name_ar: "سوبر ماركت Market china",
+    account_number: "14010340",
+    tenant_name: "Market china",
+    phone: "-",
+    monthly_rent: 625,
+    status: "rented",
+    space_sqm: 140,
+    notes: "المول",
+  },
+];
+
+const DEFAULT_MALL_PAYMENTS: MallRentalPayment[] = [
+  {
+    id: "pay-d1-2",
+    shop_id: "shop-d1",
+    year: 2026,
+    month: 2,
+    amount_due: 800,
+    amount_paid: 800,
+    status: "paid",
+    payment_date: "2026-02-10",
+    payment_method: "cash",
+    receipt_number: "REC-2001",
+  },
+  {
+    id: "pay-d13-2",
+    shop_id: "shop-d13",
+    year: 2026,
+    month: 2,
+    amount_due: 700,
+    amount_paid: 800,
+    status: "paid",
+    payment_date: "2026-02-12",
+    payment_method: "bank_transfer",
+    receipt_number: "REC-2002",
+  },
+  {
+    id: "pay-d14-4",
+    shop_id: "shop-d14",
+    year: 2026,
+    month: 4,
+    amount_due: 500,
+    amount_paid: 1500,
+    status: "paid",
+    payment_date: "2026-04-10",
+    payment_method: "cash",
+    receipt_number: "REC-2003",
+  },
+  {
+    id: "pay-d17-1",
+    shop_id: "shop-d17",
+    year: 2026,
+    month: 1,
+    amount_due: 600,
+    amount_paid: 600,
+    status: "paid",
+    payment_date: "2026-01-05",
+    payment_method: "cash",
+    receipt_number: "REC-2004",
+  },
+  {
+    id: "pay-d17-2",
+    shop_id: "shop-d17",
+    year: 2026,
+    month: 2,
+    amount_due: 600,
+    amount_paid: 600,
+    status: "paid",
+    payment_date: "2026-02-05",
+    payment_method: "cash",
+    receipt_number: "REC-2005",
+  },
+  {
+    id: "pay-d17-6",
+    shop_id: "shop-d17",
+    year: 2026,
+    month: 6,
+    amount_due: 600,
+    amount_paid: 600,
+    status: "paid",
+    payment_date: "2026-06-05",
+    payment_method: "cash",
+    receipt_number: "REC-2006",
+  },
+  {
+    id: "pay-d17-7",
+    shop_id: "shop-d17",
+    year: 2026,
+    month: 7,
+    amount_due: 600,
+    amount_paid: 600,
+    status: "paid",
+    payment_date: "2026-07-05",
+    payment_method: "cash",
+    receipt_number: "REC-2007",
+  },
+  {
+    id: "pay-d18-5",
+    shop_id: "shop-d18",
+    year: 2026,
+    month: 5,
+    amount_due: 900,
+    amount_paid: 9600,
+    status: "paid",
+    payment_date: "2026-05-10",
+    payment_method: "bank_transfer",
+    receipt_number: "REC-2008",
+  },
+  {
+    id: "pay-d19-3",
+    shop_id: "shop-d19",
+    year: 2026,
+    month: 3,
+    amount_due: 500,
+    amount_paid: 2000,
+    status: "paid",
+    payment_date: "2026-03-10",
+    payment_method: "cash",
+    receipt_number: "REC-2009",
+  },
+  {
+    id: "pay-d19-5",
+    shop_id: "shop-d19",
+    year: 2026,
+    month: 5,
+    amount_due: 500,
+    amount_paid: 1000,
+    status: "paid",
+    payment_date: "2026-05-10",
+    payment_method: "cash",
+    receipt_number: "REC-2010",
+  },
+  {
+    id: "pay-d21-3",
+    shop_id: "shop-d21",
+    year: 2026,
+    month: 3,
+    amount_due: 0,
+    amount_paid: 3000,
+    status: "paid",
+    payment_date: "2026-03-15",
+    payment_method: "cash",
+    receipt_number: "REC-2011",
+  },
+  {
+    id: "pay-d30-7",
+    shop_id: "shop-d30",
+    year: 2026,
+    month: 7,
+    amount_due: 550,
+    amount_paid: 3300,
+    status: "paid",
+    payment_date: "2026-07-10",
+    payment_method: "bank_transfer",
+    receipt_number: "REC-2012",
+  },
+  {
+    id: "pay-d32-2",
+    shop_id: "shop-d32",
+    year: 2026,
+    month: 2,
+    amount_due: 550,
+    amount_paid: 3300,
+    status: "paid",
+    payment_date: "2026-02-15",
+    payment_method: "bank_transfer",
+    receipt_number: "REC-2013",
+  },
+  {
+    id: "pay-b1-6",
+    shop_id: "shop-b1",
+    year: 2026,
+    month: 6,
+    amount_due: 0,
+    amount_paid: 5000,
+    status: "paid",
+    payment_date: "2026-06-10",
+    payment_method: "cash",
+    receipt_number: "REC-2014",
+  },
+  {
+    id: "pay-b7-1",
+    shop_id: "shop-b7",
+    year: 2026,
+    month: 1,
+    amount_due: 750,
+    amount_paid: 4500,
+    status: "paid",
+    payment_date: "2026-01-10",
+    payment_method: "cash",
+    receipt_number: "REC-2015",
+  },
+  {
+    id: "pay-b7-3",
+    shop_id: "shop-b7",
+    year: 2026,
+    month: 3,
+    amount_due: 750,
+    amount_paid: 3000,
+    status: "paid",
+    payment_date: "2026-03-10",
+    payment_method: "cash",
+    receipt_number: "REC-2016",
+  },
+  {
+    id: "pay-b7-4",
+    shop_id: "shop-b7",
+    year: 2026,
+    month: 4,
+    amount_due: 750,
+    amount_paid: 6500,
+    status: "paid",
+    payment_date: "2026-04-10",
+    payment_method: "cash",
+    receipt_number: "REC-2017",
+  },
+  {
+    id: "pay-b7-5",
+    shop_id: "shop-b7",
+    year: 2026,
+    month: 5,
+    amount_due: 750,
+    amount_paid: -1500,
+    status: "partial",
+    payment_date: "2026-05-10",
+    payment_method: "cash",
+    receipt_number: "REC-2018",
+    notes: "تسوية",
+  },
+  {
+    id: "pay-g9-1",
+    shop_id: "shop-g9",
+    year: 2026,
+    month: 1,
+    amount_due: 625,
+    amount_paid: 5000,
+    status: "paid",
+    payment_date: "2026-01-05",
+    payment_method: "bank_transfer",
+    receipt_number: "REC-2019",
+  },
+  {
+    id: "pay-g9-2",
+    shop_id: "shop-g9",
+    year: 2026,
+    month: 2,
+    amount_due: 625,
+    amount_paid: 5000,
+    status: "paid",
+    payment_date: "2026-02-05",
+    payment_method: "bank_transfer",
+    receipt_number: "REC-2020",
+  },
+  {
+    id: "pay-g9-3",
+    shop_id: "shop-g9",
+    year: 2026,
+    month: 3,
+    amount_due: 625,
+    amount_paid: 5000,
+    status: "paid",
+    payment_date: "2026-03-05",
+    payment_method: "bank_transfer",
+    receipt_number: "REC-2021",
+  },
+  {
+    id: "pay-g9-4",
+    shop_id: "shop-g9",
+    year: 2026,
+    month: 4,
+    amount_due: 625,
+    amount_paid: 5000,
+    status: "paid",
+    payment_date: "2026-04-05",
+    payment_method: "bank_transfer",
+    receipt_number: "REC-2022",
+  },
+  {
+    id: "pay-g9-5",
+    shop_id: "shop-g9",
+    year: 2026,
+    month: 5,
+    amount_due: 625,
+    amount_paid: 3000,
+    status: "paid",
+    payment_date: "2026-05-05",
+    payment_method: "bank_transfer",
+    receipt_number: "REC-2023",
+  },
+  {
+    id: "pay-g9-6",
+    shop_id: "shop-g9",
+    year: 2026,
+    month: 6,
+    amount_due: 625,
+    amount_paid: 6000,
+    status: "paid",
+    payment_date: "2026-06-05",
+    payment_method: "bank_transfer",
+    receipt_number: "REC-2024",
+  },
+  {
+    id: "pay-g9-7",
+    shop_id: "shop-g9",
+    year: 2026,
+    month: 7,
+    amount_due: 625,
+    amount_paid: 5000,
+    status: "paid",
+    payment_date: "2026-07-05",
+    payment_method: "bank_transfer",
+    receipt_number: "REC-2025",
+  },
+];
+
+export interface ERPStoreState {
+  branches: Branch[];
+  currentBranchId: string;
+  treasuries: TreasuryAccount[];
+  suppliers: Supplier[];
+  purchaseOrders: PurchaseOrder[];
+  treasuryTransactions: TreasuryTransaction[];
+  vouchers: Voucher[];
+  accounts: Account[];
+  journalEntries: JournalEntry[];
+  auditLogs: AuditLog[];
+  inventoryExpiry: {
+    id: string;
+    inventory_id: string;
+    branch_id: string;
+    warehouse_id?: string;
+    storage_condition?: string;
+    batch_no: string;
+    quantity: number;
+    expiry_date: string;
+    created_at?: string;
+  }[];
+  menuQualitySpecs?: Record<string, MenuItemQualitySpecs>;
+  costCenters: string[];
+  isAccountingPeriodLocked: boolean;
+  extendedInventoryItems: Record<string, ExtendedInventoryItem>;
+  inventoryDocuments: InventoryDocument[];
+  reconciliations: TreasuryReconciliation[];
+  userPermissions: Record<string, UserPermission>;
+  currentUser: string;
+  users: SystemUser[];
+  fiscalYearStatus: "open" | "closed";
+  inventorySettings?: InventorySettings;
+  totalDisposedExpiryValue?: number;
+  mock_data_cleared_v6?: boolean;
+  employees?: Employee[];
+  attendance?: AttendanceRecord[];
+  loans?: EmployeeLoan[];
+  payrolls?: PayrollRecord[];
+  mallShops: MallShop[];
+  mallPayments: MallRentalPayment[];
+  mallGardenRevenues: MallGardenRevenue[];
+  mallGardenExpenses: MallGardenExpense[];
+  mallTerminatedContractsArchive: TerminatedContractRecord[];
+}
+
+const DEFAULT_BRANCHES: Branch[] = [
+  { id: "branch-1", name: "Main Branch", name_ar: "الفرع الرئيسي", code: "MAIN" },
+];
+
+const DEFAULT_COST_CENTERS = [
+  "المطبخ (Kitchen)",
+  "البار (Bar)",
+  "التوصيل (Delivery)",
+  "الإدارة (Administration)",
+  "التسويق (Marketing)",
+  "المستودع (Warehouse)",
+];
+
+const getOffsetISO = (days: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+};
+
+const USD_SEED_TRANSACTIONS: TreasuryTransaction[] = [];
+const EGP_SEED_TRANSACTIONS: TreasuryTransaction[] = [];
+
+const DEFAULT_EXPIRY_SEED = [];
+
+const DEFAULT_ACCOUNTS: Account[] = ORACLE_MIGRATION_ACCOUNTS as any;
+
+export const SEED_AH_JOURNAL_ENTRIES: JournalEntry[] = [];
+
+const DEFAULT_TREASURIES: TreasuryAccount[] = [
+  {
+    id: "tr-1",
+    account_code: "13010130",
+    branch_id: "branch-1",
+    name_ar: "خزينة الكاشير",
+    type: "cash",
+    currency: "MULTI",
+    linked_to_restaurant: true,
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "كاشير المطعم",
+    status: "active",
+    deleted: false,
+    containers: [
+      { id: "cnt-cash-egp", name: "كاش مصري", currency: "EGP", balance: 0 },
+      { id: "cnt-card-egp", name: "فيزا مصري", currency: "EGP", balance: 0 },
+      { id: "cnt-wallet-egp", name: "محفظة مصري", currency: "EGP", balance: 0 },
+      { id: "cnt-cash-usd", name: "كاش دولار", currency: "USD", balance: 0 },
+      { id: "cnt-card-usd", name: "فيزا دولار", currency: "USD", balance: 0 },
+      { id: "cnt-wallet-usd", name: "محفظة دولار", currency: "USD", balance: 0 },
+      { id: "cnt-cash-ssp", name: "كاش سوداني", currency: "SSP", balance: 0 },
+      { id: "cnt-wallet-ssp", name: "محفظة سوداني", currency: "SSP", balance: 0 },
+      { id: "cnt-card-ssp", name: "فيزا سوداني", currency: "SSP", balance: 0 },
+    ],
+  },
+  {
+    id: "tr-oracle-13010100",
+    account_code: "13010100",
+    branch_id: "branch-1",
+    name_ar: "خزينة بالدولار",
+    type: "cash",
+    currency: "USD",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13010101",
+    account_code: "13010101",
+    branch_id: "branch-1",
+    name_ar: "خزينة دولار - كينيدي",
+    type: "cash",
+    currency: "USD",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "كينيدي",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13010102",
+    account_code: "13010102",
+    branch_id: "branch-1",
+    name_ar: "خزينة دولار - 501",
+    type: "cash",
+    currency: "USD",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13010103",
+    account_code: "13010103",
+    branch_id: "branch-1",
+    name_ar: "خزينة دولار - الادارة",
+    type: "cash",
+    currency: "USD",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13010105",
+    account_code: "13010105",
+    branch_id: "branch-1",
+    name_ar: "خزينة بالدولار سنترال بوب",
+    type: "cash",
+    currency: "USD",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13010110",
+    account_code: "13010110",
+    branch_id: "branch-1",
+    name_ar: "خزينة بالسوداني",
+    type: "cash",
+    currency: "SSP",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13010111",
+    account_code: "13010111",
+    branch_id: "branch-1",
+    name_ar: "خزينة سوداني - كينيدي",
+    type: "cash",
+    currency: "SSP",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "كينيدي",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13010115",
+    account_code: "13010115",
+    branch_id: "branch-1",
+    name_ar: "خزينة بالسوداني - سنترال بوب",
+    type: "cash",
+    currency: "SSP",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13010120",
+    account_code: "13010120",
+    branch_id: "branch-1",
+    name_ar: "خزينه FM",
+    type: "cash",
+    currency: "MULTI",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+    containers: [
+      { id: "cnt-cash-egp-13010120", name: "كاش مصري", currency: "EGP", balance: 0 },
+      { id: "cnt-card-egp-13010120", name: "فيزا مصري", currency: "EGP", balance: 0 },
+      { id: "cnt-cash-usd-13010120", name: "كاش دولار", currency: "USD", balance: 0 },
+      { id: "cnt-card-usd-13010120", name: "فيزا دولار", currency: "USD", balance: 0 },
+      { id: "cnt-cash-ssp-13010120", name: "كاش سوداني", currency: "SSP", balance: 0 },
+      { id: "cnt-card-ssp-13010120", name: "فيزا سوداني", currency: "SSP", balance: 0 },
+    ],
+  },
+  {
+    id: "tr-oracle-13010125",
+    account_code: "13010125",
+    branch_id: "branch-1",
+    name_ar: "خزينة مصري - الادارة",
+    type: "cash",
+    currency: "EGP",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13010135",
+    account_code: "13010135",
+    branch_id: "branch-1",
+    name_ar: "خزينه تذاكر الدخول",
+    type: "cash",
+    currency: "MULTI",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+    containers: [
+      { id: "cnt-cash-egp-13010135", name: "كاش مصري", currency: "EGP", balance: 0 },
+      { id: "cnt-card-egp-13010135", name: "فيزا مصري", currency: "EGP", balance: 0 },
+      { id: "cnt-cash-usd-13010135", name: "كاش دولار", currency: "USD", balance: 0 },
+      { id: "cnt-card-usd-13010135", name: "فيزا دولار", currency: "USD", balance: 0 },
+      { id: "cnt-cash-ssp-13010135", name: "كاش سوداني", currency: "SSP", balance: 0 },
+      { id: "cnt-card-ssp-13010135", name: "فيزا سوداني", currency: "SSP", balance: 0 },
+    ],
+  },
+  {
+    id: "tr-oracle-13020100",
+    account_code: "13020100",
+    branch_id: "branch-1",
+    name_ar: "CHARTER SSP",
+    type: "bank",
+    currency: "SSP",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13020110",
+    account_code: "13020110",
+    branch_id: "branch-1",
+    name_ar: "CHARTER usd",
+    type: "bank",
+    currency: "USD",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13020120",
+    account_code: "13020120",
+    branch_id: "branch-1",
+    name_ar: "EDEN SSP",
+    type: "bank",
+    currency: "SSP",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13020130",
+    account_code: "13020130",
+    branch_id: "branch-1",
+    name_ar: "Equity ssp",
+    type: "bank",
+    currency: "SSP",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13020140",
+    account_code: "13020140",
+    branch_id: "branch-1",
+    name_ar: "Equity usd",
+    type: "bank",
+    currency: "USD",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13020150",
+    account_code: "13020150",
+    branch_id: "branch-1",
+    name_ar: "kcb SSP",
+    type: "bank",
+    currency: "SSP",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13020160",
+    account_code: "13020160",
+    branch_id: "branch-1",
+    name_ar: "kcb usd",
+    type: "bank",
+    currency: "USD",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+  {
+    id: "tr-oracle-13030100",
+    account_code: "13030100",
+    branch_id: "branch-1",
+    name_ar: "Equity SSP FM",
+    type: "bank",
+    currency: "SSP",
+    balance: 0,
+    is_open: true,
+    opening_balance: 0,
+    available_balance: 0,
+    responsible_employee: "غير محدد",
+    status: "active",
+    deleted: false,
+  },
+];
+
+const DEFAULT_SUPPLIERS: Supplier[] = [
+  {
+    id: "sup-1",
+    name_ar: "شركة الهدى للأغذية والدواجن",
+    phone: "01023456789",
+    balance: 0,
+    account_code: "24010100",
+    currency: "USD",
+    deleted: false,
+  },
+  {
+    id: "sup-2",
+    name_ar: "المتحدون للخضروات والفاكهة",
+    phone: "01123456789",
+    balance: 0,
+    account_code: "24010150",
+    currency: "USD",
+    deleted: false,
+  },
+  {
+    id: "sup-3",
+    name_ar: "توب كواليتي لمستلزمات التعبئة",
+    phone: "01223456789",
+    balance: 0,
+    account_code: "24010160",
+    currency: "USD",
+    deleted: false,
+  },
+];
+
+const DEFAULT_USERS: SystemUser[] = [
+  {
+    id: "u-admin",
+    full_name: "مدير النظام (Super Admin)",
+    username: "admin",
+    password: "123456",
+    phone: "01000000000",
+    role: "admin",
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: "u-manager",
+    full_name: "مشرف الفرع",
+    username: "manager",
+    password: "123456",
+    phone: "01000000001",
+    role: "manager",
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: "u-cashier",
+    full_name: "كاشير الصالة",
+    username: "cashier",
+    password: "123456",
+    phone: "01000000002",
+    role: "cashier",
+    created_at: new Date().toISOString(),
+  },
+];
+
+const DEFAULT_PERMISSIONS: Record<string, UserPermission> = {
+  admin: {
+    orders: true,
+    pos: true,
+    captain: true,
+    kitchen: true,
+    delivery: true,
+    inventory: true,
+    hr: true,
+    purchasing: true,
+    production: true,
+    treasury: true,
+    accounting: true,
+    journal_approval: true,
+    expense_approval: true,
+    revenue_approval: true,
+    reports: true,
+    cost_centers: true,
+    branch_mgmt: true,
+    audit_logs: true,
+    users_roles: true,
+  },
+  manager: {
+    orders: true,
+    pos: true,
+    captain: true,
+    kitchen: true,
+    delivery: true,
+    inventory: true,
+    hr: true,
+    purchasing: true,
+    production: true,
+    treasury: false,
+    accounting: true,
+    journal_approval: false,
+    expense_approval: true,
+    revenue_approval: true,
+    reports: true,
+    cost_centers: true,
+    branch_mgmt: false,
+    audit_logs: false,
+    users_roles: false,
+  },
+  cashier: {
+    orders: true,
+    pos: true,
+    captain: true,
+    kitchen: true,
+    delivery: true,
+    inventory: false,
+    hr: false,
+    purchasing: false,
+    production: false,
+    treasury: false,
+    accounting: false,
+    journal_approval: false,
+    expense_approval: false,
+    revenue_approval: false,
+    reports: false,
+    cost_centers: false,
+    branch_mgmt: false,
+    audit_logs: false,
+    users_roles: false,
+  },
+  "admin@restaurant.com": {
+    orders: true,
+    pos: true,
+    captain: true,
+    kitchen: true,
+    delivery: true,
+    inventory: true,
+    hr: true,
+    purchasing: true,
+    production: true,
+    treasury: true,
+    accounting: true,
+    journal_approval: true,
+    expense_approval: true,
+    revenue_approval: true,
+    reports: true,
+    cost_centers: true,
+    branch_mgmt: true,
+    audit_logs: true,
+    users_roles: true,
+  },
+  "accountant@restaurant.com": {
+    orders: false,
+    pos: false,
+    captain: false,
+    kitchen: false,
+    delivery: false,
+    inventory: true,
+    hr: true,
+    purchasing: true,
+    production: true,
+    treasury: false,
+    accounting: true,
+    journal_approval: false,
+    expense_approval: true,
+    revenue_approval: true,
+    reports: true,
+    cost_centers: true,
+    branch_mgmt: false,
+    audit_logs: false,
+    users_roles: false,
+  },
+};
+
+// @ts-nocheck
+export class ERPStore {
+  state;
+  listeners = [];
+  constructor() {
+    this.state = this.loadState();
+    this.recalculateAccountBalances();
+  }
+  loadState() {
+    if (typeof window === "undefined" || typeof localStorage === "undefined")
+      return this.getDefaultState();
+    const raw = localStorage.getItem("erp_store_state");
+    if (raw)
+      try {
+        const parsed = JSON.parse(raw);
+        let treasuries =
+          parsed.treasuries?.map((t) => {
+            let currency = t.currency;
+            return {
+              ...t,
+              currency: currency || "EGP",
+              branch_id: "branch-1",
+              name_ar: t.id === "tr-3" ? "خزينة الكاش الإضافية" : t.name_ar,
+              available_balance: t.available_balance ?? t.balance,
+              responsible_employee: t.responsible_employee ?? "غير محدد",
+              status: t.status ?? "active",
+              deleted: !!t.deleted,
+            };
+          }) || DEFAULT_TREASURIES;
+        const t225 = treasuries.find((t) => t.name_ar && t.name_ar.includes("225"));
+        if (t225) {
+          treasuries = treasuries.filter((t) => t.id !== t225.id);
+          if (parsed.treasuryTransactions)
+            parsed.treasuryTransactions = parsed.treasuryTransactions.filter(
+              (tx) => tx.treasury_id !== t225.id,
+            );
+        }
+        treasuries = treasuries.filter(
+          (t) => t.id !== "tr-300" && t.name_ar !== "300" && !t.name_ar?.includes("300"),
+        );
+        treasuries = treasuries.filter(
+          (t) =>
+            t.id !== "tr-admin-usd" &&
+            t.name_ar !== "خزينة الإدارة دولار" &&
+            t.name_ar !== "خزينة دولار الإدارة" &&
+            !t.name_ar?.includes("الإدارة دولار") &&
+            !t.name_ar?.includes("دولار الإدارة"),
+        );
+        if (parsed.treasuryTransactions)
+          parsed.treasuryTransactions = parsed.treasuryTransactions.filter(
+            (tx) => tx.treasury_id !== "tr-admin-usd",
+          );
+        if (parsed.treasuryTransactions)
+          parsed.treasuryTransactions.forEach((tx) => {
+            if (tx.treasury_id === "tr-300") tx.treasury_id = "tr-1";
+          });
+        const defaultSalesContainers = [
+          {
+            id: "cnt-cash-egp",
+            name: "كاش مصري",
+            currency: "EGP",
+            balance: 0,
+          },
+          {
+            id: "cnt-card-egp",
+            name: "فيزا مصري",
+            currency: "EGP",
+            balance: 0,
+          },
+          {
+            id: "cnt-wallet-egp",
+            name: "محفظة مصري",
+            currency: "EGP",
+            balance: 0,
+          },
+          {
+            id: "cnt-cash-usd",
+            name: "كاش دولار",
+            currency: "USD",
+            balance: 0,
+          },
+          {
+            id: "cnt-card-usd",
+            name: "فيزا دولار",
+            currency: "USD",
+            balance: 0,
+          },
+          {
+            id: "cnt-wallet-usd",
+            name: "محفظة دولار",
+            currency: "USD",
+            balance: 0,
+          },
+          {
+            id: "cnt-cash-ssp",
+            name: "كاش سوداني",
+            currency: "SSP",
+            balance: 0,
+          },
+          {
+            id: "cnt-card-ssp",
+            name: "فيزا سوداني",
+            currency: "SSP",
+            balance: 0,
+          },
+          {
+            id: "cnt-wallet-ssp",
+            name: "محفظة سوداني",
+            currency: "SSP",
+            balance: 0,
+          },
+        ];
+        const validSalesContainerIds = new Set(defaultSalesContainers.map((c) => c.id));
+        let mainCashier = treasuries.find(
+          (t) =>
+            t.id === "tr-1" ||
+            t.linked_to_restaurant ||
+            (t.name_ar && t.name_ar.includes("الكاشير")),
+        );
+        if (!mainCashier) {
+          mainCashier = {
+            id: "tr-1",
+            branch_id: "branch-1",
+            name_ar: "خزينة الكاشير",
+            type: "cash",
+            currency: "MULTI",
+            linked_to_restaurant: true,
+            balance: 15e3,
+            is_open: true,
+            account_code: void 0,
+            opening_balance: 15e3,
+            available_balance: 15e3,
+            responsible_employee: "أحمد علي",
+            status: "active",
+            deleted: false,
+            containers: defaultSalesContainers,
+          };
+          treasuries.push(mainCashier);
+        } else {
+          mainCashier.id = "tr-1";
+          mainCashier.name_ar = "خزينة الكاشير";
+          mainCashier.linked_to_restaurant = true;
+          mainCashier.deleted = false;
+          mainCashier.currency = "MULTI";
+          const cleanedContainers = (mainCashier.containers || []).filter((c) =>
+            validSalesContainerIds.has(c.id),
+          );
+          defaultSalesContainers.forEach((dc) => {
+            if (!cleanedContainers.some((c) => c.id === dc.id)) cleanedContainers.push({ ...dc });
+          });
+          mainCashier.containers = cleanedContainers;
+        }
+        treasuries.forEach((t) => {
+          if (t.id !== "tr-1") t.linked_to_restaurant = false;
+        });
+        const seenTreasuryIds = /* @__PURE__ */ new Set();
+        treasuries = treasuries.filter((t) => {
+          if (!t.id || seenTreasuryIds.has(t.id)) return false;
+          seenTreasuryIds.add(t.id);
+          return true;
+        });
+        let loadedAccounts =
+          parsed.accounts !== void 0 && Array.isArray(parsed.accounts)
+            ? parsed.accounts.map((a) => ({
+                ...a,
+                level: a.level ?? 2,
+                status: a.status ?? "active",
+              }))
+            : [...DEFAULT_ACCOUNTS];
+        ORACLE_MIGRATION_ACCOUNTS.forEach((oracleAcc) => {
+          if (!loadedAccounts.some((a) => a.code === oracleAcc.code))
+            loadedAccounts.push({
+              ...oracleAcc,
+              balance: 0,
+              initial_balance: 0,
+              status: "active",
+              system_binding: "none",
+            });
+        });
+        let loadedSuppliers =
+          parsed.suppliers?.map((s) => ({
+            ...s,
+            deleted: !!s.deleted,
+          })) || DEFAULT_SUPPLIERS;
+        let loadedTreasuries = treasuries;
+        DEFAULT_TREASURIES.forEach((dt) => {
+          if (
+            dt.id !== "tr-admin-usd" &&
+            !loadedTreasuries.some((lt) => lt.id === dt.id || lt.deleted)
+          )
+            loadedTreasuries.push({ ...dt });
+        });
+        let loadedJournalEntries = Array.isArray(parsed.journalEntries)
+          ? parsed.journalEntries
+          : [];
+        let loadedTreasuryTransactions = Array.isArray(parsed.treasuryTransactions)
+          ? parsed.treasuryTransactions
+          : [];
+        let loadedVouchers = Array.isArray(parsed.vouchers) ? parsed.vouchers : [];
+        let loadedReconciliations = Array.isArray(parsed.reconciliations)
+          ? parsed.reconciliations
+          : [];
+
+        return {
+          branches: DEFAULT_BRANCHES,
+          currentBranchId: "branch-1",
+          treasuries: loadedTreasuries,
+          suppliers: loadedSuppliers,
+          purchaseOrders: (parsed.purchaseOrders || []).map((po) => ({
+            ...po,
+            branch_id: "branch-1",
+          })),
+          treasuryTransactions: loadedTreasuryTransactions.map((tx) => ({
+            ...tx,
+            branch_id: "branch-1",
+          })),
+          vouchers: loadedVouchers.map((v) => ({
+            ...v,
+            branch_id: "branch-1",
+            deleted: !!v.deleted,
+          })),
+          accounts: loadedAccounts,
+          journalEntries: loadedJournalEntries,
+          auditLogs: parsed.auditLogs || [],
+          inventoryExpiry:
+            parsed.inventoryExpiry && parsed.inventoryExpiry.length > 0
+              ? parsed.inventoryExpiry
+              : DEFAULT_EXPIRY_SEED,
+          menuQualitySpecs: parsed.menuQualitySpecs || {},
+          costCenters: parsed.costCenters || DEFAULT_COST_CENTERS,
+          isAccountingPeriodLocked: !!parsed.isAccountingPeriodLocked,
+          extendedInventoryItems: parsed.extendedInventoryItems || {},
+          inventoryDocuments: (parsed.inventoryDocuments || []).map((doc) => ({
+            ...doc,
+            branch_id: "branch-1",
+          })),
+          reconciliations: loadedReconciliations,
+          userPermissions: parsed.userPermissions || DEFAULT_PERMISSIONS,
+          currentUser: parsed.currentUser || "admin",
+          users: parsed.users || DEFAULT_USERS,
+          fiscalYearStatus: parsed.fiscalYearStatus || "open",
+          inventorySettings: parsed.inventorySettings || {
+            allowNegativeStock: true,
+            defaultUnit: "كيلو",
+          },
+          totalDisposedExpiryValue: Number(parsed.totalDisposedExpiryValue || 0),
+          hard_reset_2026_08_18_final: true,
+          mock_data_cleared_v6: true,
+          wipe_journal_entries_2026_08_18_v3: true,
+          employees: parsed.employees || DEFAULT_EMPLOYEES,
+          attendance: parsed.attendance || [],
+          loans: parsed.loans || [],
+          payrolls: parsed.payrolls || [],
+          mallShops:
+            parsed.mallShops && parsed.mallShops.length > 0 ? parsed.mallShops : DEFAULT_MALL_SHOPS,
+          mallPayments:
+            parsed.mallPayments && parsed.mallPayments.length > 0
+              ? parsed.mallPayments
+              : DEFAULT_MALL_PAYMENTS,
+          mallGardenRevenues:
+            parsed.mallGardenRevenues && parsed.mallGardenRevenues.length > 0
+              ? parsed.mallGardenRevenues
+              : DEFAULT_GARDEN_REVENUES,
+          mallGardenExpenses:
+            parsed.mallGardenExpenses && parsed.mallGardenExpenses.length > 0
+              ? parsed.mallGardenExpenses
+              : DEFAULT_GARDEN_EXPENSES,
+          mallTerminatedContractsArchive: parsed.mallTerminatedContractsArchive || [],
+        };
+      } catch (e) {
+        console.error("Error parsing ERP state:", e);
+      }
+    return this.getDefaultState();
   }
 
-  // ✅ FIX 1: Auto-balance validation with helpful messages
-  const totalDebit = lines.reduce(
-    (sum, l) => sum + this.getLineBaseValue(l.debit, l.rate || 1),
-    0
-  );
-  const totalCredit = lines.reduce(
-    (sum, l) => sum + this.getLineBaseValue(l.credit, l.rate || 1),
-    0
-  );
-
-  const difference = totalDebit - totalCredit;
-  const absDiff = Math.abs(difference);
-
-  // Allow Oracle imports to bypass strict validation
-  if (customId?.startsWith("ORACLE")) {
-    console.warn(`Oracle import: ${description} | Diff: ${difference.toFixed(2)}`);
-  } else if (absDiff > 0.5) {
-    // ✅ FIX 2: Throw clear error with details instead of silent return
-    const errorMsg = 
-      `❌ القيد غير متزن!\n\n` +
-      `📋 الوصف: ${description}\n` +
-      `💰 إجمالي المدين: ${totalDebit.toFixed(2)}\n` +
-      `💰 إجمالي الدائن: ${totalCredit.toFixed(2)}\n` +
-      `⚖️ الفرق: ${difference.toFixed(2)}\n\n` +
-      `📌 راجع السطور:\n` +
-      lines.map((l, i) => 
-        `  ${i + 1}. ${l.account_code} | مدين: ${l.debit || 0} | دائن: ${l.credit || 0}`
-      ).join('\n');
-    
-    console.error(errorMsg);
-    throw new Error(
-      `لا يمكن حفظ قيد غير متزن!\n` +
-      `الفرق: ${difference.toFixed(2)} (مدين: ${totalDebit.toFixed(2)} | دائن: ${totalCredit.toFixed(2)})`
+  clearAllJournalEntries() {
+    this.state.journalEntries = [];
+    if (Array.isArray(this.state.treasuryTransactions)) {
+      this.state.treasuryTransactions = this.state.treasuryTransactions.filter(
+        (tx) =>
+          !tx.id?.startsWith("tx-import-") &&
+          !tx.related_entity_id?.startsWith("ORACLE-") &&
+          !tx.related_entity_id?.startsWith("je-"),
+      );
+    }
+    this.state.accounts.forEach((a) => {
+      a.balance = Number(a.initial_balance || 0);
+    });
+    this.recalculateAccountBalances();
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "مسح قيود اليومية",
+      "تم مسح جميع قيود اليومية العامة من الذاكرة بالكامل",
+      "DELETE",
     );
-  } else if (absDiff > 0.01) {
-    // Small rounding difference - warn but allow
-    console.warn(
-      `⚠️ Small rounding diff in entry: ${description} | ${difference.toFixed(4)}`
-    );
+    this.notify();
   }
 
-  // If no account code is provided, auto-create a dedicated supplier account in Chart of Accounts under 24010
+  deleteAllSystemData() {
+    const s = this.getDefaultState();
+    s.hard_reset_2026_08_18_final = true;
+    s.wipe_journal_entries_2026_08_18_v3 = true;
+    s.treasuryTransactions = [];
+    s.journalEntries = [];
+    s.vouchers = [];
+    s.purchaseOrders = [];
+    s.inventoryDocuments = [];
+    s.orders = [];
+    s.treasuries = JSON.parse(JSON.stringify(DEFAULT_TREASURIES));
+    s.treasuries.forEach((t) => {
+      t.balance = 0;
+      t.opening_balance = 0;
+      t.available_balance = 0;
+      if (t.containers) t.containers.forEach((c) => (c.balance = 0));
+    });
+    s.accounts.forEach((a) => {
+      a.balance = 0;
+      a.opening_balance = 0;
+    });
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem("pos_local_orders");
+      localStorage.removeItem("erp_store_state");
+    }
+    this.state = s;
+    this.recalculateAccountBalances();
+    this.saveState();
+    if (typeof window !== "undefined") {
+      window.location.reload();
+    }
+    this.notify();
+  }
+  getDefaultState() {
+    return {
+      branches: DEFAULT_BRANCHES,
+      currentBranchId: "branch-1",
+      treasuries: DEFAULT_TREASURIES,
+      suppliers: DEFAULT_SUPPLIERS,
+      purchaseOrders: [],
+      treasuryTransactions: [],
+      vouchers: [],
+      accounts: DEFAULT_ACCOUNTS,
+      journalEntries: [],
+      auditLogs: [],
+      inventoryExpiry: DEFAULT_EXPIRY_SEED,
+      menuQualitySpecs: {},
+      costCenters: DEFAULT_COST_CENTERS,
+      isAccountingPeriodLocked: false,
+      extendedInventoryItems: {},
+      inventoryDocuments: [],
+      reconciliations: [],
+      userPermissions: DEFAULT_PERMISSIONS,
+      currentUser: "admin",
+      users: DEFAULT_USERS,
+      fiscalYearStatus: "open",
+      inventorySettings: {
+        allowNegativeStock: true,
+        defaultUnit: "كيلو",
+      },
+      totalDisposedExpiryValue: 0,
+      employees: DEFAULT_EMPLOYEES,
+      attendance: [],
+      loans: [],
+      payrolls: [],
+      mallShops: DEFAULT_MALL_SHOPS,
+      mallPayments: DEFAULT_MALL_PAYMENTS,
+      mallGardenRevenues: DEFAULT_GARDEN_REVENUES,
+      mallGardenExpenses: DEFAULT_GARDEN_EXPENSES,
+      mallTerminatedContractsArchive: [],
+    };
+  }
+  saveState() {
+    if (this.state.journalEntries) this.state.journalEntries = [...this.state.journalEntries];
+    if (this.state.accounts) this.state.accounts = [...this.state.accounts];
+    if (this.state.treasuryTransactions)
+      this.state.treasuryTransactions = [...this.state.treasuryTransactions];
+    if (this.state.treasuries) this.state.treasuries = [...this.state.treasuries];
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined")
+      localStorage.setItem("erp_store_state", JSON.stringify(this.state));
+    this.notify();
+  }
+  subscribe(listener) {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== listener);
+    };
+  }
+  notify() {
+    this.listeners.forEach((l) => l());
+  }
+  resetRestaurantSales() {
+    this.state.sales_invoices = [];
+    this.state.treasuryTransactions = this.state.treasuryTransactions.filter(
+      (t) => t.type !== "sale" && t.type !== "income",
+    );
+    this.state.journalEntries = this.state.journalEntries.filter(
+      (j) => !j.description?.includes("فاتورة مبيعات"),
+    );
+    const linkedTreasury = this.state.treasuries.find((t) => t.linked_to_restaurant);
+    if (linkedTreasury) linkedTreasury.balance = 0;
+    this.saveState();
+  }
+  getState() {
+    return this.state;
+  }
+  getCurrentBranch() {
+    return (
+      this.state.branches.find((b) => b.id === this.state.currentBranchId) || this.state.branches[0]
+    );
+  }
+  setCurrentBranch(branchId) {
+    this.state.currentBranchId = branchId;
+    this.saveState();
+    this.logAction(
+      "SYSTEM",
+      "تغيير الفرع الحالي",
+      `تم الانتقال إلى الفرع ذو المعرف ${branchId}`,
+      "SYSTEM",
+    );
+  }
+  logAction(user, action, details, actionType = "SYSTEM", beforeValue, afterValue) {
+    const log = {
+      id: "log-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
+      user_email: user,
+      action,
+      details,
+      created_at: /* @__PURE__ */ new Date().toISOString(),
+      action_type: actionType,
+      before_value: beforeValue,
+      after_value: afterValue,
+      ip_address: "127.0.0.1",
+    };
+    this.state.auditLogs.unshift(log);
+    this.saveState();
+  }
+  getUsers() {
+    return this.state.users || [];
+  }
+  upsertUser(user) {
+    if (!this.state.users) this.state.users = [];
+    const idx = this.state.users.findIndex((u) => u.id === user.id);
+    if (idx >= 0) this.state.users[idx] = user;
+    else this.state.users.push(user);
+    this.saveState();
+  }
+  deleteUser(id) {
+    if (!this.state.users) return;
+    this.state.users = this.state.users.filter((u) => u.id !== id);
+    this.saveState();
+  }
+  setCurrentUser(email) {
+    this.state.currentUser = email;
+    this.saveState();
+    this.logAction("SYSTEM", "تغيير المستخدم النشط", `تم تسجيل دخول المستخدم: ${email}`, "SYSTEM");
+  }
+  updateUserPermission(email, permissions) {
+    const existing = this.state.userPermissions[email] || {
+      treasury: false,
+      accounting: false,
+      journal_approval: false,
+      expense_approval: false,
+      revenue_approval: false,
+      reports: false,
+      cost_centers: false,
+      branch_mgmt: false,
+      audit_logs: false,
+    };
+    this.state.userPermissions[email] = {
+      ...existing,
+      ...permissions,
+    };
+    this.saveState();
+    this.logAction("ADMIN", "تحديث صلاحيات مستخدم", `تم تحديث صلاحيات ${email}`, "UPDATE");
+  }
+  addBranch(name, name_ar, code) {
+    const branch = {
+      id: "branch-" + Date.now(),
+      name,
+      name_ar,
+      code,
+    };
+    this.state.branches.push(branch);
+    this.saveState();
+    this.logAction("ADMIN", "إضافة فرع جديد", `تم إنشاء فرع جديد: ${name_ar} (${code})`, "CREATE");
+    return branch;
+  }
+  clearAllAccountsAndTransactions() {
+    this.state.accounts = [];
+    this.state.treasuryTransactions = [];
+    this.state.journalEntries = [];
+    this.state.vouchers = [];
+    this.state.purchaseOrders = [];
+    this.state.inventoryDocuments = [];
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined")
+      localStorage.removeItem("pos_local_orders");
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "مسح كامل الحسابات والحركات",
+      "تم تفريغ جميع الحسابات والحركات المالية لإعادة البدء بدليل نظيف",
+      "DELETE",
+    );
+  }
+  addSupplier(
+    name_ar: string,
+    phone?: string,
+    openingBalance: number = 0,
+    account_code?: string,
+    currency: string = "USD",
+  ) {
+    let targetAccountCode = account_code ? String(account_code).trim() : "";
+    let isNewAccount = false;
+
+    // If no account code is provided, auto-create a dedicated supplier account in Chart of Accounts under 24010
     if (!targetAccountCode) {
       const existingSupplierCodes = this.state.accounts
         .map((a) => a.code)
@@ -2274,15 +4743,794 @@ addJournalEntry(description, lines, reference, currency = "USD", date, customId)
     amount,
     treasuryId,
     description,
-    lines,
-    created_at: new Date().toISOString(),
-    reference: this.generateJournalReference(targetDate, reference),
-    currency: currency || lines[0]?.currency || "EGP",
-    created_by: this.state.currentUser,
-    is_approved: true,
-  };
-  this.state.journalEntries.unshift(entry);
-  this.recalculateAccountBalances();
-  this.saveState();
-  this.notify();
+    costCenter = "الإدارة (Administration)",
+    attachment,
+  ) {
+    const treasury = this.state.treasuries.find((t) => t.id === treasuryId);
+    const voucher = {
+      id: "vch-" + Date.now(),
+      branch_id: this.state.currentBranchId,
+      type,
+      category,
+      amount,
+      currency: treasury?.currency || "EGP",
+      payment_method: treasury?.type || "cash",
+      treasury_id: treasuryId,
+      description,
+      status: "approved",
+      created_at: /* @__PURE__ */ new Date().toISOString(),
+      cost_center: costCenter,
+      attachment,
+      deleted: false,
+    };
+    this.state.vouchers.unshift(voucher);
+    this.saveState();
+    if (treasury) {
+      const txType = type === "receipt" ? "deposit" : "withdrawal";
+      this.addTreasuryTransaction(
+        treasuryId,
+        txType,
+        amount,
+        treasury.currency,
+        `${type === "receipt" ? "سند قبض" : "سند صرف"} (${category}) - ${description}`,
+        voucher.id,
+      );
+      const accountCode =
+        {
+          "رواتب الموظفين": "502000",
+          "إيجار الفروع": "503000",
+          "الكهرباء والمياه والطاقة": "504000",
+          "التسويق والإعلانات": "505000",
+          "الهدر والمفقودات": "506000",
+        }[category] || "600000";
+      if (type === "payment")
+        this.postExpenseJournal(
+          voucher.id,
+          amount,
+          accountCode,
+          costCenter,
+          this.state.currentBranchId,
+        );
+      else
+        this.postRevenueJournal(
+          voucher.id,
+          amount,
+          "401000",
+          costCenter,
+          this.state.currentBranchId,
+        );
+    }
+    this.logAction(
+      "ADMIN",
+      "إنشاء سند مالي",
+      `تم تسجيل ${type === "receipt" ? "سند قبض" : "سند صرف"} فئة ${category} بمبلغ ${amount} ج.م بمركز تكلفة ${costCenter}`,
+      "CREATE",
+    );
+    return voucher;
+  }
+  deleteVoucher(id) {
+    const vch = this.state.vouchers.find((v) => v.id === id);
+    if (vch) {
+      vch.deleted = true;
+      this.saveState();
+      this.logAction(
+        "ADMIN",
+        "حذف سند مالي (حذف مؤقت)",
+        `تم حذف السند المالي #${id} مؤقتاً`,
+        "DELETE",
+      );
+    }
+  }
+  addExpiryBatch(inventoryId, batchNo, qty, expiryDate, warehouseId, storageCondition) {
+    this.state.inventoryExpiry.push({
+      id: "exp-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
+      inventory_id: inventoryId,
+      branch_id: this.state.currentBranchId,
+      warehouse_id: warehouseId || "wh-main-default",
+      storage_condition: storageCondition || "chilled_4c",
+      batch_no: batchNo,
+      quantity: qty,
+      expiry_date: expiryDate,
+      created_at: /* @__PURE__ */ new Date().toISOString(),
+    });
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "إضافة دفعة تاريخ صلاحية",
+      `إضافة الدفعة ${batchNo} للكمية ${qty} صالحة حتى ${expiryDate}`,
+      "CREATE",
+    );
+  }
+  async disposeExpiryBatch(batchId, reason) {
+    const idx = this.state.inventoryExpiry.findIndex((b) => b.id === batchId);
+    if (idx !== -1) {
+      const batch = this.state.inventoryExpiry[idx];
+      const item = localWarehouseStore.getInventory().find((i) => i.id === batch.inventory_id);
+      const cost = item ? Number(item.cost || 0) : 0;
+      const qty = Number(batch.quantity || 0);
+      const batchValue = qty * cost;
+      this.state.totalDisposedExpiryValue = (this.state.totalDisposedExpiryValue || 0) + batchValue;
+      if (batch.inventory_id && qty > 0)
+        try {
+          await inventoryService.addTransaction({
+            inventory_id: batch.inventory_id,
+            warehouse_id: batch.warehouse_id || "wh-main-default",
+            type: "out",
+            quantity: qty,
+            note: `إعدام وهدر دفعة رقم ${batch.batch_no} - السبب: ${reason}`,
+          });
+        } catch (err) {
+          console.error("Failed to add inventory transaction for batch disposal:", err);
+          localWarehouseStore.addTransaction({
+            inventory_id: batch.inventory_id,
+            warehouse_id: batch.warehouse_id || "wh-main-default",
+            type: "out",
+            quantity: qty,
+            note: `إعدام وهدر دفعة رقم ${batch.batch_no} - السبب: ${reason}`,
+          });
+        }
+      if (batchValue > 0)
+        this.postInventoryAdjustmentJournal(
+          batch.batch_no || batch.id.slice(0, 8),
+          batchValue,
+          this.state.currentBranchId,
+        );
+      this.state.inventoryExpiry.splice(idx, 1);
+      this.saveState();
+      this.logAction(
+        "ADMIN",
+        "إعدام دفعة منتهية الصلاحية",
+        `تم إعدام الدفعة ${batch.batch_no} بالكمية ${batch.quantity} (بقيمة ${batchValue} ج.م) بسبب: ${reason}، وتم الخصم من المخزن وإنشاء قيد المحاسبي تلقائياً`,
+        "DELETE",
+      );
+    }
+  }
+  getMenuItemQualitySpecs(menuItemId) {
+    if (!this.state.menuQualitySpecs) this.state.menuQualitySpecs = {};
+    if (!this.state.menuQualitySpecs[menuItemId])
+      this.state.menuQualitySpecs[menuItemId] = {
+        menu_item_id: menuItemId,
+        shelf_life_hours: 24,
+        storage_condition: "chilled_4c",
+        storage_condition_label: "ثلاجة مبردة (4°م)",
+        prep_instructions:
+          "يتم التحضير والتسخين وفق معايير النظافة والطهي الآمن على درجة حرارة 75°م على الأقل.",
+        allergens: ["جلوتين", "ألبان"],
+        quality_checklist: [
+          "فحص الرائحة والقوام قبل التقديم",
+          "التأكد من سلامة التغليف وتاريخ التجهيز",
+          "قياس درجة الحرارة عند الحفظ (أقل من 5°م للمبرد)",
+        ],
+        max_display_hours: 4,
+      };
+    return this.state.menuQualitySpecs[menuItemId];
+  }
+  saveMenuItemQualitySpecs(menuItemId, specs) {
+    if (!this.state.menuQualitySpecs) this.state.menuQualitySpecs = {};
+    const current = this.getMenuItemQualitySpecs(menuItemId);
+    this.state.menuQualitySpecs[menuItemId] = {
+      ...current,
+      ...specs,
+    };
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "تحديث معايير جودة وصلاحية الوجبة",
+      `تم تحديث مواصفات جودة وصلاحية الوجبة #${menuItemId}`,
+      "UPDATE",
+    );
+  }
+  setPeriodLock(isLocked: boolean) {
+    this.state.isAccountingPeriodLocked = isLocked;
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      isLocked ? "إغلاق الفترة المحاسبية" : "فتح الفترة المحاسبية",
+      "تم تحديث قفل الفترة المحاسبية لمنع تعديل القيود التاريخية",
+      "SYSTEM",
+    );
+    this.notify();
+  }
+  setFiscalYearStatus(status: "open" | "closed") {
+    this.state.fiscalYearStatus = status;
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      status === "closed" ? "إغلاق السنة المالية" : "فتح السنة المالية الجديدة",
+      `تم تحديث حالة السنة المالية الحالية إلى ${status === "closed" ? "مغلقة" : "مفتوحة"}`,
+      "SYSTEM",
+    );
+    this.notify();
+  }
+  getExtendedItem(itemId, defaultVals) {
+    if (!this.state.extendedInventoryItems) this.state.extendedInventoryItems = {};
+    if (!this.state.extendedInventoryItems[itemId]) {
+      const generatedCode = "INV-" + itemId.substring(0, 5).toUpperCase();
+      const generatedBarcode =
+        "622" +
+        Math.abs(itemId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0))
+          .toString()
+          .padEnd(10, "0")
+          .substring(0, 10);
+      this.state.extendedInventoryItems[itemId] = {
+        id: itemId,
+        item_code: generatedCode,
+        barcode: generatedBarcode,
+        name_en: "Raw Material Item",
+        category: "خامات ومواد أولية",
+        preferred_supplier_id: "sup-1",
+        average_cost: 0,
+        last_purchase_price: 0,
+        status: "active",
+        ...defaultVals,
+      };
+      this.saveState();
+    }
+    return this.state.extendedInventoryItems[itemId];
+  }
+  saveExtendedItem(itemId, details) {
+    if (!this.state.extendedInventoryItems) this.state.extendedInventoryItems = {};
+    const old = { ...this.getExtendedItem(itemId) };
+    this.state.extendedInventoryItems[itemId] = {
+      ...this.getExtendedItem(itemId),
+      ...details,
+    };
+    this.saveState();
+    const changes = [];
+    Object.keys(details).forEach((key) => {
+      const valOld = old[key];
+      const valNew = details[key];
+      if (valOld !== valNew) changes.push(`[${key}]: ${valOld} -> ${valNew}`);
+    });
+    if (changes.length > 0)
+      this.logAction(
+        "ADMIN",
+        "تعديل تفاصيل الصنف المتقدمة",
+        `تم تعديل الصنف #${itemId.substring(0, 5)}: ${changes.join(", ")}`,
+        "UPDATE",
+      );
+  }
+  getExtendedItems() {
+    return this.state.extendedInventoryItems || {};
+  }
+  addInventoryDocument(doc) {
+    if (!this.state.inventoryDocuments) this.state.inventoryDocuments = [];
+    const docCount = this.state.inventoryDocuments.length + 1;
+    const docNumber = `DOC-2026-${String(docCount).padStart(4, "0")}`;
+    const newDoc = {
+      ...doc,
+      id: "doc-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
+      doc_number: docNumber,
+      created_at: /* @__PURE__ */ new Date().toISOString(),
+    };
+    this.state.inventoryDocuments.unshift(newDoc);
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      `إنشاء مستند مخزني: ${doc.type}`,
+      `تم تسجيل مستند ${doc.type} برقم ${docNumber} ويحتوي على ${doc.items.length} أصناف`,
+      "CREATE",
+    );
+    if (doc.type === "stock_adjustment") {
+      let adjustmentVal = 0;
+      doc.items.forEach((it) => {
+        const diff = (it.counted_quantity ?? 0) - it.quantity;
+        adjustmentVal += diff * it.unit_cost;
+      });
+      if (Math.abs(adjustmentVal) > 0)
+        this.postInventoryAdjustmentJournal(docNumber, adjustmentVal, doc.branch_id);
+    }
+    return newDoc;
+  }
+  cancelInventoryDocument(docId) {
+    if (!this.state.inventoryDocuments) return false;
+    const doc = this.state.inventoryDocuments.find((d) => d.id === docId);
+    if (!doc || doc.status === "cancelled") return false;
+    doc.status = "cancelled";
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "إلغاء مستند مخزني",
+      `تم إلغاء المستند المخزني رقم ${doc.doc_number} بنجاح`,
+      "UPDATE",
+    );
+    return true;
+  }
+  saveInventorySettings(settings) {
+    this.state.inventorySettings = settings;
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "تحديث إعدادات المخزن",
+      `تم تحديث إعدادات المخزن: السماح بالبيع بالسالب (${settings.allowNegativeStock})`,
+      "UPDATE",
+    );
+  }
+  addEmployee(emp) {
+    const newEmp = {
+      ...emp,
+      id: "emp-" + Date.now(),
+    };
+    if (!this.state.employees) this.state.employees = [];
+    this.state.employees.push(newEmp);
+    this.saveState();
+    this.logAction("HR", "إضافة موظف جديد", `تم تسجيل الموظف: ${emp.name}`, "CREATE");
+    return newEmp;
+  }
+  updateEmployee(id, payload) {
+    if (!this.state.employees) this.state.employees = [];
+    const emp = this.state.employees.find((e) => e.id === id);
+    if (emp) {
+      Object.assign(emp, payload);
+      this.saveState();
+      this.logAction("HR", "تعديل بيانات موظف", `تم تعديل الموظف: ${emp.name}`, "UPDATE");
+    }
+  }
+  deleteEmployee(id) {
+    if (!this.state.employees) this.state.employees = [];
+    const index = this.state.employees.findIndex((e) => e.id === id);
+    if (index !== -1) {
+      const emp = this.state.employees[index];
+      this.state.employees.splice(index, 1);
+      this.saveState();
+      this.logAction("HR", "حذف موظف", `تم حذف الموظف: ${emp.name}`, "DELETE");
+    }
+  }
+  recordAttendance(employeeId, date, status, checkIn, checkOut, notes) {
+    if (!this.state.attendance) this.state.attendance = [];
+    this.state.attendance = this.state.attendance.filter(
+      (r) => !(r.employee_id === employeeId && r.date === date),
+    );
+    const record = {
+      id: "att-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
+      employee_id: employeeId,
+      date,
+      status,
+      check_in: checkIn,
+      check_out: checkOut,
+      notes,
+    };
+    this.state.attendance.push(record);
+    this.saveState();
+  }
+  addLoan(employeeId, amount, currency, repaymentMonths, notes) {
+    if (!this.state.loans) this.state.loans = [];
+    const loan = {
+      id: "loan-" + Date.now(),
+      employee_id: employeeId,
+      amount,
+      date: /* @__PURE__ */ new Date().toISOString().split("T")[0],
+      currency,
+      repayment_months: repaymentMonths,
+      paid_amount: 0,
+      status: "active",
+      notes,
+    };
+    this.state.loans.push(loan);
+    this.saveState();
+    const emp = this.state.employees?.find((e) => e.id === employeeId);
+    this.logAction(
+      "HR",
+      "طلب سلفة موظف",
+      `تم تسجيل سلفة للموظف ${emp?.name || ""} بقيمة ${amount} ${currency}`,
+      "CREATE",
+    );
+    return loan;
+  }
+  repayLoan(loanId, amount) {
+    if (!this.state.loans) this.state.loans = [];
+    const loan = this.state.loans.find((l) => l.id === loanId);
+    if (loan) {
+      loan.paid_amount += amount;
+      if (loan.paid_amount >= loan.amount) loan.status = "paid";
+      this.saveState();
+    }
+  }
+  generatePayroll(month) {
+    if (!this.state.payrolls) this.state.payrolls = [];
+    if (!this.state.employees) this.state.employees = [];
+    if (!this.state.loans) this.state.loans = [];
+    if (!this.state.attendance) this.state.attendance = [];
+    this.state.payrolls = this.state.payrolls.filter(
+      (p) => p.month !== month || p.status === "paid",
+    );
+    this.state.employees
+      .filter((e) => e.status === "active")
+      .forEach((emp) => {
+        if (
+          this.state.payrolls?.some(
+            (p) => p.employee_id === emp.id && p.month === month && p.status === "paid",
+          )
+        )
+          return;
+        const empAttendance =
+          this.state.attendance?.filter(
+            (r) => r.employee_id === emp.id && r.date.startsWith(month),
+          ) || [];
+        const absentDays = empAttendance.filter((r) => r.status === "absent").length;
+        const lateDays = empAttendance.filter((r) => r.status === "late").length;
+        const dailyRate = emp.salary / 30;
+        const deductions = Math.round(absentDays * dailyRate + lateDays * dailyRate * 0.25);
+        const activeLoan = this.state.loans?.find(
+          (l) => l.employee_id === emp.id && l.status === "active" && l.currency === emp.currency,
+        );
+        let loanDeduction = 0;
+        if (activeLoan) {
+          const monthlyInstallment = activeLoan.amount / activeLoan.repayment_months;
+          const remainingLoan = activeLoan.amount - activeLoan.paid_amount;
+          loanDeduction = Math.round(Math.min(monthlyInstallment, remainingLoan));
+        }
+        const netSalary = Math.max(0, emp.salary - deductions - loanDeduction);
+        const record = {
+          id: "pay-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
+          employee_id: emp.id,
+          month,
+          basic_salary: emp.salary,
+          currency: emp.currency,
+          bonuses: 0,
+          deductions,
+          loan_deduction: loanDeduction,
+          net_salary: netSalary,
+          status: "draft",
+        };
+        this.state.payrolls?.push(record);
+      });
+    this.saveState();
+  }
+  paySalary(payrollId, treasuryId) {
+    if (!this.state.payrolls) return;
+    const record = this.state.payrolls.find((p) => p.id === payrollId);
+    if (!record || record.status === "paid") return;
+    const emp = this.state.employees?.find((e) => e.id === record.employee_id);
+    if (!emp) return;
+    this.addTreasuryTransaction(
+      treasuryId,
+      "withdrawal",
+      record.net_salary,
+      record.currency,
+      `صرف راتب شهر ${record.month} للموظف ${emp.name}`,
+      `PAY-${record.id.substring(4, 9).toUpperCase()}`,
+    );
+    if (record.loan_deduction > 0 && this.state.loans) {
+      const activeLoan = this.state.loans.find(
+        (l) => l.employee_id === emp.id && l.status === "active" && l.currency === record.currency,
+      );
+      if (activeLoan) this.repayLoan(activeLoan.id, record.loan_deduction);
+    }
+    record.status = "paid";
+    record.payment_date = /* @__PURE__ */ new Date().toISOString().split("T")[0];
+    record.payment_treasury_id = treasuryId;
+    this.saveState();
+    this.logAction(
+      "HR",
+      "صرف راتب موظف",
+      `تم صرف راتب الموظف ${emp.name} بقيمة ${record.net_salary} ${record.currency}`,
+      "TRANSACTION",
+    );
+  }
+  importOracleBatchData(newAccounts, newJournalEntries) {
+    this.state.accounts = newAccounts.map((acc) => ({
+      ...acc,
+      balance: acc.initial_balance || 0,
+    }));
+    if (this.state.treasuries && this.state.treasuries.length > 0)
+      this.state.treasuries = this.state.treasuries.map((tr) => {
+        const matchedAcc = newAccounts.find(
+          (acc) =>
+            acc.name_ar.includes(tr.name_ar) ||
+            tr.name_ar.includes(acc.name_ar) ||
+            acc.name_ar.includes("خزينة") ||
+            acc.name_ar.includes("صندوق") ||
+            acc.name_ar.includes("ارض المول"),
+        );
+        return {
+          ...tr,
+          account_code: matchedAcc ? matchedAcc.code : tr.account_code || "101000",
+        };
+      });
+    if (newJournalEntries && newJournalEntries.length > 0)
+      this.state.journalEntries = [...newJournalEntries, ...(this.state.journalEntries || [])];
+    this.recalculateAccountBalances();
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "استيراد بيانات أوراكل الشاملة",
+      `تم استيراد ${newAccounts.length} حساب من أوراكل (عبر المستويات الأربعة) وحذف الحسابات القديمة، مع الاحتفاظ بالخزائن ومطابقة أكوادها حسب شجرة الحسابات المرسلة، واستيراد ${newJournalEntries.length} قيد وحركة مالية بنجاح.`,
+      "IMPORT",
+    );
+  }
+  addMallShop(shop) {
+    const newShop = {
+      ...shop,
+      id: "shop-" + Date.now(),
+    };
+    this.state.mallShops = [...(this.state.mallShops || []), newShop];
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "إضافة محلات المول",
+      `تم إضافة المحل ${newShop.name_ar} (رقم ${newShop.shop_number}) بنجاح`,
+      "CREATE",
+    );
+  }
+  createMallContract(shopId, updates, treasuryId) {
+    this.updateMallShop(shopId, updates);
+    const contract = updates.contract;
+    if (contract && treasuryId) {
+      const treasury = this.state.treasuries.find((t) => t.id === treasuryId);
+      if (treasury) {
+        const treasuryAccountCode =
+          treasury.type === "bank"
+            ? "102000"
+            : treasury.branch_id === "branch-2"
+              ? "101001"
+              : "101000";
+        const totalCollected = (contract.deposit_amount || 0) + (contract.advance_payment || 0);
+        if (totalCollected > 0) {
+          const lines = [
+            {
+              account_code: treasuryAccountCode,
+              debit: totalCollected,
+              credit: 0,
+            },
+          ];
+          if (contract.deposit_amount > 0)
+            lines.push({
+              account_code: "201100",
+              debit: 0,
+              credit: contract.deposit_amount,
+            });
+          if (contract.advance_payment > 0)
+            lines.push({
+              account_code: "201200",
+              debit: 0,
+              credit: contract.advance_payment,
+            });
+          this.addJournalEntry(
+            `تحصيل تأمين ومقدم عقد إيجار لمحل #${shopId}`,
+            lines,
+            `CNTR-${Date.now().toString().slice(-6)}`,
+            "USD",
+            contract.start_date,
+          );
+          this.addTreasuryTransaction(
+            treasuryId,
+            "sales",
+            totalCollected,
+            "USD",
+            `تحصيل تأمين ومقدم لعقد إيجار محل #${shopId}`,
+            `CNTR-${Date.now().toString().slice(-6)}`,
+            "cash",
+            null,
+          );
+        }
+      }
+    }
+  }
+  updateMallShop(id, updates) {
+    this.state.mallShops = (this.state.mallShops || []).map((s) =>
+      s.id === id
+        ? {
+            ...s,
+            ...updates,
+          }
+        : s,
+    );
+    this.saveState();
+    this.logAction("ADMIN", "تعديل بيانات المحل", `تم تحديث بيانات المحل رقم ${id}`, "UPDATE");
+  }
+  deleteMallShop(id) {
+    this.state.mallShops = (this.state.mallShops || []).filter((s) => s.id !== id);
+    this.state.mallPayments = (this.state.mallPayments || []).filter((p) => p.shop_id !== id);
+    this.saveState();
+    this.logAction("ADMIN", "حذف محل من المول", `تم حذف المحل وسجل مدفوعاته`, "DELETE");
+  }
+  recordMallPayment(payment, treasuryId) {
+    const existingIndex = (this.state.mallPayments || []).findIndex(
+      (p) => p.shop_id === payment.shop_id && p.year === payment.year && p.month === payment.month,
+    );
+    if (existingIndex >= 0)
+      this.state.mallPayments[existingIndex] = {
+        ...this.state.mallPayments[existingIndex],
+        ...payment,
+      };
+    else {
+      const newPayment = {
+        ...payment,
+        id: "pay-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
+      };
+      this.state.mallPayments = [...(this.state.mallPayments || []), newPayment];
+    }
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "تسجيل دفعة إيجار",
+      `تم تسجيل دفعة إيجار للمحل لشهر ${payment.month}/${payment.year} بقيمة ${payment.amount_paid}`,
+      "TRANSACTION",
+    );
+    if (treasuryId && payment.amount_paid !== 0) {
+      const treasury = this.state.treasuries.find((t) => t.id === treasuryId);
+      if (treasury) {
+        const treasuryAccountCode =
+          treasury.type === "bank"
+            ? "102000"
+            : treasury.branch_id === "branch-2"
+              ? "101001"
+              : "101000";
+        const isRefund = payment.amount_paid < 0;
+        const absAmount = Math.abs(payment.amount_paid);
+        const lines = [
+          {
+            account_code: treasuryAccountCode,
+            debit: isRefund ? 0 : absAmount,
+            credit: isRefund ? absAmount : 0,
+          },
+          {
+            account_code: "401000",
+            debit: isRefund ? absAmount : 0,
+            credit: isRefund ? 0 : absAmount,
+          },
+        ];
+        this.addJournalEntry(
+          isRefund
+            ? `رد مقدم/دفعة إيجار للمحل (شهر ${payment.month}/${payment.year})`
+            : `تحصيل دفعة إيجار للمحل (شهر ${payment.month}/${payment.year})`,
+          lines,
+          payment.receipt_number || `REC-${Date.now()}`,
+          "USD",
+          payment.payment_date || /* @__PURE__ */ new Date().toISOString().split("T")[0],
+        );
+        this.addTreasuryTransaction(
+          treasuryId,
+          isRefund ? "withdrawal" : "sales",
+          absAmount,
+          "USD",
+          isRefund ? `رد مقدم/دفعة إيجار للمحل` : `تحصيل دفعة إيجار للمحل`,
+          payment.receipt_number || `REC-${Date.now()}`,
+          payment.payment_method === "cash" ? "cash" : "bank_transfer",
+          null,
+        );
+      }
+    }
+  }
+  deleteMallPayment(id) {
+    this.state.mallPayments = (this.state.mallPayments || []).filter((p) => p.id !== id);
+    this.saveState();
+    this.logAction("ADMIN", "حذف دفعة إيجار", `تم حذف دفعة الإيجار رقم ${id}`, "DELETE");
+  }
+  addMallGardenRevenue(rev) {
+    const newRev = {
+      ...rev,
+      id: "rev-" + Date.now(),
+    };
+    this.state.mallGardenRevenues = [...(this.state.mallGardenRevenues || []), newRev];
+    this.saveState();
+    this.logAction("ADMIN", "إضافة إيراد حديقة", `تم إضافة إيراد بقيمة ${newRev.amount}`, "CREATE");
+  }
+  deleteMallGardenRevenue(id) {
+    this.state.mallGardenRevenues = (this.state.mallGardenRevenues || []).filter(
+      (r) => r.id !== id,
+    );
+    this.saveState();
+    this.logAction("ADMIN", "حذف إيراد حديقة", `تم حذف الإيراد رقم ${id}`, "DELETE");
+  }
+  addMallGardenExpense(exp) {
+    const newExp = {
+      ...exp,
+      id: "exp-" + Date.now(),
+    };
+    this.state.mallGardenExpenses = [...(this.state.mallGardenExpenses || []), newExp];
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "إضافة مصروف مول/حديقة",
+      `تم إضافة مصروف ${newExp.title} بقيمة ${newExp.amount}`,
+      "CREATE",
+    );
+  }
+  deleteMallGardenExpense(id) {
+    this.state.mallGardenExpenses = (this.state.mallGardenExpenses || []).filter(
+      (e) => e.id !== id,
+    );
+    this.saveState();
+    this.logAction("ADMIN", "حذف مصروف", `تم حذف المصروف رقم ${id}`, "DELETE");
+  }
+  resetMallData() {
+    this.state.mallShops = DEFAULT_MALL_SHOPS;
+    this.state.mallPayments = DEFAULT_MALL_PAYMENTS;
+    this.state.mallGardenRevenues = DEFAULT_GARDEN_REVENUES;
+    this.state.mallGardenExpenses = DEFAULT_GARDEN_EXPENSES;
+    this.state.mallTerminatedContractsArchive = [];
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "إعادة ضبط بيانات المول",
+      "تم إعادة تحميل بيانات المحلات والإيجارات الافتراضية بنجاح",
+      "UPDATE",
+    );
+  }
+  terminateMallContract(record, treasuryId) {
+    const termRecord = {
+      ...record,
+      id: "term-" + Date.now(),
+    };
+    this.state.mallTerminatedContractsArchive = [
+      termRecord,
+      ...(this.state.mallTerminatedContractsArchive || []),
+    ];
+    const shop = (this.state.mallShops || []).find((s) => s.id === record.shop_id);
+    if (shop) {
+      shop.status = "vacant";
+      shop.tenant_name = "";
+      shop.phone = "";
+      shop.contract = void 0;
+    }
+    let treasuryAccountCode = "101000";
+    if (treasuryId) {
+      const treasury = this.state.treasuries.find((t) => t.id === treasuryId);
+      if (treasury)
+        treasuryAccountCode =
+          treasury.type === "bank"
+            ? "102000"
+            : treasury.branch_id === "branch-2"
+              ? "101001"
+              : "101000";
+    }
+    if (record.refund_amount > 0 && treasuryId)
+      this.addTreasuryTransaction(
+        treasuryId,
+        "withdrawal",
+        record.refund_amount,
+        "USD",
+        `رد تأمين لفسخ عقد إيجار المحل #${record.shop_number}`,
+        `TERM-${record.shop_number}`,
+        "cash",
+        null,
+      );
+    if (record.deposit_amount > 0 || record.refund_amount > 0) {
+      const lines = [];
+      const depositAmount = record.deposit_amount || 0;
+      const refundAmount = record.refund_amount || 0;
+      if (depositAmount > 0)
+        lines.push({
+          account_code: "201100",
+          debit: depositAmount,
+          credit: 0,
+        });
+      if (refundAmount > 0)
+        lines.push({
+          account_code: treasuryAccountCode,
+          debit: 0,
+          credit: refundAmount,
+        });
+      const diff = depositAmount - refundAmount;
+      if (diff > 0)
+        lines.push({
+          account_code: "401000",
+          debit: 0,
+          credit: diff,
+        });
+      else if (diff < 0)
+        lines.push({
+          account_code: "501000",
+          debit: Math.abs(diff),
+          credit: 0,
+        });
+      this.addJournalEntry(
+        `إثبات فسخ عقد إيجار المحل #${record.shop_number} وتسوية التأمين`,
+        lines,
+        `TERM-${record.shop_number}`,
+        "USD",
+        record.termination_date,
+      );
+    }
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "فسخ عقد إيجار محل",
+      `تم فسخ عقد المحل #${record.shop_number} وأرشفة العقد ورد التأمين بقيمة ${record.refund_amount} USD`,
+      "UPDATE",
+    );
+  }
 }
+export const erpStore = new ERPStore();
