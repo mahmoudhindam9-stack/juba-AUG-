@@ -449,13 +449,13 @@ function LedgerPage() {
       const r = Number(l.rate) || 1;
       const val = Number(l.debit) || 0;
       if ((l.currency || je.currency) === "USD") return sum + val;
-      return sum + val * r;
+      return sum + val / r;
     }, 0);
     const baseCredit = (je.lines || []).reduce((sum, l) => {
       const r = Number(l.rate) || 1;
       const val = Number(l.credit) || 0;
       if ((l.currency || je.currency) === "USD") return sum + val;
-      return sum + val * r;
+      return sum + val / r;
     }, 0);
     const difference = Math.abs(baseDebit - baseCredit);
     return {
@@ -2402,14 +2402,14 @@ function LedgerPage() {
                       const r = Number(l.rate) || 1;
                       const val = Number(l.debit) || 0;
                       if ((l.currency || entry.currency) === "USD") return sum + val;
-                      return sum + val * r;
+                      return sum + val / r;
                     }, 0);
 
                     const totalBaseCredit = entry.lines.reduce((sum, l) => {
                       const r = Number(l.rate) || 1;
                       const val = Number(l.credit) || 0;
                       if ((l.currency || entry.currency) === "USD") return sum + val;
-                      return sum + val * r;
+                      return sum + val / r;
                     }, 0);
 
                     const balanceInfo = getEntryBalanceInfo(entry);
@@ -2664,14 +2664,14 @@ function LedgerPage() {
                                   const r = Number(l.rate) || 1;
                                   const v = Number(l.debit) || 0;
                                   if (curr === "USD") return s + v;
-                                  return s + v * r;
+                                  return s + v / r;
                                 }, 0);
 
                                 const cBaseCredit = currLines.reduce((s, l) => {
                                   const r = Number(l.rate) || 1;
                                   const v = Number(l.credit) || 0;
                                   if (curr === "USD") return s + v;
-                                  return s + v * r;
+                                  return s + v / r;
                                 }, 0);
 
                                 return (
@@ -3235,14 +3235,14 @@ function LedgerPage() {
                 const r = Number(l.rate) || 1;
                 const val = Number(l.debit) || 0;
                 if ((l.currency || jCurr) === "USD") return sum + val;
-                return sum + val * r;
+                return sum + val / r;
               }, 0);
 
               const totalBaseCredit = selectedJournal.lines.reduce((sum, l) => {
                 const r = Number(l.rate) || 1;
                 const val = Number(l.credit) || 0;
                 if ((l.currency || jCurr) === "USD") return sum + val;
-                return sum + val * r;
+                return sum + val / r;
               }, 0);
 
               const isBalanced = isSingleCurrency
@@ -3425,14 +3425,14 @@ function LedgerPage() {
                               const r = Number(l.rate) || 1;
                               const v = Number(l.debit) || 0;
                               if (curr === "USD") return s + v;
-                              return s + v * r;
+                              return s + v / r;
                             }, 0);
 
                             const cBaseCredit = currLines.reduce((s, l) => {
                               const r = Number(l.rate) || 1;
                               const v = Number(l.credit) || 0;
                               if (curr === "USD") return s + v;
-                              return s + v * r;
+                              return s + v / r;
                             }, 0);
 
                           return (
@@ -3632,14 +3632,14 @@ function LedgerPage() {
                       const r = Number(l.rate) || 1;
                       const val = Number(l.debit) || 0;
                       if (l.currency === "USD") return sum + val;
-                      return sum + val * r;
+                      return sum + val / r;
                     }, 0);
 
                     const totalBaseCredit = entry.lines.reduce((sum, l) => {
                       const r = Number(l.rate) || 1;
                       const val = Number(l.credit) || 0;
                       if (l.currency === "USD") return sum + val;
-                      return sum + val * r;
+                      return sum + val / r;
                     }, 0);
 
                     const isBalanced = isSingleCurrency
@@ -3945,7 +3945,7 @@ function LedgerPage() {
                             const r = Number(l.rate) || 1;
                             const v = Number(l.debit) || 0;
                             if ((l.currency || je.currency) === "USD") return s + v;
-                            return s + v * r;
+                            return s + v / r;
                           }, 0);
 
                           return (

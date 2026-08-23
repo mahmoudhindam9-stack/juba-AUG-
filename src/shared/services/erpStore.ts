@@ -4011,7 +4011,7 @@ export class ERPStore {
     const val = Number(amount) || 0;
     const r = Number(rate) || 1;
     if (r <= 0) return val;
-    return val * r;
+    return val / r;
   }
 
   generateJournalReference(

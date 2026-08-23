@@ -174,8 +174,8 @@ export function parseOracleTextToRows(text: string): ParsedOracleRow[] {
         actualCurrDebit = baseDebit;
         actualCurrCredit = baseCredit;
       } else {
-        actualCurrDebit = baseDebit / rate;
-        actualCurrCredit = baseCredit / rate;
+        actualCurrDebit = baseDebit * rate;
+        actualCurrCredit = baseCredit * rate;
       }
     }
 
@@ -340,8 +340,8 @@ export function parseOracleSheetRows(rawRows: any[][]): ParsedOracleRow[] {
         currDebit = baseDebit;
         currCredit = baseCredit;
       } else {
-        currDebit = baseDebit / rate;
-        currCredit = baseCredit / rate;
+        currDebit = baseDebit * rate;
+        currCredit = baseCredit * rate;
       }
     }
 
