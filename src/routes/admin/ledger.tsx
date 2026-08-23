@@ -449,17 +449,13 @@ function LedgerPage() {
       const r = Number(l.rate) || 1;
       const val = Number(l.debit) || 0;
       if ((l.currency || je.currency) === "USD") return sum + val;
-      // The معامل (rate) always converts a native amount to the base currency by
-      // DIVISION — even when the coefficient is below 1 (e.g. 0.135). A heuristic
-      // like (r >= 1 ? val / r : val * r) silently mis-applies such coefficients and
-      // makes balanced journal entries appear unbalanced after import.
-      return sum + val / r;
+      return sum + val * r;
     }, 0);
     const baseCredit = (je.lines || []).reduce((sum, l) => {
       const r = Number(l.rate) || 1;
       const val = Number(l.credit) || 0;
       if ((l.currency || je.currency) === "USD") return sum + val;
-      return sum + val / r;
+      return sum + val * r;
     }, 0);
     const difference = Math.abs(baseDebit - baseCredit);
     return {
@@ -497,11 +493,11 @@ function LedgerPage() {
       const currency = template.currency || entry.currency || "USD";
       const rate = Number(template.rate) > 0 ? Number(template.rate) : 1;
       // `info.difference` is expressed in the BASE currency. To add it to a line
-      // that is in a foreign currency, convert base -> native by MULTIPLYING by the
-      // rate (native = base * rate). A heuristic like (rate > 1 ? v * rate : v /
-      // rate) mis-applies coefficients below 1 and can leave a multi-currency entry
+      // that is in a foreign currency, convert base -> native by DIVIDING by the
+      // rate (native = base / rate). A heuristic like (rate > 1 ? v * rate : v /
+      // rate) mis-applies coefficients and can leave a multi-currency entry
       // still unbalanced after clicking OK.
-      const amount = info.difference * rate;
+      const amount = info.difference / rate;
 
       if (targetIndex < 0) {
         targetIndex = lines.length;
@@ -2406,14 +2402,14 @@ function LedgerPage() {
                       const r = Number(l.rate) || 1;
                       const val = Number(l.debit) || 0;
                       if ((l.currency || entry.currency) === "USD") return sum + val;
-                      return sum + val / r;
+                      return sum + val * r;
                     }, 0);
 
                     const totalBaseCredit = entry.lines.reduce((sum, l) => {
                       const r = Number(l.rate) || 1;
                       const val = Number(l.credit) || 0;
                       if ((l.currency || entry.currency) === "USD") return sum + val;
-                      return sum + val / r;
+                      return sum + val * r;
                     }, 0);
 
                     const balanceInfo = getEntryBalanceInfo(entry);
@@ -2499,7 +2495,9 @@ function LedgerPage() {
                                   onClick={() => setBalanceAdjustmentEntry(entry)}
                                 >
                                   <PlusCircle className="h-3.5 w-3.5" />
-                                  <span className="mr-1 text-[11px] font-semibold">تسوية الفرق</span>
+                                  <span className="mr-1 text-[11px] font-semibold">
+                                    تسوية الفرق
+                                  </span>
                                 </Button>
                               )}
                               <Button
@@ -2666,14 +2664,14 @@ function LedgerPage() {
                                   const r = Number(l.rate) || 1;
                                   const v = Number(l.debit) || 0;
                                   if (curr === "USD") return s + v;
-                                  return s + (r >= 1 ? v / r : v * r);
+                                  return s + v * r;
                                 }, 0);
 
                                 const cBaseCredit = currLines.reduce((s, l) => {
                                   const r = Number(l.rate) || 1;
                                   const v = Number(l.credit) || 0;
                                   if (curr === "USD") return s + v;
-                                  return s + (r >= 1 ? v / r : v * r);
+                                  return s + v * r;
                                 }, 0);
 
                                 return (
@@ -3237,14 +3235,14 @@ function LedgerPage() {
                 const r = Number(l.rate) || 1;
                 const val = Number(l.debit) || 0;
                 if ((l.currency || jCurr) === "USD") return sum + val;
-                return sum + val / r;
+                return sum + val * r;
               }, 0);
 
               const totalBaseCredit = selectedJournal.lines.reduce((sum, l) => {
                 const r = Number(l.rate) || 1;
                 const val = Number(l.credit) || 0;
                 if ((l.currency || jCurr) === "USD") return sum + val;
-                return sum + val / r;
+                return sum + val * r;
               }, 0);
 
               const isBalanced = isSingleCurrency
@@ -3368,7 +3366,7 @@ function LedgerPage() {
                                       <span className="block text-[10px] text-muted-foreground font-normal">
                                         (={" "}
                                         {formatCurrency(
-                                          rate > 0 ? Number(l.debit) / rate : Number(l.debit),
+                                          rate > 0 ? Number(l.debit) * rate : Number(l.debit),
                                           "USD",
                                         )}
                                         )
@@ -3387,7 +3385,7 @@ function LedgerPage() {
                                       <span className="block text-[10px] text-muted-foreground font-normal">
                                         (={" "}
                                         {formatCurrency(
-                                          rate > 0 ? Number(l.credit) / rate : Number(l.credit),
+                                          rate > 0 ? Number(l.credit) * rate : Number(l.credit),
                                           "USD",
                                         )}
                                         )
@@ -3423,19 +3421,19 @@ function LedgerPage() {
                             0,
                           );
 
-                          const cBaseDebit = currLines.reduce((s, l) => {
-                            const r = Number(l.rate) || 1;
-                            const v = Number(l.debit) || 0;
-                            if (curr === "USD") return s + v;
-                            return s + (r >= 1 ? v / r : v * r);
-                          }, 0);
+                            const cBaseDebit = currLines.reduce((s, l) => {
+                              const r = Number(l.rate) || 1;
+                              const v = Number(l.debit) || 0;
+                              if (curr === "USD") return s + v;
+                              return s + v * r;
+                            }, 0);
 
-                          const cBaseCredit = currLines.reduce((s, l) => {
-                            const r = Number(l.rate) || 1;
-                            const v = Number(l.credit) || 0;
-                            if (curr === "USD") return s + v;
-                            return s + (r >= 1 ? v / r : v * r);
-                          }, 0);
+                            const cBaseCredit = currLines.reduce((s, l) => {
+                              const r = Number(l.rate) || 1;
+                              const v = Number(l.credit) || 0;
+                              if (curr === "USD") return s + v;
+                              return s + v * r;
+                            }, 0);
 
                           return (
                             <tr key={curr} className="text-xs font-semibold bg-muted/10">
@@ -3634,14 +3632,14 @@ function LedgerPage() {
                       const r = Number(l.rate) || 1;
                       const val = Number(l.debit) || 0;
                       if (l.currency === "USD") return sum + val;
-                      return sum + val / r;
+                      return sum + val * r;
                     }, 0);
 
                     const totalBaseCredit = entry.lines.reduce((sum, l) => {
                       const r = Number(l.rate) || 1;
                       const val = Number(l.credit) || 0;
                       if (l.currency === "USD") return sum + val;
-                      return sum + val / r;
+                      return sum + val * r;
                     }, 0);
 
                     const isBalanced = isSingleCurrency
@@ -3745,27 +3743,33 @@ function LedgerPage() {
               <Scale className="h-5 w-5" />
               تأكيد تسوية فرق القيد
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-right text-sm space-y-3 pt-2">
-              {balanceAdjustmentEntry && (() => {
-                const info = getEntryBalanceInfo(balanceAdjustmentEntry);
-                const sideLabel = info.side === "debit" ? "المدين" : "الدائن";
-                return (
-                  <>
-                    <p>
-                      القيد <strong>{balanceAdjustmentEntry.reference}</strong> غير متزن بفارق:
-                    </p>
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-900 font-bold">
-                      {formatCurrency(info.difference, info.isSingleCurrency ? info.currency : "USD")}
-                    </div>
-                    <p>
-                      هل أنت متأكد من إضافة قيمة الفرق إلى جانب <strong>{sideLabel}</strong>؟
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      سيتم تعديل القيد في الذاكرة، ثم اضغط حفظ القيود لتثبيته نهائيًا.
-                    </p>
-                  </>
-                );
-              })()}
+            <AlertDialogDescription asChild>
+              <div className="text-right text-sm space-y-3 pt-2">
+                {balanceAdjustmentEntry &&
+                  (() => {
+                    const info = getEntryBalanceInfo(balanceAdjustmentEntry);
+                    const sideLabel = info.side === "debit" ? "المدين" : "الدائن";
+                    return (
+                      <>
+                        <p>
+                          القيد <strong>{balanceAdjustmentEntry.reference}</strong> غير متزن بفارق:
+                        </p>
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-900 font-bold">
+                          {formatCurrency(
+                            info.difference,
+                            info.isSingleCurrency ? info.currency : "USD",
+                          )}
+                        </div>
+                        <p>
+                          هل أنت متأكد من إضافة قيمة الفرق إلى جانب <strong>{sideLabel}</strong>؟
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          سيتم تعديل القيد في الذاكرة، ثم اضغط حفظ القيود لتثبيته نهائيًا.
+                        </p>
+                      </>
+                    );
+                  })()}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-row justify-start gap-2">
@@ -3788,29 +3792,31 @@ function LedgerPage() {
               <Database className="h-5 w-5 text-emerald-600" />
               تأكيد حفظ وتثبيت القيود في قاعدة البيانات
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-right text-sm space-y-3 pt-2 text-foreground/80 leading-relaxed">
-              <p>
-                هل أنت متأكد من حفظ وتثبيت عدد{" "}
-                <strong className="text-emerald-700 dark:text-emerald-400 font-bold font-mono text-base">
-                  {journalEntries.length} قيد محاسبي
-                </strong>{" "}
-                في قاعدة البيانات والتخزين الدائم للنظام؟
-              </p>
-              <div className="bg-emerald-50 dark:bg-emerald-950/40 p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-900/60 text-xs text-emerald-900 dark:text-emerald-200 space-y-2">
-                <p className="font-bold flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300">
-                  <ShieldCheck className="h-4 w-4 text-emerald-600" />
-                  ما هي العمليات التي سيتم تثبيتها؟
+            <AlertDialogDescription asChild>
+              <div className="text-right text-sm space-y-3 pt-2 text-foreground/80 leading-relaxed">
+                <p>
+                  هل أنت متأكد من حفظ وتثبيت عدد{" "}
+                  <strong className="text-emerald-700 dark:text-emerald-400 font-bold font-mono text-base">
+                    {journalEntries.length} قيد محاسبي
+                  </strong>{" "}
+                  في قاعدة البيانات والتخزين الدائم للنظام؟
                 </p>
-                <ul className="list-disc list-inside space-y-1 mr-1 text-[12px] text-muted-foreground dark:text-emerald-200/90">
-                  <li>حفظ وتثبيت كافة أسطر القيود المحاسبية في قاعدة البيانات.</li>
-                  <li>إنشاء أي حسابات جديدة تلقائياً في دليل الحسابات العام.</li>
-                  <li>مزامنة وتحديث أرصدة الخزائن والحسابات البنكية فوراً.</li>
-                  <li>
-                    <strong className="text-foreground font-semibold">
-                      لن تفقد أي بيانات عند تحديث الصفحة أو تسجيل الخروج.
-                    </strong>
-                  </li>
-                </ul>
+                <div className="bg-emerald-50 dark:bg-emerald-950/40 p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-900/60 text-xs text-emerald-900 dark:text-emerald-200 space-y-2">
+                  <p className="font-bold flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300">
+                    <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                    ما هي العمليات التي سيتم تثبيتها؟
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 mr-1 text-[12px] text-muted-foreground dark:text-emerald-200/90">
+                    <li>حفظ وتثبيت كافة أسطر القيود المحاسبية في قاعدة البيانات.</li>
+                    <li>إنشاء أي حسابات جديدة تلقائياً في دليل الحسابات العام.</li>
+                    <li>مزامنة وتحديث أرصدة الخزائن والحسابات البنكية فوراً.</li>
+                    <li>
+                      <strong className="text-foreground font-semibold">
+                        لن تفقد أي بيانات عند تحديث الصفحة أو تسجيل الخروج.
+                      </strong>
+                    </li>
+                  </ul>
+                </div>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -3939,7 +3945,7 @@ function LedgerPage() {
                             const r = Number(l.rate) || 1;
                             const v = Number(l.debit) || 0;
                             if ((l.currency || je.currency) === "USD") return s + v;
-                            return s + (r >= 1 ? v / r : v * r);
+                            return s + v * r;
                           }, 0);
 
                           return (
@@ -4148,20 +4154,22 @@ function LedgerPage() {
               <Lock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
               تنبيه: السنة / الفترة المالية مقفلة
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-right text-sm leading-relaxed text-foreground/90 pt-2 space-y-2">
-              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-900/50">
-                <p className="font-bold text-amber-900 dark:text-amber-200 text-sm">
-                  {closedYearAlertMessage || "You cannot edit restrictions in a closed year."}
+            <AlertDialogDescription asChild>
+              <div className="text-right text-sm leading-relaxed text-foreground/90 pt-2 space-y-2">
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-900/50">
+                  <p className="font-bold text-amber-900 dark:text-amber-200 text-sm">
+                    {closedYearAlertMessage || "You cannot edit restrictions in a closed year."}
+                  </p>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  لحماية سلامة السجلات المالية ومطابقتها للمعايير المحاسبية، يتم منع إضافة أو تعديل
+                  أو حذف القيود التي تقع في فترات أو سنوات مالية مقفلة.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  إذا كنت مديراً للنظام وترغب في فتح السنة للتعديل، يمكنك ذلك عبر صفحة إدارة
+                  المستخدمين والصلاحيات.
                 </p>
               </div>
-              <p className="text-xs text-muted-foreground">
-                لحماية سلامة السجلات المالية ومطابقتها للمعايير المحاسبية، يتم منع إضافة أو تعديل أو
-                حذف القيود التي تقع في فترات أو سنوات مالية مقفلة.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                إذا كنت مديراً للنظام وترغب في فتح السنة للتعديل، يمكنك ذلك عبر صفحة إدارة
-                المستخدمين والصلاحيات.
-              </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-row justify-end gap-2 pt-2">

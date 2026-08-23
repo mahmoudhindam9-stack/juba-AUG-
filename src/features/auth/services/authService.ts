@@ -54,7 +54,7 @@ export const authService = {
   },
 
   async upsertProfile(profile: Partial<Profile> & { id: string }): Promise<Profile> {
-    const { data, error } = await supabase.from("profiles").upsert(profile).select().single();
+    const { data, error } = await supabase.from("profiles").upsert(profile as any).select().single();
     if (error) throw error;
     return data as Profile;
   },

@@ -36,7 +36,7 @@ function LoginPage() {
     const trimmedPass = password.trim();
 
     // 1. Direct verify against Super Admin and System users in erpStore
-    const localUsers = erpStore.getUsers();
+    const localUsers = erpStore.getUsers() as import("@/shared/services/erpStore").SystemUser[];
     const matchedUser = localUsers.find(
       (u) =>
         (u.username && u.username.toLowerCase() === trimmedUser) ||
