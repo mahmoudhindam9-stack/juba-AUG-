@@ -20,7 +20,7 @@ jobs:
       - name: Apply ERP journal validation
         run: node patch_erp_validation.cjs
 
-      - name: Apply Oracle journal grouping fix
+      - name: Apply Oracle journal grouping and numbering fix
         run: node patch_oracle_2021_import.cjs
 
       - name: Apply durable journal persistence
@@ -29,8 +29,8 @@ jobs:
       - name: Apply ledger async save and truthful import errors
         run: node patch_ledger_persistence.cjs
 
-      - name: Normalize Oracle journal numbers and report created accounts
-        run: node patch_journal_numbering_report.cjs
+      - name: Show created accounts in import report
+        run: node patch_ledger_account_report.cjs
 
       - name: Commit source fixes
         run: |
