@@ -9,14 +9,10 @@ import {
   Package,
   ArrowUpRight,
   Store,
-  ChefHat,
-  BadgePercent,
-  Layers,
   Sparkles,
   Clock,
-  TrendingUp,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { erpStore } from "@/shared/services/erpStore";
 
@@ -97,8 +93,7 @@ function RestaurantHubPage() {
   ];
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12" dir="rtl">
-      {/* Standalone App Banner */}
+    <div className="space-y-6 w-full px-2 lg:px-6 mx-auto pb-12" dir="rtl">
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-l from-slate-900 via-slate-800 to-indigo-950 text-white p-6 sm:p-8 shadow-xl border border-slate-800">
         <div className="absolute -left-10 -bottom-10 w-64 h-64 bg-primary/20 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -107,9 +102,7 @@ function RestaurantHubPage() {
               <Sparkles size={14} />
               <span>نظام إدارة المطاعم المتقدم - Standalone Hub</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
-              إدارة تشغيل المطعم بالكامل
-            </h1>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight">إدارة تشغيل المطعم بالكامل</h1>
             <p className="text-slate-300 text-sm max-w-2xl leading-relaxed">
               منصة مركزية متكاملة لجميع عمليات المطعم الكاشير، نقاط البيع، المطبخ، المنيو والمخزن.
               انقر على أي قسم لفتحه مباشرة.
@@ -126,16 +119,14 @@ function RestaurantHubPage() {
         </div>
       </div>
 
-      {/* Grid of Modules */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-black text-foreground flex items-center gap-2">
             <Store size={20} className="text-primary" />
             أقسام نظام تشغيل المطعم
           </h2>
-          <span className="text-xs text-muted-foreground font-bold">7 أقسام أساسية</span>
+          <span className="text-xs text-muted-foreground font-bold">{modules.length} أقسام أساسية</span>
         </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {modules.map((mod) => (
             <Link key={mod.to} to={mod.to} className="group">
@@ -165,10 +156,6 @@ function RestaurantHubPage() {
                     <span className="inline-flex items-center gap-1.5 text-primary font-black">
                       <Clock size={13} />
                       {mod.stats}
-                    </span>
-                    <span className="text-primary group-underline flex items-center gap-1">
-                      فتح الواجهة
-                      <ArrowUpRight size={14} />
                     </span>
                   </div>
                 </CardContent>
