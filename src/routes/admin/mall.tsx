@@ -138,6 +138,17 @@ function MallManagementPage() {
     monthly_rent: 1000,
     deposit_amount: 1000,
     advance_payment: 0,
+    authorized_representative: "",
+    tenant_address: "",
+    floor: "",
+    area: "",
+    lease_term: "",
+    renewal_option: "",
+    currency: "USD",
+    payment_due_date: "5",
+    payment_method: "bank_transfer",
+    service_charge: 0,
+    electricity_included: false,
     language: "ar" as "ar" | "en",
     treasury_account_id: "",
     terms: `1. يسري هذا العقد للمدة المحددة ويتجدد تلقائياً بموافقة الطرفين.
@@ -248,6 +259,17 @@ function MallManagementPage() {
         monthly_rent: s.monthly_rent || 1000,
         deposit_amount: s.monthly_rent || 1000,
         advance_payment: s.contract?.advance_payment || 0,
+        authorized_representative: s.contract?.authorized_representative || "",
+        tenant_address: s.contract?.tenant_address || "",
+        floor: s.contract?.floor || "",
+        area: s.contract?.area || (s.space_sqm ? String(s.space_sqm) : ""),
+        lease_term: s.contract?.lease_term || "",
+        renewal_option: s.contract?.renewal_option || "",
+        currency: s.contract?.currency || "USD",
+        payment_due_date: s.contract?.payment_due_date || "5",
+        payment_method: s.contract?.payment_method || "bank_transfer",
+        service_charge: s.contract?.service_charge || 0,
+        electricity_included: s.contract?.electricity_included || false,
       });
     } else {
       setContractForm({ ...contractForm, shop_id: shopId });
@@ -308,6 +330,17 @@ function MallManagementPage() {
         id_image: contractForm.id_image,
         language: contractForm.language,
         created_at: new Date().toISOString(),
+        authorized_representative: contractForm.authorized_representative,
+        tenant_address: contractForm.tenant_address,
+        floor: contractForm.floor,
+        area: contractForm.area,
+        lease_term: contractForm.lease_term,
+        renewal_option: contractForm.renewal_option,
+        currency: contractForm.currency,
+        payment_due_date: contractForm.payment_due_date,
+        payment_method: contractForm.payment_method,
+        service_charge: Number(contractForm.service_charge) || 0,
+        electricity_included: contractForm.electricity_included,
       },
     });
     setIsContractModalOpen(false);
@@ -636,6 +669,21 @@ function MallManagementPage() {
     terms: string,
     lang: "ar" | "en",
     idImage?: string,
+    contractExtra?: {
+      authorized_representative?: string;
+      tenant_address?: string;
+      floor?: string;
+      area?: string;
+      lease_term?: string;
+      renewal_option?: string;
+      currency?: string;
+      payment_due_date?: string;
+      payment_method?: string;
+      service_charge?: number;
+      electricity_included?: boolean;
+      nationality?: string;
+      id_number?: string;
+    },
   ) => {
     const isEn = lang === "en";
     let html = `
@@ -654,6 +702,17 @@ function MallManagementPage() {
           <div><strong>${isEn ? "Advance Payment:" : "دفعة مقدمة (تخصم من الإيجار):"}</strong> $${advancePayment || 0} USD</div>
           <div><strong>${isEn ? "Start Date:" : "تاريخ البداية:"}</strong> ${startDate}</div>
           <div><strong>${isEn ? "End Date:" : "تاريخ النهاية:"}</strong> ${endDate}</div>
+          <div><strong>${isEn ? "Authorized Representative:" : "الممثل القانوني:"}</strong> ${contractExtra?.authorized_representative || "..................."}</div>
+          <div><strong>${isEn ? "Tenant Address:" : "عنوان المستأجر:"}</strong> ${contractExtra?.tenant_address || "..................."}</div>
+          <div><strong>${isEn ? "Floor:" : "الطابق:"}</strong> ${contractExtra?.floor || "..................."}</div>
+          <div><strong>${isEn ? "Area:" : "المساحة:"}</strong> ${contractExtra?.area || "..................."}</div>
+          <div><strong>${isEn ? "Lease Term:" : "مدة الإيجار:"}</strong> ${contractExtra?.lease_term || "..................."}</div>
+          <div><strong>${isEn ? "Renewal Option:" : "شروط التجديد:"}</strong> ${contractExtra?.renewal_option || "..................."}</div>
+          <div><strong>${isEn ? "Currency:" : "العملة:"}</strong> ${contractExtra?.currency || "USD"}</div>
+          <div><strong>${isEn ? "Payment Due Day:" : "يوم استحقاق الإيجار:"}</strong> ${contractExtra?.payment_due_date || "5"}</div>
+          <div><strong>${isEn ? "Payment Method:" : "طريقة الدفع:"}</strong> ${contractExtra?.payment_method || "..................."}</div>
+          <div><strong>${isEn ? "Service Charge:" : "رسوم الخدمات:"}</strong> ${contractExtra?.service_charge || 0} ${contractExtra?.currency || "USD"}</div>
+          <div><strong>${isEn ? "Electricity Included:" : "الكهرباء مشمولة:"}</strong> ${contractExtra?.electricity_included ? (isEn ? "Yes" : "نعم") : (isEn ? "No" : "لا")}</div>
         </div>
         <div style="margin-top: 20px;">
           <p style="font-weight: bold; margin-bottom: 6px;">${isEn ? "Terms & Conditions:" : "بنود وشروط العقد:"}</p>
@@ -2553,6 +2612,65 @@ function MallManagementPage() {
               </div>
             </div>
 
+            {/* 3.1 Additional Commercial Contract Details */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-black text-primary border-b border-border pb-1">
+                {contractForm.language === "en" ? "Additional Commercial Contract Details" : "بيانات العقد التجاري الإضافية"}
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Authorized Representative" : "الممثل القانوني"}</label>
+                  <Input value={contractForm.authorized_representative} onChange={(e) => setContractForm({ ...contractForm, authorized_representative: e.target.value })} className="rounded-xl" />
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Tenant Address" : "عنوان المستأجر"}</label>
+                  <Input value={contractForm.tenant_address} onChange={(e) => setContractForm({ ...contractForm, tenant_address: e.target.value })} className="rounded-xl" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Floor" : "الطابق"}</label>
+                  <Input value={contractForm.floor} onChange={(e) => setContractForm({ ...contractForm, floor: e.target.value })} className="rounded-xl" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Area" : "المساحة"}</label>
+                  <Input value={contractForm.area} onChange={(e) => setContractForm({ ...contractForm, area: e.target.value })} placeholder="m²" className="rounded-xl" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Lease Term" : "مدة الإيجار"}</label>
+                  <Input value={contractForm.lease_term} onChange={(e) => setContractForm({ ...contractForm, lease_term: e.target.value })} placeholder={contractForm.language === "en" ? "e.g. 12 months" : "مثال: 12 شهر"} className="rounded-xl" />
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Renewal Option / Conditions" : "شروط التجديد"}</label>
+                  <Input value={contractForm.renewal_option} onChange={(e) => setContractForm({ ...contractForm, renewal_option: e.target.value })} className="rounded-xl" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Currency" : "العملة"}</label>
+                  <Select value={contractForm.currency} onValueChange={(v) => setContractForm({ ...contractForm, currency: v })}>
+                    <SelectTrigger className="rounded-xl font-bold"><SelectValue /></SelectTrigger>
+                    <SelectContent dir="rtl"><SelectItem value="USD">USD - دولار أمريكي</SelectItem><SelectItem value="SSP">SSP - جنيه جنوب سوداني</SelectItem></SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Monthly Payment Due Day" : "يوم استحقاق الإيجار"}</label>
+                  <Input type="number" min={1} max={31} value={contractForm.payment_due_date} onChange={(e) => setContractForm({ ...contractForm, payment_due_date: e.target.value })} className="rounded-xl" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Payment Method" : "طريقة الدفع"}</label>
+                  <Select value={contractForm.payment_method} onValueChange={(v) => setContractForm({ ...contractForm, payment_method: v })}>
+                    <SelectTrigger className="rounded-xl font-bold"><SelectValue /></SelectTrigger>
+                    <SelectContent dir="rtl"><SelectItem value="cash">نقدي / Cash</SelectItem><SelectItem value="bank_transfer">تحويل بنكي / Bank Transfer</SelectItem><SelectItem value="check">شيك / Cheque</SelectItem></SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Service Charge" : "رسوم الخدمات"}</label>
+                  <Input type="number" min={0} value={contractForm.service_charge} onChange={(e) => setContractForm({ ...contractForm, service_charge: Number(e.target.value) })} className="rounded-xl font-bold" />
+                </div>
+                <div className="flex items-center gap-2 pt-6">
+                  <input type="checkbox" checked={contractForm.electricity_included} onChange={(e) => setContractForm({ ...contractForm, electricity_included: e.target.checked })} className="h-4 w-4" />
+                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Electricity Included" : "الكهرباء مشمولة في الإيجار"}</label>
+                </div>
+              </div>
+            </div>
+
             {/* 4. Terms and Conditions & Add Clause */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -2618,6 +2736,22 @@ function MallManagementPage() {
                       contractForm.end_date,
                       contractForm.terms,
                       contractForm.language,
+                      undefined,
+                      {
+                        authorized_representative: contractForm.authorized_representative,
+                        tenant_address: contractForm.tenant_address,
+                        floor: contractForm.floor,
+                        area: contractForm.area,
+                        lease_term: contractForm.lease_term,
+                        renewal_option: contractForm.renewal_option,
+                        currency: contractForm.currency,
+                        payment_due_date: contractForm.payment_due_date,
+                        payment_method: contractForm.payment_method,
+                        service_charge: Number(contractForm.service_charge) || 0,
+                        electricity_included: contractForm.electricity_included,
+                        nationality: contractForm.nationality,
+                        id_number: contractForm.id_number,
+                      },
                     )
                   }
                   className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 rounded-xl cursor-pointer"
@@ -2880,6 +3014,20 @@ function MallManagementPage() {
                   تاريخ النهاية:{" "}
                   <span className="font-bold">{viewingContractShop.contract.end_date}</span>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 bg-muted/20 p-3 rounded-xl border border-border">
+                <div>الممثل القانوني: <span className="font-bold">{viewingContractShop.contract.authorized_representative || "-"}</span></div>
+                <div>العنوان: <span className="font-bold">{viewingContractShop.contract.tenant_address || "-"}</span></div>
+                <div>الطابق: <span className="font-bold">{viewingContractShop.contract.floor || "-"}</span></div>
+                <div>المساحة: <span className="font-bold">{viewingContractShop.contract.area || "-"}</span></div>
+                <div>مدة الإيجار: <span className="font-bold">{viewingContractShop.contract.lease_term || "-"}</span></div>
+                <div>التجديد: <span className="font-bold">{viewingContractShop.contract.renewal_option || "-"}</span></div>
+                <div>العملة: <span className="font-bold">{viewingContractShop.contract.currency || "USD"}</span></div>
+                <div>يوم الاستحقاق: <span className="font-bold">{viewingContractShop.contract.payment_due_date || "5"}</span></div>
+                <div>طريقة الدفع: <span className="font-bold">{viewingContractShop.contract.payment_method || "-"}</span></div>
+                <div>رسوم الخدمات: <span className="font-bold">{viewingContractShop.contract.service_charge || 0}</span></div>
+                <div>الكهرباء: <span className="font-bold">{viewingContractShop.contract.electricity_included ? "مشمولة" : "غير مشمولة"}</span></div>
               </div>
 
               <div className="space-y-1">
