@@ -1988,6 +1988,26 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
   };
 
   const handlePrint = () => {
+    const calculatedItemsSubtotal = itemsList.reduce(
+      (sum, it) => sum + Number(it?.price || 0) * Number(it?.quantity || 0),
+      0,
+    );
+    const printableSubtotal = Number(invoice.subtotal) || calculatedItemsSubtotal;
+    const printableDiscount = Number(invoice.discount) || 0;
+    const printableServiceFee = Number(invoice.service_fee) || 0;
+    const printableDeliveryFee = Number(invoice.delivery_fee) || 0;
+    const printableTax = Number(invoice.tax) || 0;
+    const printableTotal =
+      Number(invoice.total) ||
+      Math.max(
+        0,
+        printableSubtotal -
+          printableDiscount +
+          printableServiceFee +
+          printableDeliveryFee +
+          printableTax,
+      );
+
     const isConnected = printerService.isPrinterConnected();
     const receiptData = {
       storeName: receiptSettings.storeName || t.title,
@@ -2002,13 +2022,14 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
         quantity: it.quantity,
         price: it.price,
       })),
-      subtotal: Number(invoice.subtotal),
-      discount: invoice.discount ? Number(invoice.discount) : undefined,
-      serviceFee: invoice.service_fee ? Number(invoice.service_fee) : undefined,
-      deliveryFee: invoice.delivery_fee ? Number(invoice.delivery_fee) : undefined,
-      tax: Number(invoice.tax),
+      subtotal: printableSubtotal,
+      discount: printableDiscount || undefined,
+      serviceFee: printableServiceFee || undefined,
+      deliveryFee: printableDeliveryFee || undefined,
+      tax: printableTax,
       taxRate: invoice.tax_rate ?? receiptSettings.defaultTaxRate,
-      total: Number(invoice.total),
+      total: printableTotal,
+      currency,
       thankYouMessage: receiptSettings.thankYouMessage,
       footerNotes: receiptSettings.footerNotesText,
     };
@@ -2038,6 +2059,10 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
       }, 100);
     }
   };
+
+  const displaySubtotal = Number(invoice.subtotal) || calculatedItemsSubtotal;
+  const displayTax = Number(invoice.tax) || 0;
+  const displayTotal = Number(invoice.total) || Math.max(0, displaySubtotal - Number(invoice.discount || 0) + Number(invoice.service_fee || 0) + Number(invoice.delivery_fee || 0) + displayTax);
 
   return (
     <div className="p-8" id="invoice" dir={lang === "ar" ? "rtl" : "ltr"}>
@@ -2114,7 +2139,7 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
       </div>
 
       <div className="border-t border-dashed border-border pt-3 space-y-2 font-mono">
-        <Row label={t.subtotal} value={formatPrice(Number(invoice.subtotal))} />
+        <Row label={t.subtotal} value={formatPrice(displaySubtotal)} />
         {Boolean(invoice.discount && invoice.discount > 0) && (
           <Row label="الخصم" value={`-${formatPrice(Number(invoice.discount))}`} />
         )}
@@ -2127,13 +2152,13 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
         {receiptSettings.showTaxBreakdown && (
           <Row
             label={`${t.tax} (${invoice.tax_rate ?? receiptSettings.defaultTaxRate ?? 14}%)`}
-            value={formatPrice(Number(invoice.tax))}
+            value={formatPrice(displayTax)}
           />
         )}
         <div className="flex justify-between items-baseline pt-2 border-t border-border font-sans">
           <span className="font-bold">{t.total}</span>
           <span className="text-2xl font-black text-primary">
-            {formatPrice(Number(invoice.total))}
+            {formatPrice(displayTotal)}
           </span>
         </div>
       </div>
