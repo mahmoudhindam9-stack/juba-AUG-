@@ -51,6 +51,9 @@ function OvenPage() {
       .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {
         fetchPendingOrders();
       })
+      .on("broadcast", { event: "NEW_OVEN_ORDER" }, () => {
+        fetchPendingOrders();
+      })
       .subscribe();
 
     return () => {

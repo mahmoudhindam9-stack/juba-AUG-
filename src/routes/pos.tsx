@@ -1987,27 +1987,23 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
     cancelled: t.status_cancelled,
   };
 
-  const handlePrint = () => {
-    const calculatedItemsSubtotal = itemsList.reduce(
-      (sum, it) => sum + Number(it?.price || 0) * Number(it?.quantity || 0),
-      0,
-    );
-    const printableSubtotal = Number(invoice.subtotal) || calculatedItemsSubtotal;
-    const printableDiscount = Number(invoice.discount) || 0;
-    const printableServiceFee = Number(invoice.service_fee) || 0;
-    const printableDeliveryFee = Number(invoice.delivery_fee) || 0;
-    const printableTax = Number(invoice.tax) || 0;
-    const printableTotal =
-      Number(invoice.total) ||
-      Math.max(
-        0,
-        printableSubtotal -
-          printableDiscount +
-          printableServiceFee +
-          printableDeliveryFee +
-          printableTax,
-      );
+  const calculatedItemsSubtotal = itemsList.reduce(
+    (sum, it) => sum + Number(it?.price || 0) * Number(it?.quantity || 0),
+    0,
+  );
+  const displaySubtotal = Number(invoice.subtotal) > 0 ? Number(invoice.subtotal) : calculatedItemsSubtotal;
+  const displayDiscount = Number(invoice.discount) || 0;
+  const displayServiceFee = Number(invoice.service_fee) || 0;
+  const displayDeliveryFee = Number(invoice.delivery_fee) || 0;
+  const taxRateForDisplay = Number(invoice.tax_rate ?? receiptSettings.defaultTaxRate ?? 14);
+  const displayTax = Number(invoice.tax) > 0
+    ? Number(invoice.tax)
+    : Number((displaySubtotal * taxRateForDisplay / 100).toFixed(2));
+  const displayTotal = Number(invoice.total) > 0
+    ? Number(invoice.total)
+    : Math.max(0, displaySubtotal - displayDiscount + displayServiceFee + displayDeliveryFee + displayTax);
 
+  const handlePrint = () => {
     const isConnected = printerService.isPrinterConnected();
     const receiptData = {
       storeName: receiptSettings.storeName || t.title,
@@ -2059,10 +2055,6 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
       }, 100);
     }
   };
-
-  const displaySubtotal = Number(invoice.subtotal) || calculatedItemsSubtotal;
-  const displayTax = Number(invoice.tax) || 0;
-  const displayTotal = Number(invoice.total) || Math.max(0, displaySubtotal - Number(invoice.discount || 0) + Number(invoice.service_fee || 0) + Number(invoice.delivery_fee || 0) + displayTax);
 
   return (
     <div className="p-8" id="invoice" dir={lang === "ar" ? "rtl" : "ltr"}>
