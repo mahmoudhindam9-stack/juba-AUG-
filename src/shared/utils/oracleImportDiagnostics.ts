@@ -23,14 +23,10 @@ function validDate(year: number, month: number, day: number, hour = 0, minute = 
 
 export function parseOracleDate(value: unknown): Date | null {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
-
-  // XLSX can expose Excel dates as numeric serials. 25569 is the Unix-epoch
-  // offset for the normal Excel 1900 date system.
   if (typeof value === "number" && Number.isFinite(value) && value > 20000 && value < 80000) {
     const d = new Date(Math.round((value - 25569) * 86400) * 1000);
     return Number.isNaN(d.getTime()) ? null : d;
   }
-
   if (typeof value !== "string") return null;
   const s = normalizeDigits(value.trim()).replace(/^\uFEFF/, "");
   if (!s) return null;
@@ -45,16 +41,12 @@ export function parseOracleDate(value: unknown): Date | null {
     const m = s.match(patterns[i]);
     if (!m) continue;
     const y = i === 1 ? Number(m[3]) : Number(m[1]);
-    const mo = i === 1 ? Number(m[2]) : Number(m[2]);
+    const mo = Number(m[2]);
     const d = i === 1 ? Number(m[1]) : Number(m[3]);
-    const hour = Number(m[4] || 0);
-    const minute = Number(m[5] || 0);
-    const second = Number(m[6] || 0);
-    const parsed = validDate(y, mo, d, hour, minute, second);
+    const parsed = validDate(y, mo, d, Number(m[4] || 0), Number(m[5] || 0), Number(m[6] || 0));
     if (parsed) return parsed;
   }
 
-  // Last-resort parser for ISO timestamps emitted by some Oracle exports.
   const native = new Date(s);
   return Number.isNaN(native.getTime()) ? null : native;
 }
@@ -65,23 +57,18 @@ export function parseOracleNumber(value: unknown): number | null {
 
   let s = normalizeDigits(String(value)).trim();
   if (!s) return null;
-
-  // Preserve negatives represented by accounting-style parentheses.
   const negative = /^\(.*\)$/.test(s);
   s = s.replace(/^\(|\)$/g, "");
-  s = s.replace(/[\s\u00A0$€£¥₤]/g, "");
-  s = s.replace(/^[A-Z]{3}\s*/i, "");
+  s = s.replace(/[\s\u00A0$€£¥₤]/g, "").replace(/^[A-Z]{3}\s*/i, "");
+  s = s.replace(/٬/g, ",").replace(/٫/g, ".");
 
-  // Oracle exports use both 1,234.56 and 1.234,56 conventions.
   if (s.includes(",") && s.includes(".")) {
     s = s.lastIndexOf(",") > s.lastIndexOf(".")
       ? s.replace(/\./g, "").replace(",", ".")
       : s.replace(/,/g, "");
   } else if (s.includes(",")) {
     const parts = s.split(",");
-    s = parts.length === 2 && parts[1].length <= 6
-      ? `${parts[0]}.${parts[1]}`
-      : s.replace(/,/g, "");
+    s = parts.length === 2 && parts[1].length <= 6 ? `${parts[0]}.${parts[1]}` : s.replace(/,/g, "");
   }
 
   const n = Number(s);
@@ -92,37 +79,21 @@ export function parseOracleNumber(value: unknown): number | null {
 export function validateOracleRow(row: Record<string, unknown>, rowNumber: number): OracleImportDiagnostic[] {
   const diagnostics: OracleImportDiagnostic[] = [];
   const keys = Object.keys(row);
-
   const dateKey = keys.find((k) => /date|datum|تاريخ/i.test(k));
   if (dateKey && row[dateKey] != null && row[dateKey] !== "" && !parseOracleDate(row[dateKey])) {
-    diagnostics.push({
-      row: rowNumber,
-      field: dateKey,
-      message: `Invalid Oracle date: ${String(row[dateKey])}`,
-    });
+    diagnostics.push({ row: rowNumber, field: dateKey, message: `Invalid Oracle date: ${String(row[dateKey])}` });
   }
-
   for (const [key, value] of Object.entries(row)) {
     if (!/amount|debit|credit|value|balance|rate|quantity|qty|مبلغ|مدين|دائن|قيمة|رصيد|سعر|كمية/i.test(key)) continue;
     if (value == null || value === "") continue;
-    if (parseOracleNumber(value) == null) {
-      diagnostics.push({
-        row: rowNumber,
-        field: key,
-        message: `Invalid Oracle numeric value: ${String(value)}`,
-      });
-    }
+    if (parseOracleNumber(value) == null) diagnostics.push({ row: rowNumber, field: key, message: `Invalid Oracle numeric value: ${String(value)}` });
   }
-
   return diagnostics;
 }
 
 export function formatOracleDiagnostics(diagnostics: OracleImportDiagnostic[], limit = 20): string {
   if (!diagnostics.length) return "";
-  const shown = diagnostics.slice(0, limit).map((d) => {
-    const field = d.field ? ` [${d.field}]` : "";
-    return `الصف ${d.row}${field}: ${d.message}`;
-  });
+  const shown = diagnostics.slice(0, limit).map((d) => `الصف ${d.row}${d.field ? ` [${d.field}]` : ""}: ${d.message}`);
   const more = diagnostics.length > limit ? `\n... و${diagnostics.length - limit} أخطاء أخرى.` : "";
   return shown.join("\n") + more;
 }
