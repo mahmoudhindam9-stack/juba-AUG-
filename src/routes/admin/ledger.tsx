@@ -448,7 +448,7 @@ function LedgerPage() {
   >("ALL");
   const [journalSortOrder, setJournalSortOrder] = useState<
     "oldest" | "newest" | "ref_asc" | "ref_desc"
-  >("oldest");
+  >("ref_asc");
   const [journalStartDate, setJournalStartDate] = useState("");
   // Find imports and state section to add new states for viewing journal entries
   const [journalEndDate, setJournalEndDate] = useState("");
