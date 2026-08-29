@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { type JournalEntry, type JournalLine } from "@/shared/services/erpStore";
+import { parseOracleDate, parseOracleNumber, type OracleImportDiagnostic } from "@/shared/utils/oracleImportDiagnostics";
 
 export interface ParsedOracleRow {
   index: number;
@@ -8,7 +9,7 @@ export interface ParsedOracleRow {
   base_debit: number;
   base_credit: number;
   description: string;
-  date: string; // YYYY-MM-DD
+  date: string;
   document_number: string;
   journal_number: string;
   period: string;
@@ -19,324 +20,180 @@ export interface ParsedOracleRow {
   curr_credit: number;
 }
 
-function normalizeHeader(value: any): string {
-  return String(value || "")
+export interface OracleParseResult {
+  rows: ParsedOracleRow[];
+  diagnostics: OracleImportDiagnostic[];
+  headerIndex: number;
+  detectedColumns: Record<string, number>;
+}
+
+function normalizeHeader(value: unknown): string {
+  return String(value ?? "")
     .toLowerCase()
+    .replace(/^\uFEFF/, "")
     .replace(/[ًٌٍَُِّْـ]/g, "")
     .replace(/[\s_\-./():]+/g, "")
     .trim();
 }
 
-export function parseDateDDMMYYYY(rawDate: any): string {
-  if (!rawDate) return new Date().toISOString().split("T")[0];
-  const str = String(rawDate).trim();
+function cleanText(value: unknown): string {
+  return String(value ?? "").replace(/^\uFEFF/, "").trim();
+}
 
-  // Format DD/MM/YYYY or DD-MM-YYYY
-  const parts = str.split(/[-/]/);
-  if (parts.length === 3) {
-    if (parts[2].length === 4) {
-      // Day/Month/Year
-      const day = parts[0].padStart(2, "0");
-      const month = parts[1].padStart(2, "0");
-      const year = parts[2];
-      return `${year}-${month}-${day}`;
-    } else if (parts[0].length === 4) {
-      // Year/Month/Day
-      const year = parts[0];
-      const month = parts[1].padStart(2, "0");
-      const day = parts[2].padStart(2, "0");
-      return `${year}-${month}-${day}`;
-    }
-  }
-
-  // Check if it is a serial number from Excel (e.g. 42005)
-  const num = Number(str);
-  if (!isNaN(num) && num > 30000 && num < 60000) {
-    const utc_days = Math.floor(num - 25569);
-    const utc_value = Math.floor(utc_days * 86400);
-    const dateObj = new Date(utc_value * 1000);
-    if (!isNaN(dateObj.getTime())) {
-      return dateObj.toISOString().split("T")[0];
-    }
-  }
-
-  const d = new Date(str);
-  if (!isNaN(d.getTime())) {
-    return d.toISOString().split("T")[0];
-  }
-
-  return new Date().toISOString().split("T")[0];
+export function parseDateDDMMYYYY(rawDate: unknown): string {
+  const parsed = parseOracleDate(rawDate);
+  if (parsed) return parsed.toISOString().split("T")[0];
+  // Keep the legacy behavior for truly empty rows, but never silently turn an
+  // invalid non-empty Oracle date into today's date.
+  return cleanText(rawDate) ? "" : new Date().toISOString().split("T")[0];
 }
 
 export function parseCurrency(
-  currCode: any,
+  currCode: unknown,
   currName?: string,
   desc?: string,
   accCode?: string,
 ): "USD" | "SSP" | "EGP" {
-  const codeStr = String(currCode ?? "").trim();
-  const nameStr = String(currName || "").toLowerCase();
+  const codeStr = cleanText(currCode);
+  const nameStr = cleanText(currName).toLowerCase();
   if (nameStr.includes("دولار") || nameStr.includes("usd") || nameStr.includes("$")) return "USD";
   if (nameStr.includes("سودان") || nameStr.includes("ssp") || nameStr.includes("sdg")) return "SSP";
   if (nameStr.includes("مصر") || nameStr.includes("egp") || nameStr.includes("le")) return "EGP";
 
-  // In this ledger, Oracle currency code 0 is the USD base currency.
+  // Preserve the application's existing Oracle currency mapping.
   if (codeStr === "0" || codeStr === "0.0") return "USD";
   if (codeStr === "1" || codeStr === "1.0") return "SSP";
   if (codeStr === "2" || codeStr === "2.0") return "EGP";
 
-  const descStr = String(desc || "").toLowerCase();
+  const descStr = cleanText(desc).toLowerCase();
   if (descStr.includes("سودان") || descStr.includes("ssp")) return "SSP";
   if (descStr.includes("مصر") || descStr.includes("egp")) return "EGP";
   if (descStr.includes("دولار") || descStr.includes("usd") || descStr.includes("$")) return "USD";
 
-  const aCode = String(accCode || "").trim();
+  const aCode = cleanText(accCode);
   if (
     aCode.startsWith("1301011") ||
     aCode.startsWith("13020100") ||
     aCode.startsWith("13020120") ||
     aCode.startsWith("13020130") ||
     aCode.startsWith("13030100")
-  )
-    return "SSP";
+  ) return "SSP";
   if (aCode.startsWith("13010125") || aCode.startsWith("13010120")) return "EGP";
-  if (aCode.startsWith("1301010") || aCode.startsWith("13020110") || aCode.startsWith("13020140"))
-    return "USD";
-
+  if (aCode.startsWith("1301010") || aCode.startsWith("13020110") || aCode.startsWith("13020140")) return "USD";
   return "USD";
 }
 
-export function parseOracleTextToRows(text: string): ParsedOracleRow[] {
-  if (!text || !text.trim()) return [];
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-  if (lines.length === 0) return [];
-
-  // Check if first line is a header
-  let startIndex = 0;
-  const firstLine = lines[0];
-  if (
-    firstLine.includes("كود الحساب") ||
-    firstLine.includes("اسم الحساب") ||
-    firstLine.includes("رقم القيد") ||
-    firstLine.includes("مدين") ||
-    firstLine.includes("دائن")
-  ) {
-    startIndex = 1;
-  }
-
-  const parsedRows: ParsedOracleRow[] = [];
-
-  for (let i = startIndex; i < lines.length; i++) {
-    const rawLine = lines[i];
-    // Split by tab (\t) or 2+ spaces or semicolons
-    let cols = rawLine.split(/\t/);
-    if (cols.length < 5) {
-      cols = rawLine.split(/\s{2,}/);
-    }
-    if (cols.length < 5) {
-      cols = rawLine.split(/;/);
-    }
-    if (cols.length < 5) continue;
-
-    const m = cols[0]?.trim() || "";
-    const accCode = cols[1]?.trim() || "";
-    const accName = cols[2]?.trim() || "";
-    const baseDebit = Number(cols[3]?.replace(/,/g, "")?.trim() || 0);
-    const baseCredit = Number(cols[4]?.replace(/,/g, "")?.trim() || 0);
-    const description = cols[5]?.trim() || "";
-    const rawDate = cols[6]?.trim() || "";
-    const journalNum = cols[7]?.trim() || "";
-    const period = cols[8]?.trim() || "";
-    const currCode = cols[9]?.trim() || "";
-    const currName = cols[10]?.trim() || "";
-    const rawRate = Number(cols[11]?.replace(/,/g, "")?.trim() || 1);
-    const currDebit = Number(cols[12]?.replace(/,/g, "")?.trim() || 0);
-    const currCredit = Number(cols[13]?.replace(/,/g, "")?.trim() || 0);
-
-    if (!accCode && baseDebit === 0 && baseCredit === 0 && currDebit === 0 && currCredit === 0) {
-      continue;
-    }
-
-    const isoDate = parseDateDDMMYYYY(rawDate);
-    const rate = rawRate > 0 ? rawRate : 1;
-
-    // Direct currency debit and credit
-    let actualCurrDebit = currDebit;
-    let actualCurrCredit = currCredit;
-
-    // Fallback if curr columns are 0 but base amounts exist
-    if (actualCurrDebit === 0 && actualCurrCredit === 0) {
-      const derivedCurr = parseCurrency(currCode, currName, description, accCode);
-      if (derivedCurr === "USD") {
-        actualCurrDebit = baseDebit;
-        actualCurrCredit = baseCredit;
-      } else {
-        actualCurrDebit = baseDebit * rate;
-        actualCurrCredit = baseCredit * rate;
-      }
-    }
-
-    parsedRows.push({
-      index: i + 1,
-      account_code: accCode,
-      account_name: accName,
-      base_debit: baseDebit,
-      base_credit: baseCredit,
-      description: description || accName,
-      date: isoDate,
-      document_number: "",
-      journal_number: journalNum,
-      period: period,
-      currency_code: currCode,
-      currency_name: currName,
-      rate: rate,
-      curr_debit: actualCurrDebit,
-      curr_credit: actualCurrCredit,
-    });
-  }
-
-  return parsedRows;
+function readNumber(value: unknown, fallback: number | null = 0): number | null {
+  const parsed = parseOracleNumber(value);
+  return parsed == null ? fallback : parsed;
 }
 
-export function parseOracleSheetRows(rawRows: any[][]): ParsedOracleRow[] {
-  if (!rawRows || rawRows.length === 0) return [];
+function findHeaderIndex(rawRows: any[][]): number {
+  const index = rawRows.slice(0, 20).findIndex((row) => {
+    const text = (row || []).map(normalizeHeader).join("|");
+    return /كودالحساب|رقمالحساب|accountcode|accountnumber/i.test(text) &&
+      /مدين|debit/i.test(text) && /دائن|credit/i.test(text);
+  });
+  return index >= 0 ? index : 0;
+}
 
-  const headerIndex = Math.max(
-    0,
-    rawRows.slice(0, 10).findIndex((row) => {
-      const text = (row || []).map(normalizeHeader).join("|");
-      return /كودالحساب|رقمالحساب|accountcode/i.test(text) &&
-        /مدين|debit/i.test(text) && /دائن|credit/i.test(text);
-    }),
-  );
-  const headerRow = rawRows[headerIndex] || [];
-  let colAccountCode = -1;
-  let colAccountName = -1;
-  let colDebit = -1;
-  let colCredit = -1;
-  let colCurrencyCode = -1;
-  let colCurrencyName = -1;
-  let colPeriod = -1;
-  let colJournalNum = -1;
-  let colDate = -1;
-  let colDescription = -1;
-  let colDocumentNum = -1;
-  let colExchangeRate = -1;
-  let colDebitCurr = -1;
-  let colCreditCurr = -1;
+function detectColumns(headerRow: any[]): Record<string, number> {
+  const c: Record<string, number> = {
+    accountCode: -1, accountName: -1, debit: -1, credit: -1,
+    currencyCode: -1, currencyName: -1, period: -1, journalNumber: -1,
+    date: -1, description: -1, documentNumber: -1, exchangeRate: -1,
+    debitCurrency: -1, creditCurrency: -1,
+  };
 
-  headerRow.forEach((cell: any, idx: number) => {
-    const h = String(cell || "")
-      .trim()
-      .toLowerCase();
+  headerRow.forEach((cell, idx) => {
+    const h = cleanText(cell).toLowerCase();
     const hn = normalizeHeader(cell);
-    if (
-      /كود.*(العملة|عملة)|رمز.*(العملة|عملة)|نوع.*(العملة|عملة)|curr(ency)?[-_ ]?code/i.test(h) &&
-      colCurrencyCode === -1
-    ) {
-      colCurrencyCode = idx;
-    } else if (
-      /المعامل|معامل|سعر.*الصرف|سعر.*صرف|معامل.*التحويل|rate|exchange|factor/i.test(h) &&
-      colExchangeRate === -1
-    ) {
-      colExchangeRate = idx;
-    } else if (
-      /^الفترة$|^فترة$|رقم.*الفترة|كود.*الفترة|^period$|^per$|period.*name|period_name/i.test(h) &&
-      colPeriod === -1
-    ) {
-      colPeriod = idx;
-    } else if (/كود الحساب|رقم الحساب|account.*code|^code$/i.test(h) && colAccountCode === -1) {
-      colAccountCode = idx;
-    } else if (/اسم الحساب|account.*name|^name$/i.test(h) && colAccountName === -1) {
-      colAccountName = idx;
-    } else if (
-      /مدين.*(عملة|عمله|بالعملة)|(currency|curr).*debit|debit.*(currency|curr)/i.test(h) &&
-      colDebitCurr === -1
-    ) {
-      colDebitCurr = idx;
-    } else if (
-      /دائن.*(عملة|عمله|بالعملة)|(currency|curr).*credit|credit.*(currency|curr)/i.test(h) &&
-      colCreditCurr === -1
-    ) {
-      colCreditCurr = idx;
-    } else if (/قيمة.*مدين|مبلغ.*مدين|^مدين$|^debit$|^dr$/i.test(h) && colDebit === -1) {
-      colDebit = idx;
-    } else if (/قيمة.*دائن|مبلغ.*دائن|^دائن$|^credit$|^cr$/i.test(h) && colCredit === -1) {
-      colCredit = idx;
-    } else if (
-      /العملة|عملة|currency|curr/i.test(h) &&
-      colCurrencyName === -1 &&
-      colCurrencyCode !== idx
-    ) {
-      colCurrencyName = idx;
-    } else if (
-      /رقم.*المستند|document.*no|doc.*no/i.test(hn) &&
-      colDocumentNum === -1
-    ) {
-      colDocumentNum = idx;
-    } else if (
-      /رقم.*القيد|رقم.*السند|^سند$|^قيد$|journal.*no|voucher.*no|^ref$|doc.*no|trx.*no/i.test(h) &&
-      colJournalNum === -1
-    ) {
-      colJournalNum = idx;
-    } else if (/تاريخ.*القيد|تاريخ|^date$/i.test(h) && colDate === -1) {
-      colDate = idx;
-    } else if (
-      /بيان الحساب|بيان|^شرح$|^الوصف$|description|desc|narration/i.test(h) &&
-      colDescription === -1
-    ) {
-      colDescription = idx;
-    }
+    if (c.currencyCode === -1 && /كود.*(العملة|عملة)|رمز.*(العملة|عملة)|نوع.*(العملة|عملة)|curr(ency)?[-_ ]?code/i.test(h)) c.currencyCode = idx;
+    else if (c.exchangeRate === -1 && /المعامل|معامل|سعر.*الصرف|سعر.*صرف|معامل.*التحويل|rate|exchange|factor/i.test(h)) c.exchangeRate = idx;
+    else if (c.period === -1 && /^الفترة$|^فترة$|رقم.*الفترة|كود.*الفترة|^period$|^per$|period.*name|period_name/i.test(h)) c.period = idx;
+    else if (c.accountCode === -1 && /كود الحساب|رقم الحساب|account.*code|account.*number|^code$/i.test(h)) c.accountCode = idx;
+    else if (c.accountName === -1 && /اسم الحساب|account.*name|^name$/i.test(h)) c.accountName = idx;
+    else if (c.debitCurrency === -1 && /مدين.*(عملة|عمله|بالعملة)|(currency|curr).*debit|debit.*(currency|curr)/i.test(h)) c.debitCurrency = idx;
+    else if (c.creditCurrency === -1 && /دائن.*(عملة|عمله|بالعملة)|(currency|curr).*credit|credit.*(currency|curr)/i.test(h)) c.creditCurrency = idx;
+    else if (c.debit === -1 && /قيمة.*مدين|مبلغ.*مدين|^مدين$|^debit$|^dr$/i.test(h)) c.debit = idx;
+    else if (c.credit === -1 && /قيمة.*دائن|مبلغ.*دائن|^دائن$|^credit$|^cr$/i.test(h)) c.credit = idx;
+    else if (c.currencyName === -1 && c.currencyCode !== idx && /العملة|عملة|currency|curr/i.test(h)) c.currencyName = idx;
+    else if (c.documentNumber === -1 && /رقم.*المستند|document.*no|doc.*no/i.test(hn)) c.documentNumber = idx;
+    else if (c.journalNumber === -1 && /رقم.*القيد|رقم.*السند|^سند$|^قيد$|journal.*no|voucher.*no|^ref$|trx.*no/i.test(h)) c.journalNumber = idx;
+    else if (c.date === -1 && /تاريخ.*القيد|تاريخ|^date$|datum/i.test(h)) c.date = idx;
+    else if (c.description === -1 && /بيان الحساب|بيان|^شرح$|^الوصف$|description|desc|narration/i.test(h)) c.description = idx;
   });
 
-  // Default positional mappings if not found
-  if (colAccountCode === -1) colAccountCode = 1;
-  if (colAccountName === -1) colAccountName = 2;
-  if (colDebit === -1) colDebit = 3;
-  if (colCredit === -1) colCredit = 4;
-  if (colDescription === -1) colDescription = 5;
-  if (colDate === -1) colDate = 6;
-  if (colJournalNum === -1) colJournalNum = 7;
-  if (colPeriod === -1) colPeriod = 8;
-  if (colCurrencyCode === -1 && colCurrencyName === -1) colCurrencyCode = 9;
-  if (colCurrencyName === -1) colCurrencyName = 10;
-  if (colExchangeRate === -1) colExchangeRate = 11;
-  // Currency debit/credit columns are optional. Do not use positional fallbacks
-  // here: Oracle exports commonly place journal number and period at these indexes.
+  if (c.accountCode < 0) c.accountCode = 1;
+  if (c.accountName < 0) c.accountName = 2;
+  if (c.debit < 0) c.debit = 3;
+  if (c.credit < 0) c.credit = 4;
+  if (c.description < 0) c.description = 5;
+  if (c.date < 0) c.date = 6;
+  if (c.journalNumber < 0) c.journalNumber = 7;
+  if (c.period < 0) c.period = 8;
+  if (c.currencyCode < 0 && c.currencyName < 0) c.currencyCode = 9;
+  if (c.currencyName < 0) c.currencyName = 10;
+  if (c.exchangeRate < 0) c.exchangeRate = 11;
+  return c;
+}
 
+export function parseOracleSheetRowsDetailed(rawRows: any[][]): OracleParseResult {
+  if (!Array.isArray(rawRows) || rawRows.length === 0) {
+    return { rows: [], diagnostics: [{ row: 0, message: "Oracle file contains no rows." }], headerIndex: 0, detectedColumns: {} };
+  }
+
+  const headerIndex = findHeaderIndex(rawRows);
+  const columns = detectColumns(rawRows[headerIndex] || []);
+  const rows: ParsedOracleRow[] = [];
+  const diagnostics: OracleImportDiagnostic[] = [];
   const dataRows = rawRows.slice(headerIndex + 1);
-  const parsedRows: ParsedOracleRow[] = [];
 
-  dataRows.forEach((row, i) => {
-    const accCode = String(row[colAccountCode] || "").trim();
-    const accName = String(row[colAccountName] || "").trim();
-    const description = String(row[colDescription] || "").trim();
-    const rawDate = row[colDate];
-    const documentNumber = colDocumentNum === -1 ? "" : String(row[colDocumentNum] || "").trim();
-    const journalNum = String(row[colJournalNum] || "").trim();
-    const period = String(row[colPeriod] || "").trim();
-    const currCode = row[colCurrencyCode];
-    const currName = String(row[colCurrencyName] || "").trim();
-    const rawRate = Number(row[colExchangeRate]);
-    // A zero/blank Oracle factor means no conversion, not a zero-valued amount.
-    const rate = !isNaN(rawRate) && rawRate > 0 ? rawRate : 1;
+  dataRows.forEach((row, offset) => {
+    const rowNumber = headerIndex + offset + 2;
+    if (!Array.isArray(row)) return;
+    const accCode = cleanText(row[columns.accountCode]);
+    const accName = cleanText(row[columns.accountName]);
+    const description = cleanText(row[columns.description]);
+    const rawDate = row[columns.date];
+    const documentNumber = columns.documentNumber < 0 ? "" : cleanText(row[columns.documentNumber]);
+    const journalNumber = cleanText(row[columns.journalNumber]);
+    const period = cleanText(row[columns.period]);
+    const currencyCode = cleanText(row[columns.currencyCode]);
+    const currencyName = cleanText(row[columns.currencyName]);
 
-    let baseDebit = Number(row[colDebit]) || 0;
-    let baseCredit = Number(row[colCredit]) || 0;
-    const hasCurrencyAmounts = colDebitCurr !== -1 || colCreditCurr !== -1;
-    let currDebit = hasCurrencyAmounts ? Number(row[colDebitCurr]) || 0 : baseDebit;
-    let currCredit = hasCurrencyAmounts ? Number(row[colCreditCurr]) || 0 : baseCredit;
+    const rawDebit = row[columns.debit];
+    const rawCredit = row[columns.credit];
+    const parsedDebit = readNumber(rawDebit, null);
+    const parsedCredit = readNumber(rawCredit, null);
+    const rawRate = row[columns.exchangeRate];
+    const parsedRate = readNumber(rawRate, null);
 
-    if (!accCode && baseDebit === 0 && baseCredit === 0 && currDebit === 0 && currCredit === 0) {
+    const hasAnyContent = row.some((v) => cleanText(v) !== "");
+    if (!hasAnyContent) return;
+
+    if (!accCode && (parsedDebit ?? 0) === 0 && (parsedCredit ?? 0) === 0) {
+      diagnostics.push({ row: rowNumber, field: "account_code", message: "Row contains data but no account code or debit/credit amount." });
       return;
     }
+    if (parsedDebit == null && cleanText(rawDebit) !== "") diagnostics.push({ row: rowNumber, field: "debit", message: `Invalid numeric value: ${String(rawDebit)}` });
+    if (parsedCredit == null && cleanText(rawCredit) !== "") diagnostics.push({ row: rowNumber, field: "credit", message: `Invalid numeric value: ${String(rawCredit)}` });
 
-    if (hasCurrencyAmounts && currDebit === 0 && currCredit === 0) {
-      const derivedCurr = parseCurrency(currCode, currName, description, accCode);
-      if (derivedCurr === "USD") {
+    const parsedDate = parseOracleDate(rawDate);
+    if (!parsedDate && cleanText(rawDate)) diagnostics.push({ row: rowNumber, field: "date", message: `Invalid Oracle date: ${String(rawDate)}` });
+
+    const baseDebit = parsedDebit ?? 0;
+    const baseCredit = parsedCredit ?? 0;
+    const rate = parsedRate != null && parsedRate > 0 ? parsedRate : 1;
+    const hasCurrencyAmounts = columns.debitCurrency >= 0 || columns.creditCurrency >= 0;
+    let currDebit = hasCurrencyAmounts ? (readNumber(row[columns.debitCurrency], 0) ?? 0) : baseDebit;
+    let currCredit = hasCurrencyAmounts ? (readNumber(row[columns.creditCurrency], 0) ?? 0) : baseCredit;
+
+    // Preserve the existing currency conversion behavior. Only the parsing of
+    // the source number/date is hardened here.
+    if (hasCurrencyAmounts && currDebit === 0 && currCredit === 0 && (baseDebit !== 0 || baseCredit !== 0)) {
+      const currency = parseCurrency(currencyCode, currencyName, description, accCode);
+      if (currency === "USD") {
         currDebit = baseDebit;
         currCredit = baseCredit;
       } else {
@@ -345,7 +202,73 @@ export function parseOracleSheetRows(rawRows: any[][]): ParsedOracleRow[] {
       }
     }
 
-    parsedRows.push({
+    if (!accCode && baseDebit === 0 && baseCredit === 0 && currDebit === 0 && currCredit === 0) return;
+
+    rows.push({
+      index: rowNumber,
+      account_code: accCode,
+      account_name: accName,
+      base_debit: baseDebit,
+      base_credit: baseCredit,
+      description: description || accName,
+      date: parsedDate ? parsedDate.toISOString().split("T")[0] : "",
+      document_number: documentNumber,
+      journal_number: journalNumber,
+      period,
+      currency_code: currencyCode,
+      currency_name: currencyName,
+      rate,
+      curr_debit: currDebit,
+      curr_credit: currCredit,
+    });
+  });
+
+  return { rows, diagnostics, headerIndex, detectedColumns: columns };
+}
+
+export function parseOracleSheetRows(rawRows: any[][]): ParsedOracleRow[] {
+  return parseOracleSheetRowsDetailed(rawRows).rows;
+}
+
+export function parseOracleTextToRows(text: string): ParsedOracleRow[] {
+  if (!text || !text.trim()) return [];
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return [];
+  const start = /كود الحساب|اسم الحساب|رقم القيد|مدين|دائن/i.test(lines[0]) ? 1 : 0;
+  const rows: ParsedOracleRow[] = [];
+
+  for (let i = start; i < lines.length; i++) {
+    let cols = lines[i].split(/\t/);
+    if (cols.length < 5) cols = lines[i].split(/\s{2,}/);
+    if (cols.length < 5) cols = lines[i].split(/;/);
+    if (cols.length < 5) continue;
+
+    const accCode = cleanText(cols[1]);
+    const accName = cleanText(cols[2]);
+    const baseDebit = readNumber(cols[3], 0) ?? 0;
+    const baseCredit = readNumber(cols[4], 0) ?? 0;
+    const description = cleanText(cols[5]);
+    const rawDate = cols[6];
+    const journalNum = cleanText(cols[7]);
+    const period = cleanText(cols[8]);
+    const currCode = cleanText(cols[9]);
+    const currName = cleanText(cols[10]);
+    const rate = Math.max(readNumber(cols[11], 1) ?? 1, 0.0000001);
+    let currDebit = readNumber(cols[12], 0) ?? 0;
+    let currCredit = readNumber(cols[13], 0) ?? 0;
+    const currency = parseCurrency(currCode, currName, description, accCode);
+
+    if (currDebit === 0 && currCredit === 0) {
+      if (currency === "USD") {
+        currDebit = baseDebit;
+        currCredit = baseCredit;
+      } else {
+        currDebit = baseDebit * rate;
+        currCredit = baseCredit * rate;
+      }
+    }
+
+    rows.push({
       index: i + 1,
       account_code: accCode,
       account_name: accName,
@@ -353,116 +276,68 @@ export function parseOracleSheetRows(rawRows: any[][]): ParsedOracleRow[] {
       base_credit: baseCredit,
       description: description || accName,
       date: parseDateDDMMYYYY(rawDate),
-      document_number: documentNumber,
+      document_number: "",
       journal_number: journalNum,
-      period: period,
+      period,
       currency_code: currCode,
       currency_name: currName,
-      rate: rate,
+      rate,
       curr_debit: currDebit,
       curr_credit: currCredit,
     });
-  });
-
-  return parsedRows;
+  }
+  return rows;
 }
 
 export function groupOracleRowsIntoJournalEntries(rows: ParsedOracleRow[]): JournalEntry[] {
-  if (!rows || rows.length === 0) return [];
+  if (!rows?.length) return [];
+  const groups = new Map<string, { period: string; journalNum: string; date: string; rows: ParsedOracleRow[] }>();
 
-  // Group rows into CONDENSED journal entries.
-  //
-  // The grouping key is the journal number only (not period + journal + date).
-  // A single Oracle journal voucher frequently spans multiple periods / dates
-  // (e.g. closing and adjustment journals cover periods 1..12), so including the
-  // period in the key split one logical journal into many fragmented entries.
-  // Rows without a journal number (e.g. opening balances, BAL_TRX) are grouped
-  // by account code so they become one entry per account instead of fragmenting
-  // into a separate entry per description/date.
-  const masterGroups: {
-    key: string;
-    period: string;
-    journalNum: string;
-    date: string;
-    rows: ParsedOracleRow[];
-  }[] = [];
-  const masterGroupMap = new Map<string, (typeof masterGroups)[0]>();
-
-  rows.forEach((r) => {
-    const p = String(r.period || "1").trim();
-    const j = String(r.journal_number || r.document_number || "").trim();
-    const d = r.date;
-    const key = j ? `j_${j}` : `bal_${String(r.account_code || "?").trim()}`;
-
-    if (!masterGroupMap.has(key)) {
-      const newGroup = { key, period: p, journalNum: j, date: d, rows: [] };
-      masterGroupMap.set(key, newGroup);
-      masterGroups.push(newGroup);
-    }
-    masterGroupMap.get(key)!.rows.push(r);
-  });
+  for (const row of rows) {
+    const period = cleanText(row.period) || "1";
+    const journalNum = cleanText(row.journal_number || row.document_number);
+    const key = journalNum ? `j_${journalNum}` : `bal_${cleanText(row.account_code) || "?"}`;
+    if (!groups.has(key)) groups.set(key, { period, journalNum, date: row.date, rows: [] });
+    groups.get(key)!.rows.push(row);
+  }
 
   const entries: JournalEntry[] = [];
-  let seqCounter = 1;
+  let seq = 1;
+  for (const group of groups.values()) {
+    const first = group.rows[0];
+    const periodNum = parseInt(group.period, 10) || 1;
+    const firstAcc = first.account_code || "";
+    const journalNum = group.journalNum || (firstAcc ? `BAL-${firstAcc}` : String(seq));
+    const reference = `${String(periodNum).padStart(2, "0")}/${String(journalNum).padStart(2, "0")}`;
+    const primaryCurrency = parseCurrency(first.currency_code, first.currency_name, first.description, first.account_code);
 
-  masterGroups.forEach((mg) => {
-    const periodNum = parseInt(mg.period || "1", 10) || 1;
-    const firstAccCode = mg.rows[0]?.account_code || "";
-    const jNum = mg.journalNum || (firstAccCode ? `BAL-${firstAccCode}` : String(seqCounter));
-    const baseRef = `${String(periodNum).padStart(2, "0")}/${jNum.padStart(2, "0")}`;
-
-    if (mg.rows.length === 0) return;
-
-    const firstRow = mg.rows[0];
-    const mainDesc = firstRow.description || `قيد رقم (${baseRef}) - فترة ${periodNum}`;
-    const primaryCurr = parseCurrency(
-      firstRow.currency_code,
-      firstRow.currency_name,
-      firstRow.description,
-      firstRow.account_code,
-    );
-
-    const lines: JournalLine[] = mg.rows.map((r) => {
-      const lineCurr = parseCurrency(
-        r.currency_code,
-        r.currency_name,
-        r.description,
-        r.account_code,
-      );
-      return {
-        account_code: r.account_code,
-        account_name: r.account_name,
-        debit: r.curr_debit,
-        credit: r.curr_credit,
-        description: r.description || r.account_name,
-        currency: lineCurr,
-        rate: r.rate || 1,
-      };
-    });
+    const lines: JournalLine[] = group.rows.map((r) => ({
+      account_code: r.account_code,
+      account_name: r.account_name,
+      debit: r.curr_debit,
+      credit: r.curr_credit,
+      description: r.description || r.account_name,
+      currency: parseCurrency(r.currency_code, r.currency_name, r.description, r.account_code),
+      rate: r.rate || 1,
+    }));
 
     entries.push({
-      sequence: seqCounter++,
-      id: `ORACLE-2015-${baseRef.replace("/", "-")}-${Date.now().toString(36)}-${seqCounter}`,
-      date: mg.date,
-      reference: baseRef,
-      description: mainDesc,
-      currency: primaryCurr,
-      lines: lines,
+      sequence: seq++,
+      id: `ORACLE-${reference.replace("/", "-")}-${Date.now().toString(36)}-${seq}`,
+      date: group.date,
+      reference,
+      description: first.description || `قيد رقم (${reference}) - فترة ${periodNum}`,
+      currency: primaryCurrency,
+      lines,
     });
-  });
+  }
 
-  // Sort chronological ascending (from oldest date to newest date)
   entries.sort((a, b) => {
-    if (a.date !== b.date) {
-      return a.date.localeCompare(b.date);
-    }
+    const dateA = a.date || "";
+    const dateB = b.date || "";
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
     return (a.reference || "").localeCompare(b.reference || "", undefined, { numeric: true });
   });
-
-  // Re-index sequences
-  entries.forEach((e, i) => {
-    e.sequence = i + 1;
-  });
-
+  entries.forEach((e, i) => { e.sequence = i + 1; });
   return entries;
 }
