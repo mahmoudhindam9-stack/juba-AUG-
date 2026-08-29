@@ -123,7 +123,11 @@ export function TableOrderModal({
   };
 
   const removeFromCart = (id: string) => {
-    setCart((prev) => prev.filter((c) => c.item.id !== id));
+
+
+  const updateItemNotes = (id: string, notes: string) => {
+    setCart((prev) => prev.map((c) => (c.item.id === id ? { ...c, notes } : c)));
+  };    setCart((prev) => prev.filter((c) => c.item.id !== id));
   };
 
   const toggleAddition = (id: string) => {
@@ -159,7 +163,7 @@ export function TableOrderModal({
       table_name: table.name,
       items: cart,
       order_type: "dine_in",
-      notes: orderNotes,
+      notes: "",
       selectedAdditions,
       subtotal: Number(subTotal.toFixed(2)),
       tax: Number(tax.toFixed(2)),
@@ -220,6 +224,7 @@ export function TableOrderModal({
               name_ar: c.item.name_ar,
               price: c.item.price,
               quantity: c.quantity,
+              notes: c.notes || "",
               requires_oven: c.item.requires_oven || false,
             })),
           })
@@ -304,7 +309,7 @@ export function TableOrderModal({
       table_name: table.name,
       items: cart,
       order_type: "dine_in",
-      notes: orderNotes,
+      notes: "",
       selectedAdditions,
       subtotal: Number(subTotal.toFixed(2)),
       tax: Number(tax.toFixed(2)),
@@ -534,6 +539,7 @@ export function TableOrderModal({
                       <h5 className="font-bold text-xs text-slate-800 truncate">
                         {line.item.name_ar}
                       </h5>
+                      <textarea rows={1} value={line.notes || ""} onChange={(e) => updateItemNotes(line.item.id, e.target.value)} placeholder={lang === "ar" ? "ملاحظة لهذا الصنف..." : "Note for this item..."} className="w-full mt-1 bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px] font-semibold outline-none focus:border-indigo-500 resize-none" />
                       <span className="text-[11px] font-bold text-indigo-600 block mt-0.5">
                         {formatPrice(
                           (line.item.price +

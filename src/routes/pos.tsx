@@ -299,6 +299,10 @@ function Index() {
 
   const removeFromCart = (id: string) => setCart((prev) => prev.filter((c) => c.item.id !== id));
 
+
+  const updateItemNotes = (id: string, notes: string) => {
+    setCart((prev) => prev.map((c) => (c.item.id === id ? { ...c, notes } : c)));
+  };
   const [receiptSettings, setReceiptSettings] = useState(() => getReceiptDesignSettings());
 
   useEffect(() => {
@@ -1289,6 +1293,7 @@ function Index() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <h5 className="font-bold text-sm line-clamp-1">{c.item.name_ar}</h5>
+                    <textarea rows={1} value={c.notes || ""} onChange={(e) => updateItemNotes(c.item.id, e.target.value)} placeholder={lang === "ar" ? "ملاحظة لهذا الصنف..." : "Note for this item..."} className="w-full mt-1 bg-background border border-border rounded-lg px-2 py-1 text-[11px] font-semibold outline-none focus:border-primary resize-none" />
                     <button
                       onClick={() => removeFromCart(c.item.id)}
                       className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition"
