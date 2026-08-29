@@ -1,0 +1,12 @@
+const fs = require('fs');
+const path = 'src/routes/admin/ledger.tsx';
+let src = fs.readFileSync(path, 'utf8');
+const startToken = '      const yearA = Number(String(a.date || "").slice(0, 4)) || 0;';
+const endToken = '    });\n  }, [\n    journalEntries,';
+const start = src.indexOf(startToken);
+const end = src.indexOf(endToken, start);
+if (start < 0 || end < 0) throw new Error('journal sort block not found');
+const replacement = `      const yearA = Number(String(a.date || "").slice(0, 4)) || 0;\n      const yearB = Number(String(b.date || "").slice(0, 4)) || 0;\n      if (journalSortOrder === "oldest") {\n        if (yearA !== yearB) return yearA - yearB;\n        if (refA !== refB) return refA - refB;\n        if (seqA !== seqB) return seqA - seqB;\n        if (dateA !== dateB) return dateA - dateB;\n        return a.id.localeCompare(b.id);\n      } else if (journalSortOrder === "newest") {\n        if (yearA !== yearB) return yearB - yearA;\n        if (refA !== refB) return refB - refA;\n        if (seqA !== seqB) return seqB - seqA;\n        if (dateA !== dateB) return dateB - dateA;\n        return b.id.localeCompare(a.id);\n      } else if (journalSortOrder === "ref_asc") {\n        if (yearA !== yearB) return yearA - yearB;\n        if (refA !== refB) return refA - refB;\n        if (seqA !== seqB) return seqA - seqB;\n        return dateA - dateB;\n      } else if (journalSortOrder === "ref_desc") {\n        if (yearA !== yearB) return yearB - yearA;\n        if (refA !== refB) return refB - refA;\n        if (seqA !== seqB) return seqB - seqA;\n        return dateB - dateA;\n      }\n      return dateA - dateB;\n`;
+src = src.slice(0, start) + replacement + src.slice(end);
+fs.writeFileSync(path, src);
+console.log('Journal sort syntax repaired.');
