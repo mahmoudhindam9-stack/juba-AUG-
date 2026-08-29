@@ -1,0 +1,132 @@
+name: Repair POS receipt and oven handoff
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: ${{ !contains(github.event.head_commit.message, '[auto-pos-oven-fix]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch POS and table order protocol
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          # Add the missing local kitchen protocol methods.
+          p = Path('src/shared/services/tableOrdersStore.ts')
+          s = p.read_text(encoding='utf-8')
+          marker = '''  public markKitchenCompletedByTableId(tableId: string) {'''
+          methods = '''  public sendOrderToKitchen(orderId: string) {
+    const target = this.orders.find((o) => o.id === orderId);
+    if (!target) return;
+    target.sentToKitchen = true;
+    target.kitchenOrderId = target.kitchenOrderId || `KITCHEN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    target.kitchenCompleted = false;
+    this.saveState();
+    this.notify();
+  }
+
+  public completeKitchenOrder(orderId: string) {
+    const target = this.orders.find((o) => o.id === orderId);
+    if (!target) return;
+    target.kitchenCompleted = true;
+    target.updated_at = new Date().toISOString();
+    this.saveState();
+    this.notify();
+  }
+
+'''
+          if 'public sendOrderToKitchen' not in s:
+              if marker not in s: raise SystemExit('tableOrdersStore marker missing')
+              s = s.replace(marker, methods + marker, 1)
+          p.write_text(s, encoding='utf-8')
+
+          # Bridge a successfully-created POS order into the existing local table-order protocol.
+          p = Path('src/routes/pos.tsx')
+          s = p.read_text(encoding='utf-8')
+          marker = '''      // Post to ERP automated journal entries and update treasury balances (Cashier / Bank)'''
+          bridge = '''      // Keep the existing POS -> Oven protocol in sync. The database order remains the
+      // source used by multi-device KDS; this local mirror keeps same-origin tabs in sync too.
+      try {
+        const localKitchenOrder = tableOrdersStore.saveOrder({
+          table_id: data.table_id || `pos-${data.id}`,
+          table_number: Number((allTables.find((t) => t.id === data.table_id) as any)?.number || 0),
+          table_name: (allTables.find((t) => t.id === data.table_id) as any)?.name || null,
+          items: cart.map((c) => ({ item: c.item, quantity: c.quantity })),
+          order_type: orderType,
+          notes: finalNotes || "",
+          selectedAdditions,
+          subtotal: Number(finalSubtotal.toFixed(2)),
+          tax: Number(finalTax.toFixed(2)),
+          total: Number(finalTotal.toFixed(2)),
+          status: "draft",
+          sentToKitchen: true,
+          kitchenCompleted: false,
+          is_self_order: false,
+        });
+        tableOrdersStore.sendOrderToKitchen(localKitchenOrder.id);
+      } catch (kitchenSyncError) {
+        console.warn("POS local kitchen handoff failed; database order remains available:", kitchenSyncError);
+      }
+
+'''
+          if 'tableOrdersStore.sendOrderToKitchen(localKitchenOrder.id)' not in s:
+              if marker not in s: raise SystemExit('POS ERP marker missing')
+              s = s.replace(marker, bridge + marker, 1)
+
+          # Make the printable receipt robust when a DB adapter returns zero/empty financial fields.
+          marker = '''    const receiptData = {
+      storeName: receiptSettings.storeName || t.title,'''
+          replacement = '''    const calculatedItemsSubtotal = itemsList.reduce(
+      (sum, it) => sum + Number(it.price || 0) * Number(it.quantity || 0),
+      0,
+    );
+    const printableSubtotal = Number(invoice.subtotal) || calculatedItemsSubtotal;
+    const printableDiscount = Number(invoice.discount) || 0;
+    const printableServiceFee = Number(invoice.service_fee) || 0;
+    const printableDeliveryFee = Number(invoice.delivery_fee) || 0;
+    const printableTax = Number(invoice.tax) || 0;
+    const printableTotal =
+      Number(invoice.total) ||
+      Math.max(
+        0,
+        printableSubtotal - printableDiscount + printableServiceFee + printableDeliveryFee + printableTax,
+      );
+
+    const receiptData = {
+      storeName: receiptSettings.storeName || t.title,'''
+          if marker not in s: raise SystemExit('receipt data marker missing')
+          s = s.replace(marker, replacement, 1)
+          s = s.replace('''      subtotal: Number(invoice.subtotal),
+      discount: invoice.discount ? Number(invoice.discount) : undefined,
+      serviceFee: invoice.service_fee ? Number(invoice.service_fee) : undefined,
+      deliveryFee: invoice.delivery_fee ? Number(invoice.delivery_fee) : undefined,
+      tax: Number(invoice.tax),''','''      subtotal: printableSubtotal,
+      discount: printableDiscount || undefined,
+      serviceFee: printableServiceFee || undefined,
+      deliveryFee: printableDeliveryFee || undefined,
+      tax: printableTax,''',1)
+          s = s.replace('''      total: Number(invoice.total),
+      thankYouMessage:''','''      total: printableTotal,
+      currency,
+      thankYouMessage:''',1)
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Verify build
+        run: |
+          npm ci
+          npm run build
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/routes/pos.tsx src/shared/services/tableOrdersStore.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: restore POS receipt values and oven handoff [auto-pos-oven-fix]"
+          git push
