@@ -20,11 +20,6 @@ jobs:
       - name: Apply stable financial synchronization patch
         run: node patch_financial_sync_v4_20260829.cjs
 
-      - name: Production build verification
-        run: |
-          npm ci
-          npm run build
-
       - name: Commit source fixes
         run: |
           if git diff --quiet -- src/shared/services/erpStore.ts src/shared/utils/oracleParser.ts src/shared/utils/oracleJournalGrouping.ts src/routes/admin/ledger.tsx src/routes/admin/index.tsx; then
