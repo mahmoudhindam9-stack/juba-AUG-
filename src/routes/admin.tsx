@@ -116,12 +116,18 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
   if (!user) return null;
 
   const searchParams = new URLSearchParams(location.search);
-  const activeNavItem = nav.find((item) => {
+  const hasRouteSearch = searchParams.has("tab");
+  const isNavItemActive = (item: (typeof nav)[number]) => {
     if (item.search) {
       return pathname === item.to && searchParams.get("tab") === item.search.tab;
     }
-    return item.exact ? pathname === item.to : pathname.startsWith(item.to);
-  });
+    if (item.exact) {
+      // Do not mark the base dashboard active while a tab-specific view is open.
+      return pathname === item.to && !hasRouteSearch;
+    }
+    return pathname.startsWith(item.to);
+  };
+  const activeNavItem = nav.find(isNavItemActive);
 
   const renderSidebarNav = (onItemClick?: () => void) => (
     <div className="flex flex-col h-full bg-card text-card-foreground">
@@ -136,11 +142,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
           {location.pathname.startsWith("/admin") ? "لوحة التحكم الرئيسية" : "الإدارة"}
         </div>
         {nav.map((item) => {
-          const active = item.search
-            ? pathname === item.to && searchParams.get("tab") === item.search.tab
-            : item.exact
-              ? pathname === item.to
-              : pathname.startsWith(item.to);
+          const active = isNavItemActive(item);
           return (
             <Link
               key={item.to + (item.search ? "?" + new URLSearchParams(item.search).toString() : "")}
