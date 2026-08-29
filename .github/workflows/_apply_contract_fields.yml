@@ -1,0 +1,103 @@
+name: Apply mall contract fields
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch contract fields only
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path('src/routes/admin/mall.tsx')
+          text = path.read_text(encoding='utf-8')
+          original = text
+
+          # 1) Extend the contract form with the full commercial-lease fields.
+          old = '''    advance_payment: 0,\n    language: "ar" as "ar" | "en",'''
+          new = '''    advance_payment: 0,\n    authorized_representative: "",\n    tenant_address: "",\n    floor: "",\n    area: "",\n    lease_term: "",\n    renewal_option: "",\n    currency: "USD",\n    payment_due_date: "5",\n    payment_method: "bank_transfer",\n    service_charge: 0,\n    electricity_included: false,\n    language: "ar" as "ar" | "en",'''
+          if old in text and 'authorized_representative: ""' not in text:
+              text = text.replace(old, new, 1)
+
+          # 2) Load existing contract values when a shop is selected.
+          old = '''        monthly_rent: s.monthly_rent || 1000,\n        deposit_amount: s.monthly_rent || 1000,\n        advance_payment: s.contract?.advance_payment || 0,\n      });'''
+          new = '''        monthly_rent: s.monthly_rent || 1000,\n        deposit_amount: s.monthly_rent || 1000,\n        advance_payment: s.contract?.advance_payment || 0,\n        authorized_representative: s.contract?.authorized_representative || "",\n        tenant_address: s.contract?.tenant_address || "",\n        floor: s.contract?.floor || "",\n        area: s.contract?.area || (s.space_sqm ? String(s.space_sqm) : ""),\n        lease_term: s.contract?.lease_term || "",\n        renewal_option: s.contract?.renewal_option || "",\n        currency: s.contract?.currency || "USD",\n        payment_due_date: s.contract?.payment_due_date || "5",\n        payment_method: s.contract?.payment_method || "bank_transfer",\n        service_charge: s.contract?.service_charge || 0,\n        electricity_included: s.contract?.electricity_included || false,\n      });'''
+          if old in text and 'authorized_representative: s.contract?.authorized_representative' not in text:
+              text = text.replace(old, new, 1)
+
+          # 3) Persist the same fields in the saved contract object.
+          old = '''        language: contractForm.language,\n        created_at: new Date().toISOString(),\n      },'''
+          new = '''        language: contractForm.language,\n        created_at: new Date().toISOString(),\n        authorized_representative: contractForm.authorized_representative,\n        tenant_address: contractForm.tenant_address,\n        floor: contractForm.floor,\n        area: contractForm.area,\n        lease_term: contractForm.lease_term,\n        renewal_option: contractForm.renewal_option,\n        currency: contractForm.currency,\n        payment_due_date: contractForm.payment_due_date,\n        payment_method: contractForm.payment_method,\n        service_charge: Number(contractForm.service_charge) || 0,\n        electricity_included: contractForm.electricity_included,\n      },'''
+          if old in text and 'authorized_representative: contractForm.authorized_representative' not in text:
+              text = text.replace(old, new, 1)
+
+          # 4) Extend the print function with the new contract fields.
+          old = '''    lang: "ar" | "en",\n    idImage?: string,\n  ) => {'''
+          new = '''    lang: "ar" | "en",\n    idImage?: string,\n    contractExtra?: {\n      authorized_representative?: string;\n      tenant_address?: string;\n      floor?: string;\n      area?: string;\n      lease_term?: string;\n      renewal_option?: string;\n      currency?: string;\n      payment_due_date?: string;\n      payment_method?: string;\n      service_charge?: number;\n      electricity_included?: boolean;\n      nationality?: string;\n      id_number?: string;\n    },\n  ) => {'''
+          if old in text and 'contractExtra?: {' not in text:
+              text = text.replace(old, new, 1)
+
+          # 5) Add the new fields to the official printed contract.
+          old = '''          <div><strong>${isEn ? "End Date:" : "تاريخ النهاية:"}</strong> ${endDate}</div>\n        </div>'''
+          new = '''          <div><strong>${isEn ? "End Date:" : "تاريخ النهاية:"}</strong> ${endDate}</div>\n          <div><strong>${isEn ? "Authorized Representative:" : "الممثل القانوني:"}</strong> ${contractExtra?.authorized_representative || "..................."}</div>\n          <div><strong>${isEn ? "Tenant Address:" : "عنوان المستأجر:"}</strong> ${contractExtra?.tenant_address || "..................."}</div>\n          <div><strong>${isEn ? "Floor:" : "الطابق:"}</strong> ${contractExtra?.floor || "..................."}</div>\n          <div><strong>${isEn ? "Area:" : "المساحة:"}</strong> ${contractExtra?.area || "..................."}</div>\n          <div><strong>${isEn ? "Lease Term:" : "مدة الإيجار:"}</strong> ${contractExtra?.lease_term || "..................."}</div>\n          <div><strong>${isEn ? "Renewal Option:" : "شروط التجديد:"}</strong> ${contractExtra?.renewal_option || "..................."}</div>\n          <div><strong>${isEn ? "Currency:" : "العملة:"}</strong> ${contractExtra?.currency || "USD"}</div>\n          <div><strong>${isEn ? "Payment Due Day:" : "يوم استحقاق الإيجار:"}</strong> ${contractExtra?.payment_due_date || "5"}</div>\n          <div><strong>${isEn ? "Payment Method:" : "طريقة الدفع:"}</strong> ${contractExtra?.payment_method || "..................."}</div>\n          <div><strong>${isEn ? "Service Charge:" : "رسوم الخدمات:"}</strong> ${contractExtra?.service_charge || 0} ${contractExtra?.currency || "USD"}</div>\n          <div><strong>${isEn ? "Electricity Included:" : "الكهرباء مشمولة:"}</strong> ${contractExtra?.electricity_included ? (isEn ? "Yes" : "نعم") : (isEn ? "No" : "لا")}</div>\n        </div>'''
+          if old in text and 'Authorized Representative:' not in text:
+              text = text.replace(old, new, 1)
+
+          # 6) Add the fields to the live print-preview data call.
+          old = '''                      contractForm.end_date,\n                      contractForm.terms,\n                      contractForm.language,\n                    )'''
+          new = '''                      contractForm.end_date,\n                      contractForm.terms,\n                      contractForm.language,\n                      undefined,\n                      {\n                        authorized_representative: contractForm.authorized_representative,\n                        tenant_address: contractForm.tenant_address,\n                        floor: contractForm.floor,\n                        area: contractForm.area,\n                        lease_term: contractForm.lease_term,\n                        renewal_option: contractForm.renewal_option,\n                        currency: contractForm.currency,\n                        payment_due_date: contractForm.payment_due_date,\n                        payment_method: contractForm.payment_method,\n                        service_charge: Number(contractForm.service_charge) || 0,\n                        electricity_included: contractForm.electricity_included,\n                        nationality: contractForm.nationality,\n                        id_number: contractForm.id_number,\n                      },\n                    )'''
+          if old in text and 'authorized_representative: contractForm.authorized_representative' not in text[text.find('printContractContent('):text.find('printContractContent(')+4000]:
+              text = text.replace(old, new, 1)
+
+          # 7) Add editable input controls for all commercial contract fields.
+          marker = '''            {/* 4. Terms and Conditions & Add Clause */}'''
+          block = '''            {/* 3.1 Additional Commercial Contract Details */}\n            <div className="space-y-3">\n              <h3 className="text-sm font-black text-primary border-b border-border pb-1">\n                {contractForm.language === "en" ? "Additional Commercial Contract Details" : "بيانات العقد التجاري الإضافية"}\n              </h3>\n              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">\n                <div className="space-y-1.5">\n                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Authorized Representative" : "الممثل القانوني"}</label>\n                  <Input value={contractForm.authorized_representative} onChange={(e) => setContractForm({ ...contractForm, authorized_representative: e.target.value })} className="rounded-xl" />\n                </div>\n                <div className="space-y-1.5 sm:col-span-2">\n                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Tenant Address" : "عنوان المستأجر"}</label>\n                  <Input value={contractForm.tenant_address} onChange={(e) => setContractForm({ ...contractForm, tenant_address: e.target.value })} className="rounded-xl" />\n                </div>\n                <div className="space-y-1.5">\n                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Floor" : "الطابق"}</label>\n                  <Input value={contractForm.floor} onChange={(e) => setContractForm({ ...contractForm, floor: e.target.value })} className="rounded-xl" />\n                </div>\n                <div className="space-y-1.5">\n                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Area" : "المساحة"}</label>\n                  <Input value={contractForm.area} onChange={(e) => setContractForm({ ...contractForm, area: e.target.value })} placeholder="m²" className="rounded-xl" />\n                </div>\n                <div className="space-y-1.5">\n                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Lease Term" : "مدة الإيجار"}</label>\n                  <Input value={contractForm.lease_term} onChange={(e) => setContractForm({ ...contractForm, lease_term: e.target.value })} placeholder={contractForm.language === "en" ? "e.g. 12 months" : "مثال: 12 شهر"} className="rounded-xl" />\n                </div>\n                <div className="space-y-1.5 sm:col-span-2">\n                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Renewal Option / Conditions" : "شروط التجديد"}</label>\n                  <Input value={contractForm.renewal_option} onChange={(e) => setContractForm({ ...contractForm, renewal_option: e.target.value })} className="rounded-xl" />\n                </div>\n                <div className="space-y-1.5">\n                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Currency" : "العملة"}</label>\n                  <Select value={contractForm.currency} onValueChange={(v) => setContractForm({ ...contractForm, currency: v })}>\n                    <SelectTrigger className="rounded-xl font-bold"><SelectValue /></SelectTrigger>\n                    <SelectContent dir="rtl"><SelectItem value="USD">USD - دولار أمريكي</SelectItem><SelectItem value="SSP">SSP - جنيه جنوب سوداني</SelectItem></SelectContent>\n                  </Select>\n                </div>\n                <div className="space-y-1.5">\n                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Monthly Payment Due Day" : "يوم استحقاق الإيجار"}</label>\n                  <Input type="number" min={1} max={31} value={contractForm.payment_due_date} onChange={(e) => setContractForm({ ...contractForm, payment_due_date: e.target.value })} className="rounded-xl" />\n                </div>\n                <div className="space-y-1.5">\n                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Payment Method" : "طريقة الدفع"}</label>\n                  <Select value={contractForm.payment_method} onValueChange={(v) => setContractForm({ ...contractForm, payment_method: v })}>\n                    <SelectTrigger className="rounded-xl font-bold"><SelectValue /></SelectTrigger>\n                    <SelectContent dir="rtl"><SelectItem value="cash">نقدي / Cash</SelectItem><SelectItem value="bank_transfer">تحويل بنكي / Bank Transfer</SelectItem><SelectItem value="check">شيك / Cheque</SelectItem></SelectContent>\n                  </Select>\n                </div>\n                <div className="space-y-1.5">\n                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Service Charge" : "رسوم الخدمات"}</label>\n                  <Input type="number" min={0} value={contractForm.service_charge} onChange={(e) => setContractForm({ ...contractForm, service_charge: Number(e.target.value) })} className="rounded-xl font-bold" />\n                </div>\n                <div className="flex items-center gap-2 pt-6">\n                  <input type="checkbox" checked={contractForm.electricity_included} onChange={(e) => setContractForm({ ...contractForm, electricity_included: e.target.checked })} className="h-4 w-4" />\n                  <label className="text-xs font-bold text-foreground">{contractForm.language === "en" ? "Electricity Included" : "الكهرباء مشمولة في الإيجار"}</label>\n                </div>\n              </div>\n            </div>\n\n'''
+          if marker in text and 'Additional Commercial Contract Details' not in text:
+              text = text.replace(marker, block + marker, 1)
+
+          # 8) Show the new fields in the saved-contract viewer.
+          marker = '''              <div className="space-y-1">\n                <p className="font-black">الشروط والأحكام:</p>'''
+          block = '''              <div className="grid grid-cols-2 gap-3 bg-muted/20 p-3 rounded-xl border border-border">\n                <div>الممثل القانوني: <span className="font-bold">{viewingContractShop.contract.authorized_representative || "-"}</span></div>\n                <div>العنوان: <span className="font-bold">{viewingContractShop.contract.tenant_address || "-"}</span></div>\n                <div>الطابق: <span className="font-bold">{viewingContractShop.contract.floor || "-"}</span></div>\n                <div>المساحة: <span className="font-bold">{viewingContractShop.contract.area || "-"}</span></div>\n                <div>مدة الإيجار: <span className="font-bold">{viewingContractShop.contract.lease_term || "-"}</span></div>\n                <div>التجديد: <span className="font-bold">{viewingContractShop.contract.renewal_option || "-"}</span></div>\n                <div>العملة: <span className="font-bold">{viewingContractShop.contract.currency || "USD"}</span></div>\n                <div>يوم الاستحقاق: <span className="font-bold">{viewingContractShop.contract.payment_due_date || "5"}</span></div>\n                <div>طريقة الدفع: <span className="font-bold">{viewingContractShop.contract.payment_method || "-"}</span></div>\n                <div>رسوم الخدمات: <span className="font-bold">{viewingContractShop.contract.service_charge || 0}</span></div>\n                <div>الكهرباء: <span className="font-bold">{viewingContractShop.contract.electricity_included ? "مشمولة" : "غير مشمولة"}</span></div>\n              </div>\n\n'''
+          if marker in text and 'viewingContractShop.contract.authorized_representative' not in text:
+              text = text.replace(marker, block + marker, 1)
+
+          if text == original:
+              raise SystemExit('No contract changes were applied; aborting to avoid an empty commit.')
+
+          path.write_text(text, encoding='utf-8')
+
+          # Syntax-oriented sanity checks for the exact fields we introduced.
+          required = [
+              'authorized_representative', 'tenant_address', 'lease_term',
+              'renewal_option', 'payment_due_date', 'service_charge',
+              'electricity_included', 'Additional Commercial Contract Details'
+          ]
+          missing = [x for x in required if x not in text]
+          if missing:
+              raise SystemExit('Missing expected contract markers: ' + ', '.join(missing))
+
+      - name: Verify diff
+        run: |
+          git diff --check
+          git diff -- src/routes/admin/mall.tsx
+
+      - name: Commit and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/routes/admin/mall.tsx
+          git rm .github/workflows/_apply_contract_fields.yml
+          git commit -m "feat: complete mall lease contract fields" || exit 0
+          git push
