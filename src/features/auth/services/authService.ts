@@ -16,9 +16,26 @@ const getSecondaryClient = () => {
   });
 };
 
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+const assertCredentials = (email: string, password: string) => {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail || !normalizedEmail.includes("@")) {
+    throw new Error("A valid email address is required.");
+  }
+  if (!password) {
+    throw new Error("Password is required.");
+  }
+  return normalizedEmail;
+};
+
 export const authService = {
   async signIn(email: string, password: string) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const normalizedEmail = assertCredentials(email, password);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password,
+    });
     if (error) throw error;
     return data;
   },
@@ -38,6 +55,7 @@ export const authService = {
   },
 
   async getProfile(userId: string): Promise<Profile | null> {
+    if (!userId?.trim()) throw new Error("User id is required.");
     const { data, error } = await supabase
       .from("profiles")
       .select("*")
@@ -54,20 +72,23 @@ export const authService = {
   },
 
   async upsertProfile(profile: Partial<Profile> & { id: string }): Promise<Profile> {
+    if (!profile?.id?.trim()) throw new Error("Profile id is required.");
     const { data, error } = await supabase.from("profiles").upsert(profile as any).select().single();
     if (error) throw error;
     return data as Profile;
   },
 
   async deleteUser(id: string): Promise<void> {
+    if (!id?.trim()) throw new Error("User id is required.");
     const { error } = await supabase.from("profiles").delete().eq("id", id);
     if (error) throw error;
   },
 
   async signUpNewUser(email: string, password: string, profileData: any) {
+    const normalizedEmail = assertCredentials(email, password);
     const secondaryClient = getSecondaryClient();
     const { data, error } = await secondaryClient.auth.signUp({
-      email,
+      email: normalizedEmail,
       password,
       options: {
         data: profileData,
