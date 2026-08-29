@@ -63,3 +63,5 @@ A complete **restaurant management ERP** built on [TanStack Start](https://tanst
 
 - Route files under `src/routes/` (e.g. `admin/ledger.tsx`, `inventory.tsx`, `pos.tsx`) are large and monolithic; prefer extracting to components/hooks.
 - One-off repair scripts (`patch_*.cjs`, `fix_*.cjs`) accumulate in the repo root and are gitignored going forward — please delete any that are no longer needed.
+
+<!-- deployment verification marker: 2026-08-29 -->
