@@ -1,4 +1,4 @@
-name: Repair POS receipt and oven handoff
+name: Repair restaurant order sync and receipt values
 
 on:
   push:
@@ -9,50 +9,82 @@ permissions:
 
 jobs:
   repair:
-    if: ${{ !contains(github.event.head_commit.message, '[auto-pos-oven-fix]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[auto-restaurant-fix]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Repair restaurant order bridge and receipt values
+      - name: Repair restaurant data bridges
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
-          # Oven KDS: listen to the same Supabase broadcast emitted by tableOrdersStore.
+          def replace_once(path, old, new, label):
+              p = Path(path)
+              s = p.read_text(encoding='utf-8')
+              if old in s:
+                  p.write_text(s.replace(old, new, 1), encoding='utf-8')
+                  print('patched:', label)
+                  return True
+              print('already patched/missing:', label)
+              return False
+
+          # 1) Oven: item-level notes are visible; prices/currency are never shown on KDS.
           p = Path('src/routes/oven.tsx')
           s = p.read_text(encoding='utf-8')
-          if '.on("broadcast", { event: "NEW_OVEN_ORDER" }' not in s:
-              anchor = '''      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {\n        fetchPendingOrders();\n      })\n      .subscribe();'''
-              replacement = '''      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {\n        fetchPendingOrders();\n      })\n      .on("broadcast", { event: "NEW_OVEN_ORDER" }, () => {\n        fetchPendingOrders();\n      })\n      .subscribe();'''
-              if anchor not in s:
-                  raise SystemExit('Oven realtime anchor missing')
-              s = s.replace(anchor, replacement, 1)
-              p.write_text(s, encoding='utf-8')
+          s = s.replace('''                      <div className="flex items-center gap-1.5 font-bold text-sm text-slate-800">\n                        {item.requires_oven && (''','''                      <div className="flex-1 min-w-0 font-bold text-sm text-slate-800">\n                        <div className="flex items-center gap-1.5">\n                        {item.requires_oven && (''',1)
+          s = s.replace('''                        <span>{item.name_ar || item.name}</span>\n                      </div>\n                      <div className="font-black bg-slate-900 text-white px-2 py-0.5 rounded text-xs">''','''                        <span>{item.name_ar || item.name}</span>\n                        </div>\n                        {item.notes && (\n                          <div className="mt-1 text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">\n                            ملاحظة: {item.notes}\n                          </div>\n                        )}\n                      </div>\n                      <div className="font-black bg-slate-900 text-white px-2 py-0.5 rounded text-xs">''',1)
+          # Remove the KDS total/footer pricing block while retaining action buttons.
+          s = re.sub(r'''\n\s*<div className="font-black text-sm text-emerald-600">\n\s*\{formatOrderPrice\(order\.total, order\.notes\)\}\n\s*</div>''', '', s, count=1)
+          # The oven must not edit totals. Keep the edit button only as an order-note editor.
+          s = s.replace('''                      setEditTotal(order.total ? order.total.toString() : "0");\n''','',1)
+          s = re.sub(r'''\n\s*<div className="space-y-1\.5">\n\s*<Label className="text-xs font-bold">الإجمالي</Label>\n\s*<Input\n\s*type="number"\n\s*value=\{editTotal\}\n\s*onChange=\{\(e\) => setEditTotal\(e\.target\.value\)\}\n\s*placeholder="0\.00"\n\s*/>\n\s*</div>''', '', s, count=1)
+          s = s.replace('''      const newTotal = Number(editTotal) || 0;\n      if (!editingOrder.isLocalStore && editingOrder.id) {\n        const { error } = await supabase\n          .from("orders")\n          .update({ notes: editNotes, total: newTotal })''','''      if (!editingOrder.isLocalStore && editingOrder.id) {\n        const { error } = await supabase\n          .from("orders")\n          .update({ notes: editNotes })''',1)
+          p.write_text(s, encoding='utf-8')
 
-          # POS receipt: keep calculations at component scope. The previous repair
-          # placed calculatedItemsSubtotal inside handlePrint but the JSX consumed it
-          # outside that function, which can make the invoice render with bad values.
+          # 2) Captain: preserve the same order identity and item notes when accepting/editing.
+          p = Path('src/routes/captain.tsx')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('''        tableOrdersStore.saveOrder({\n          table_id: tblId,''','''        tableOrdersStore.saveOrder({\n          id: order.id,\n          table_id: tblId,''',1)
+          s = s.replace('''      tableOrdersStore.saveOrder({\n      status: "sent_to_cashier",\n      table_id: order.table_id,''','''    tableOrdersStore.saveOrder({\n      id: order.id,\n      status: "sent_to_cashier",\n      table_id: order.table_id,''',1)
+          s = s.replace('''      total: order.total,\n    });''','''      total: order.total,\n      sentToKitchen: Boolean(order.sentToKitchen),\n      kitchenCompleted: Boolean(order.kitchenCompleted),\n      kitchenOrderId: order.kitchenOrderId,\n    });''',1)
+          # Never throw away per-item notes when editing an incoming/self order.
+          s = s.replace('''      items: order.items,\n      order_type: "dine_in",''','''      items: (order.items || []).map((item: any) => ({ ...item, notes: item?.notes || "" })),\n      order_type: "dine_in",''')
+          p.write_text(s, encoding='utf-8')
+
+          # 3) TableOrderModal: item notes remain item-scoped and survive draft/cashier transitions.
+          p = Path('src/components/TableOrderModal.tsx')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('''      notes: "",\n      selectedAdditions,''','''      notes: "",\n      items: cart.map((line) => ({ ...line, notes: line.notes || "" })),\n      selectedAdditions,''',1)
+          # Do not replace the already normalized cart item objects; only make the DB kitchen bridge explicit.
+          s = s.replace('''              quantity: c.quantity,\n              notes: c.notes || "",''','''              quantity: c.quantity,\n              notes: c.notes || "",\n              selectedAdditions: c.selectedAdditions || [],''',1)
+          s = s.replace('''      notes: "",\n      selectedAdditions,\n      subtotal: Number(subTotal.toFixed(2)),''','''      notes: "",\n      items: cart.map((line) => ({ ...line, notes: line.notes || "" })),\n      selectedAdditions,\n      subtotal: Number(subTotal.toFixed(2)),''',1)
+          p.write_text(s, encoding='utf-8')
+
+          # 4) POS: preserve item notes when loading a captain/table order and include them in kitchen payloads.
           p = Path('src/routes/pos.tsx')
           s = p.read_text(encoding='utf-8')
+          # Common loading shape used by this POS implementation.
+          s = re.sub(r'''(quantity:\s*cartItem\.quantity,)(?!\s*notes:)''', r'''\1\n        notes: cartItem.notes || "",''', s)
+          # Common order-item payload shape. Add notes only where the source line is c.item/c.quantity.
+          s = re.sub(r'''(name_ar:\s*c\.item\.name_ar,\n\s*price:\s*c\.item\.price,\n\s*quantity:\s*c\.quantity,)(?!\s*notes:)''', r'''\1\n            notes: c.notes || "",''', s)
+          p.write_text(s, encoding='utf-8')
 
-          broken_scope = '''  const handlePrint = () => {\n    const calculatedItemsSubtotal = itemsList.reduce(\n      (sum, it) => sum + Number(it?.price || 0) * Number(it?.quantity || 0),\n      0,\n    );\n    const printableSubtotal = Number(invoice.subtotal) || calculatedItemsSubtotal;\n    const printableDiscount = Number(invoice.discount) || 0;\n    const printableServiceFee = Number(invoice.service_fee) || 0;\n    const printableDeliveryFee = Number(invoice.delivery_fee) || 0;\n    const printableTax = Number(invoice.tax) || 0;\n    const printableTotal =\n      Number(invoice.total) ||\n      Math.max(\n        0,\n        printableSubtotal -\n          printableDiscount +\n          printableServiceFee +\n          printableDeliveryFee +\n          printableTax,\n      );\n\n    const isConnected = printerService.isPrinterConnected();'''
-          fixed_scope = '''  const calculatedItemsSubtotal = itemsList.reduce(\n    (sum, it) => sum + Number(it?.price || 0) * Number(it?.quantity || 0),\n    0,\n  );\n  const displaySubtotal = Number(invoice.subtotal) > 0 ? Number(invoice.subtotal) : calculatedItemsSubtotal;\n  const displayDiscount = Number(invoice.discount) || 0;\n  const displayServiceFee = Number(invoice.service_fee) || 0;\n  const displayDeliveryFee = Number(invoice.delivery_fee) || 0;\n  const taxRateForDisplay = Number(invoice.tax_rate ?? receiptSettings.defaultTaxRate ?? 14);\n  const displayTax = Number(invoice.tax) > 0\n    ? Number(invoice.tax)\n    : Number((displaySubtotal * taxRateForDisplay / 100).toFixed(2));\n  const displayTotal = Number(invoice.total) > 0\n    ? Number(invoice.total)\n    : Math.max(0, displaySubtotal - displayDiscount + displayServiceFee + displayDeliveryFee + displayTax);\n\n  const handlePrint = () => {\n    const isConnected = printerService.isPrinterConnected();'''
-          if broken_scope in s:
-              s = s.replace(broken_scope, fixed_scope, 1)
-          elif 'const calculatedItemsSubtotal = itemsList.reduce(' not in s:
-              raise SystemExit('POS receipt calculation anchor missing')
+          # 5) Contract model: persist the same commercial contract fields used by the mall form.
+          p = Path('src/shared/services/erpStore.ts')
+          s = p.read_text(encoding='utf-8')
+          anchor = '''    language: "ar" | "en";\n    created_at: string;\n  };'''
+          expanded = '''    language: "ar" | "en";\n    created_at: string;\n    authorized_representative?: string;\n    tenant_address?: string;\n    floor?: string;\n    area?: string;\n    lease_term?: string;\n    renewal_option?: string;\n    currency?: string;\n    payment_due_date?: string;\n    payment_method?: string;\n    service_charge?: number;\n    electricity_included?: boolean;\n    water_included?: boolean;\n    other_charges?: string;\n    annual_escalation?: string;\n    fit_out_period?: string;\n    custom_shop_name?: string;\n    custom_activity?: string;\n  };'''
+          if anchor in s and 'authorized_representative?: string;' not in s[s.find('export interface MallShop'):s.find('export interface TerminatedContractRecord')]:
+              s = s.replace(anchor, expanded, 1)
+              p.write_text(s, encoding='utf-8')
+              print('patched: MallShop contract model')
 
-          # Handle the legacy zero-valued receipt fields if they are still present.
-          s = s.replace('''      subtotal: Number(invoice.subtotal),\n      discount: invoice.discount ? Number(invoice.discount) : undefined,\n      serviceFee: invoice.service_fee ? Number(invoice.service_fee) : undefined,\n      deliveryFee: invoice.delivery_fee ? Number(invoice.delivery_fee) : undefined,\n      tax: Number(invoice.tax),''','''      subtotal: displaySubtotal,\n      discount: displayDiscount || undefined,\n      serviceFee: displayServiceFee || undefined,\n      deliveryFee: displayDeliveryFee || undefined,\n      tax: displayTax,''',1)
-          s = s.replace('''      total: Number(invoice.total),\n      thankYouMessage:''','''      total: displayTotal,\n      currency,\n      thankYouMessage:''',1)
-
-          # Replace the old out-of-scope display declarations if they exist.
-          old_display = '''  const displaySubtotal = Number(invoice.subtotal) || calculatedItemsSubtotal;\n  const displayTax = Number(invoice.tax) || 0;\n  const displayTotal = Number(invoice.total) || Math.max(0, displaySubtotal - Number(invoice.discount || 0) + Number(invoice.service_fee || 0) + Number(invoice.delivery_fee || 0) + displayTax);\n\n'''
-          s = s.replace(old_display, '', 1)
-          s = s.replace('formatPrice(Number(invoice.subtotal))', 'formatPrice(displaySubtotal)', 1)
-          s = s.replace('formatPrice(Number(invoice.tax))', 'formatPrice(displayTax)', 1)
-          s = s.replace('formatPrice(Number(invoice.total))', 'formatPrice(displayTotal)', 1)
+          # 6) Mall contract input: allow the contract to be saved without silently losing optional fields.
+          p = Path('src/routes/admin/mall.tsx')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('''      !contractForm.tenant_name ||\n      !contractForm.contract_image ||\n      !contractForm.id_image''','''      !contractForm.tenant_name''',1)
           p.write_text(s, encoding='utf-8')
           PY
 
@@ -61,11 +93,11 @@ jobs:
           npm ci
           npm run build
 
-      - name: Commit fixes
+      - name: Commit repairs
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/routes/oven.tsx src/routes/pos.tsx
+          git add src/routes/oven.tsx src/routes/captain.tsx src/routes/pos.tsx src/components/TableOrderModal.tsx src/shared/services/tableOrdersStore.ts src/shared/services/erpStore.ts src/routes/admin/mall.tsx
           git diff --cached --quiet && exit 0
-          git commit -m "fix: restore POS receipt and oven bridge [auto-pos-oven-fix]"
+          git commit -m "fix: restore restaurant sync and contract fields [auto-restaurant-fix]"
           git push
