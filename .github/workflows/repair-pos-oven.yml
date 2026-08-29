@@ -13,45 +13,59 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Repair receipt totals
+
+      - name: Repair restaurant order bridge and receipt values
         run: |
           python - <<'PY'
           from pathlib import Path
 
+          # Oven KDS: listen to the same Supabase broadcast emitted by tableOrdersStore.
+          p = Path('src/routes/oven.tsx')
+          s = p.read_text(encoding='utf-8')
+          if '.on("broadcast", { event: "NEW_OVEN_ORDER" }' not in s:
+              anchor = '''      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {\n        fetchPendingOrders();\n      })\n      .subscribe();'''
+              replacement = '''      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {\n        fetchPendingOrders();\n      })\n      .on("broadcast", { event: "NEW_OVEN_ORDER" }, () => {\n        fetchPendingOrders();\n      })\n      .subscribe();'''
+              if anchor not in s:
+                  raise SystemExit('Oven realtime anchor missing')
+              s = s.replace(anchor, replacement, 1)
+              p.write_text(s, encoding='utf-8')
+
+          # POS receipt: keep calculations at component scope. The previous repair
+          # placed calculatedItemsSubtotal inside handlePrint but the JSX consumed it
+          # outside that function, which can make the invoice render with bad values.
           p = Path('src/routes/pos.tsx')
           s = p.read_text(encoding='utf-8')
 
-          # The database order is authoritative, but some adapters/legacy records can
-          # return empty financial fields. Rebuild the printable values from the items
-          # when a stored value is zero/empty so the receipt can never silently print 0.
-          anchor = '''  const handlePrint = () => {\n    const isConnected = printerService.isPrinterConnected();'''
-          replacement = '''  const handlePrint = () => {\n    const calculatedItemsSubtotal = itemsList.reduce(\n      (sum, it) => sum + Number(it?.price || 0) * Number(it?.quantity || 0),\n      0,\n    );\n    const printableSubtotal = Number(invoice.subtotal) || calculatedItemsSubtotal;\n    const printableDiscount = Number(invoice.discount) || 0;\n    const printableServiceFee = Number(invoice.service_fee) || 0;\n    const printableDeliveryFee = Number(invoice.delivery_fee) || 0;\n    const printableTax = Number(invoice.tax) || 0;\n    const printableTotal =\n      Number(invoice.total) ||\n      Math.max(\n        0,\n        printableSubtotal -\n          printableDiscount +\n          printableServiceFee +\n          printableDeliveryFee +\n          printableTax,\n      );\n\n    const isConnected = printerService.isPrinterConnected();'''
-          if anchor not in s:
-              raise SystemExit('InvoiceView handlePrint marker missing')
-          if 'const calculatedItemsSubtotal = itemsList.reduce(' not in s:
-              s = s.replace(anchor, replacement, 1)
+          broken_scope = '''  const handlePrint = () => {\n    const calculatedItemsSubtotal = itemsList.reduce(\n      (sum, it) => sum + Number(it?.price || 0) * Number(it?.quantity || 0),\n      0,\n    );\n    const printableSubtotal = Number(invoice.subtotal) || calculatedItemsSubtotal;\n    const printableDiscount = Number(invoice.discount) || 0;\n    const printableServiceFee = Number(invoice.service_fee) || 0;\n    const printableDeliveryFee = Number(invoice.delivery_fee) || 0;\n    const printableTax = Number(invoice.tax) || 0;\n    const printableTotal =\n      Number(invoice.total) ||\n      Math.max(\n        0,\n        printableSubtotal -\n          printableDiscount +\n          printableServiceFee +\n          printableDeliveryFee +\n          printableTax,\n      );\n\n    const isConnected = printerService.isPrinterConnected();'''
+          fixed_scope = '''  const calculatedItemsSubtotal = itemsList.reduce(\n    (sum, it) => sum + Number(it?.price || 0) * Number(it?.quantity || 0),\n    0,\n  );\n  const displaySubtotal = Number(invoice.subtotal) > 0 ? Number(invoice.subtotal) : calculatedItemsSubtotal;\n  const displayDiscount = Number(invoice.discount) || 0;\n  const displayServiceFee = Number(invoice.service_fee) || 0;\n  const displayDeliveryFee = Number(invoice.delivery_fee) || 0;\n  const taxRateForDisplay = Number(invoice.tax_rate ?? receiptSettings.defaultTaxRate ?? 14);\n  const displayTax = Number(invoice.tax) > 0\n    ? Number(invoice.tax)\n    : Number((displaySubtotal * taxRateForDisplay / 100).toFixed(2));\n  const displayTotal = Number(invoice.total) > 0\n    ? Number(invoice.total)\n    : Math.max(0, displaySubtotal - displayDiscount + displayServiceFee + displayDeliveryFee + displayTax);\n\n  const handlePrint = () => {\n    const isConnected = printerService.isPrinterConnected();'''
+          if broken_scope in s:
+              s = s.replace(broken_scope, fixed_scope, 1)
+          elif 'const calculatedItemsSubtotal = itemsList.reduce(' not in s:
+              raise SystemExit('POS receipt calculation anchor missing')
 
-          s = s.replace('''      subtotal: Number(invoice.subtotal),\n      discount: invoice.discount ? Number(invoice.discount) : undefined,\n      serviceFee: invoice.service_fee ? Number(invoice.service_fee) : undefined,\n      deliveryFee: invoice.delivery_fee ? Number(invoice.delivery_fee) : undefined,\n      tax: Number(invoice.tax),''','''      subtotal: printableSubtotal,\n      discount: printableDiscount || undefined,\n      serviceFee: printableServiceFee || undefined,\n      deliveryFee: printableDeliveryFee || undefined,\n      tax: printableTax,''',1)
+          # Handle the legacy zero-valued receipt fields if they are still present.
+          s = s.replace('''      subtotal: Number(invoice.subtotal),\n      discount: invoice.discount ? Number(invoice.discount) : undefined,\n      serviceFee: invoice.service_fee ? Number(invoice.service_fee) : undefined,\n      deliveryFee: invoice.delivery_fee ? Number(invoice.delivery_fee) : undefined,\n      tax: Number(invoice.tax),''','''      subtotal: displaySubtotal,\n      discount: displayDiscount || undefined,\n      serviceFee: displayServiceFee || undefined,\n      deliveryFee: displayDeliveryFee || undefined,\n      tax: displayTax,''',1)
+          s = s.replace('''      total: Number(invoice.total),\n      thankYouMessage:''','''      total: displayTotal,\n      currency,\n      thankYouMessage:''',1)
 
-          s = s.replace('''      total: Number(invoice.total),\n      thankYouMessage:''','''      total: printableTotal,\n      currency,\n      thankYouMessage:''',1)
-
-          # Keep the on-screen invoice consistent with the same fallback values.
-          s = s.replace('''  return (\n    <div className="p-8" id="invoice"''','''  const displaySubtotal = Number(invoice.subtotal) || calculatedItemsSubtotal;\n  const displayTax = Number(invoice.tax) || 0;\n  const displayTotal = Number(invoice.total) || Math.max(0, displaySubtotal - Number(invoice.discount || 0) + Number(invoice.service_fee || 0) + Number(invoice.delivery_fee || 0) + displayTax);\n\n  return (\n    <div className="p-8" id="invoice"''',1)
+          # Replace the old out-of-scope display declarations if they exist.
+          old_display = '''  const displaySubtotal = Number(invoice.subtotal) || calculatedItemsSubtotal;\n  const displayTax = Number(invoice.tax) || 0;\n  const displayTotal = Number(invoice.total) || Math.max(0, displaySubtotal - Number(invoice.discount || 0) + Number(invoice.service_fee || 0) + Number(invoice.delivery_fee || 0) + displayTax);\n\n'''
+          s = s.replace(old_display, '', 1)
           s = s.replace('formatPrice(Number(invoice.subtotal))', 'formatPrice(displaySubtotal)', 1)
           s = s.replace('formatPrice(Number(invoice.tax))', 'formatPrice(displayTax)', 1)
           s = s.replace('formatPrice(Number(invoice.total))', 'formatPrice(displayTotal)', 1)
-
           p.write_text(s, encoding='utf-8')
           PY
+
       - name: Verify build
         run: |
           npm ci
           npm run build
+
       - name: Commit fixes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/routes/pos.tsx
+          git add src/routes/oven.tsx src/routes/pos.tsx
           git diff --cached --quiet && exit 0
-          git commit -m "fix: restore POS receipt values [auto-pos-oven-fix]"
+          git commit -m "fix: restore POS receipt and oven bridge [auto-pos-oven-fix]"
           git push
