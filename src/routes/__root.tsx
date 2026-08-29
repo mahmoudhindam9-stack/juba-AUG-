@@ -10,6 +10,7 @@ import {
 import { useEffect, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { translator } from "../shared/services/translationService";
+import { createAppSync } from "../shared/services/appSync";
 
 import appCss from "../styles.css?url";
 
@@ -95,10 +96,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
     ],
     links: [
-      {
-        rel: "stylesheet",
-        href: appCss,
-      },
+      { rel: "stylesheet", href: appCss },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),
@@ -116,7 +114,11 @@ function RootComponent() {
     } catch (e) {
       console.error("Failed to start translator:", e);
     }
-  }, []);
+
+    // One synchronization layer for dashboard, POS, captain, oven,
+    // inventory, treasury and accounting screens.
+    return createAppSync(queryClient);
+  }, [queryClient]);
 
   return (
     <html lang="ar" dir="rtl">
@@ -127,7 +129,6 @@ function RootComponent() {
         <QueryClientProvider client={queryClient}>
           <Outlet />
           <Toaster />
-          {/* Global Developer Credit */}
         </QueryClientProvider>
         <Scripts />
       </body>
