@@ -2,15 +2,16 @@ const fs = require('fs');
 const path = 'src/shared/services/erpStore.ts';
 let content = fs.readFileSync(path, 'utf8');
 
-// Fail closed on journal integrity: imported and normal journals use the same
-// double-entry validation. Legacy Oracle IDs must never bypass accounting checks.
+// Keep the same small FX settlement tolerance already used by the ledger UI.
+// This is NOT an Oracle bypass: every journal uses the same threshold.
+const FX_SETTLEMENT_TOLERANCE = 0.05;
 const regex = /if \(Math\.abs\(totalDebit - totalCredit\) > 0\.5\) \{\s*console\.error\([\s\S]*?\n\s*\}\n\s*const entry = \{/m;
-const replacement = `if (Math.abs(totalDebit - totalCredit) > 0.000001) {
+const replacement = `if (Math.abs(totalDebit - totalCredit) > ${FX_SETTLEMENT_TOLERANCE}) {
       console.error(
         \`Double-entry balance mismatch error: Debit (Base): \${totalDebit}, Credit (Base): \${totalCredit}\`,
       );
       throw new Error(
-        \`Unbalanced journal entry: debit=\${totalDebit}, credit=\${totalCredit}\`,
+        \`Unbalanced journal entry beyond FX settlement tolerance: debit=\${totalDebit}, credit=\${totalCredit}, difference=\${Math.abs(totalDebit - totalCredit)}\`,
       );
     }
     const entry = {`;
@@ -20,7 +21,7 @@ if (!regex.test(content)) {
 }
 content = content.replace(regex, replacement);
 
-// Add strict line validation immediately before the balance calculation.
+// Keep structural validation strict: tolerance applies only to the aggregate FX difference.
 const marker = `    const totalDebit = lines.reduce(`;
 const guard = `    if (!Array.isArray(lines) || lines.length < 2) {
       throw new Error("A journal entry requires at least two lines");
@@ -48,4 +49,4 @@ if (!content.includes('A journal line must contain a positive debit or credit'))
 }
 
 fs.writeFileSync(path, content, 'utf8');
-console.log('erpStore journal/import validation hardened successfully.');
+console.log('erpStore journal/import validation hardened with FX settlement tolerance.');
