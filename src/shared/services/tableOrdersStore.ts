@@ -152,6 +152,8 @@ class TableOrdersStore {
               name_ar: line?.item?.name_ar || line?.name_ar || line?.name || "صنف",
               price: Number(line?.item?.price ?? line?.price ?? 0),
               quantity: Number(line?.quantity ?? 1),
+              notes: line?.notes || "",
+              selectedAdditions: line?.selectedAdditions || [],
               requires_oven: Boolean(line?.item?.requires_oven ?? line?.requires_oven),
             })),
           })
