@@ -18,7 +18,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply stable financial synchronization patch
-        run: node patch_financial_sync_v4_20260829.cjs
+        run: |
+          node patch_financial_sync_v4_20260829.cjs
+          node patch_journal_sort_v5_20260829.cjs
 
       - name: Commit source fixes
         run: |
