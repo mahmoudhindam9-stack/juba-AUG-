@@ -3137,84 +3137,13 @@ export class ERPStore {
         }
       });
     });
+    // General Ledger is the accounting source of truth for system-bound accounts.
+    // General Ledger is the accounting source of truth for system-bound accounts.
     this.state.accounts.forEach((acc) => {
       if (acc.system_binding && acc.system_binding !== "none" && acc.sync_status !== "pending") {
-        let liveBalance = acc.initial_balance || 0;
-        if (acc.system_binding.startsWith("treasury_")) {
-          const tId = acc.system_binding.replace("treasury_", "");
-          let t = this.state.treasuries.find((x) => x.id === tId);
-          if (!t) {
-            if (tId === "main") t = this.state.treasuries.find((x) => x.id === "tr-1");
-            else if (tId === "cib") t = this.state.treasuries.find((x) => x.id === "tr-2");
-            else if (tId === "extra") t = this.state.treasuries.find((x) => x.id === "tr-3");
-            else if (tId === "usd") t = this.state.treasuries.find((x) => x.id === "tr-4");
-            else if (tId === "management_egp")
-              t = this.state.treasuries.find((x) => x.id === "tr-5");
-          }
-          if (t) liveBalance = t.balance || 0;
-        } else
-          switch (acc.system_binding) {
-            case "suppliers_payable":
-              liveBalance = this.state.suppliers.reduce((sum, s) => sum + (s.balance || 0), 0);
-              break;
-            case "sales_revenue":
-              liveBalance =
-                this.state.vouchers
-                  ?.filter((v) => !v.deleted && v.type === "receipt")
-                  ?.reduce((sum, v) => sum + Number(v.amount || 0), 0) || 0;
-              break;
-            case "operating_expenses":
-              liveBalance =
-                this.state.vouchers
-                  ?.filter((v) => !v.deleted && v.type === "payment")
-                  ?.reduce((sum, v) => sum + Number(v.amount || 0), 0) || 0;
-              break;
-            case "warehouse_main_value": {
-              const items = localWarehouseStore.getInventory();
-              liveBalance = localWarehouseStore
-                .getWarehouseInventory("wh-main-default")
-                .reduce((sum, row) => {
-                  const item = items.find((i) => i.id === row.inventory_id);
-                  if (item) return sum + Number(row.quantity || 0) * Number(item.cost || 0);
-                  return sum;
-                }, 0);
-              break;
-            }
-            case "warehouse_kitchen_value": {
-              const items = localWarehouseStore.getInventory();
-              liveBalance = localWarehouseStore
-                .getWarehouseInventory("wh-sub-kitchen")
-                .reduce((sum, row) => {
-                  const item = items.find((i) => i.id === row.inventory_id);
-                  if (item) return sum + Number(row.quantity || 0) * Number(item.cost || 0);
-                  return sum;
-                }, 0);
-              break;
-            }
-            case "expired_inventory_value": {
-              const nowStr = /* @__PURE__ */ new Date().toISOString().split("T")[0];
-              const expiredBatches = this.state.inventoryExpiry.filter(
-                (b) => b.expiry_date <= nowStr,
-              );
-              const items = localWarehouseStore.getInventory();
-              liveBalance = expiredBatches.reduce((sum, batch) => {
-                const item = items.find((i) => i.id === batch.inventory_id);
-                if (item) return sum + Number(batch.quantity || 0) * Number(item.cost || 0);
-                return sum;
-              }, 0);
-              break;
-            }
-            case "disposed_waste_value":
-              liveBalance = this.state.totalDisposedExpiryValue || 0;
-              break;
-            default:
-              break;
-          }
-        balanceMap[acc.code] = liveBalance;
+        acc.balance = balanceMap[acc.code] ?? acc.initial_balance ?? 0;
+        acc.sync_status = "synced";
       }
-    });
-    this.state.accounts.forEach((acc) => {
-      if (balanceMap[acc.code] !== void 0) acc.balance = balanceMap[acc.code];
     });
     if (this.state.treasuries && this.state.treasuries.length > 0) {
       this.state.treasuries.forEach((tr) => {

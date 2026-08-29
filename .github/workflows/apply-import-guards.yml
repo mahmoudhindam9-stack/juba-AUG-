@@ -1,4 +1,4 @@
-name: Apply import journal fixes
+name: Final journal import verification
 
 on:
   push:
@@ -6,40 +6,17 @@ on:
       - audit-import-guards-2026-08-29
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  harden:
+  verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout branch
+      - name: Checkout completed branch
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Apply ERP journal validation
-        run: node patch_erp_validation.cjs
-
-      - name: Apply Oracle journal grouping and numbering fix
-        run: node patch_oracle_2021_import.cjs
-
-      - name: Apply durable journal persistence
-        run: node patch_journal_persistence.cjs
-
-      - name: Apply ledger async save and truthful import errors
-        run: node patch_ledger_persistence.cjs
-
-      - name: Show created accounts in import report
-        run: node patch_ledger_account_report.cjs
-
-      - name: Commit source fixes
+      - name: Production build verification
         run: |
-          if git diff --quiet -- src/shared/services/erpStore.ts src/shared/utils/oracleParser.ts src/routes/admin/ledger.tsx; then
-            echo "No source changes required."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/shared/services/erpStore.ts src/shared/utils/oracleParser.ts src/routes/admin/ledger.tsx
-          git commit -m "fix: normalize Oracle journal numbering and account import report"
-          git push origin HEAD:audit-import-guards-2026-08-29
+          npm ci
+          npm run build
