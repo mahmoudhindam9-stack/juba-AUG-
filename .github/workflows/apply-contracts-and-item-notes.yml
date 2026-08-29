@@ -1,0 +1,98 @@
+name: Apply exact mall contracts and per-item notes
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[auto-contract-notes]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply source contracts and restaurant item notes
+        run: |
+          set -e
+          git clone --depth 1 https://github.com/mahmoudhindam9-stack/jubaforedit.git /tmp/jubaforedit
+          cp /tmp/jubaforedit/src/shared/services/mallContractTemplates.ts src/shared/services/mallContractTemplates.ts
+          cp /tmp/jubaforedit/src/routes/admin/mall.tsx src/routes/admin/mall.tsx
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(path, old, new, label):
+              p=Path(path); s=p.read_text(encoding='utf-8')
+              if old not in s: raise SystemExit(f'{label}: anchor missing in {path}')
+              p.write_text(s.replace(old,new,1),encoding='utf-8')
+
+          # Captain/table modal: make notes belong to each cart line and send them to kitchen/cashier.
+          p=Path('src/components/TableOrderModal.tsx'); s=p.read_text(encoding='utf-8')
+          anchor='''  const removeFromCart = (id: string) => setCart((prev) => prev.filter((c) => c.item.id !== id));\n'''
+          insert='''  const removeFromCart = (id: string) => setCart((prev) => prev.filter((c) => c.item.id !== id));\n\n  const updateItemNotes = (id: string, notes: string) => {\n    setCart((prev) => prev.map((c) => (c.item.id === id ? { ...c, notes } : c)));\n  };\n'''
+          replace_once('src/components/TableOrderModal.tsx',anchor,insert,'TableOrderModal updateItemNotes')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace('''              notes: orderNotes\n              ? `طاولة #${table.number} - ${orderNotes}${currency && currency !== "EGP" ? ` | العملة: ${currency}` : ""}`\n              : `طاولة #${table.number}${currency && currency !== "EGP" ? ` | العملة: ${currency}` : ""}`,''','''              notes: `طاولة #${table.number}${currency && currency !== "EGP" ? ` | العملة: ${currency}` : ""}`,''',1)
+          s=s.replace('''              quantity: c.quantity,\n              requires_oven: c.item.requires_oven || false,''','''              quantity: c.quantity,\n              notes: c.notes || "",\n              requires_oven: c.item.requires_oven || false,''',1)
+          # Both local saves should no longer make the global notes field the source of item instructions.
+          s=s.replace('''      notes: orderNotes,\n      selectedAdditions,''','''      notes: "",\n      selectedAdditions,''',2)
+          # Add a per-line notes editor directly under each captain cart item.
+          anchor='''                      <h5 className="font-bold text-xs text-slate-800 truncate">\n                        {line.item.name_ar}\n                      </h5>\n                      <span className="text-[11px] font-bold text-indigo-600 block mt-0.5">'''
+          replacement='''                      <h5 className="font-bold text-xs text-slate-800 truncate">\n                        {line.item.name_ar}\n                      </h5>\n                      <textarea\n                        rows={1}\n                        value={line.notes || ""}\n                        onChange={(e) => updateItemNotes(line.item.id, e.target.value)}\n                        placeholder={lang === "ar" ? "ملاحظة لهذا الصنف..." : "Note for this item..."}\n                        className="w-full mt-1 bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px] font-semibold outline-none focus:border-indigo-500 resize-none"\n                      />\n                      <span className="text-[11px] font-bold text-indigo-600 block mt-0.5">'''
+          replace_once('src/components/TableOrderModal.tsx',anchor,replacement,'Captain item notes UI')
+          # Hide the old global order-notes editor; keep state for backward compatibility.
+          s=p.read_text(encoding='utf-8')
+          pattern=r'''\n              /\* Order Notes \*/\n              <div>.*?</div>\n\n              /\* Calculation Breakdown \*/'''
+          s2=re.sub(pattern,'\n              {/* Calculation Breakdown */}',s,count=1,flags=re.S)
+          if s2==s: raise SystemExit('Captain global notes block anchor missing')
+          p.write_text(s2,encoding='utf-8')
+
+          # Cashier POS: preserve/edit per-item notes and send them in order.items.
+          p=Path('src/routes/pos.tsx'); s=p.read_text(encoding='utf-8')
+          anchor='''  const removeFromCart = (id: string) => setCart((prev) => prev.filter((c) => c.item.id !== id));\n'''
+          insert='''  const removeFromCart = (id: string) => setCart((prev) => prev.filter((c) => c.item.id !== id));\n\n  const updateItemNotes = (id: string, notes: string) => {\n    setCart((prev) => prev.map((c) => (c.item.id === id ? { ...c, notes } : c)));\n  };\n'''
+          replace_once('src/routes/pos.tsx',anchor,insert,'POS updateItemNotes')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace('''              quantity: c.quantity,\n              requires_oven: (c.item as any).requires_oven || false,''','''              quantity: c.quantity,\n              notes: c.notes || "",\n              requires_oven: (c.item as any).requires_oven || false,''',1)
+          s=s.replace('''      pOrder.items.map((cartItem: any) => ({\n        item: cartItem.item,\n        quantity: cartItem.quantity,\n      }))''','''      pOrder.items.map((cartItem: any) => ({\n        item: cartItem.item,\n        quantity: cartItem.quantity,\n        notes: cartItem.notes || "",\n        selectedAdditions: cartItem.selectedAdditions || [],\n      }))''',1)
+          anchor='''                    <h5 className="font-bold text-sm line-clamp-1">{c.item.name_ar}</h5>\n                    <button'''
+          replacement='''                    <h5 className="font-bold text-sm line-clamp-1">{c.item.name_ar}</h5>\n                    <textarea\n                      rows={1}\n                      value={c.notes || ""}\n                      onChange={(e) => updateItemNotes(c.item.id, e.target.value)}\n                      placeholder={lang === "ar" ? "ملاحظة لهذا الصنف..." : "Note for this item..."}\n                      className="w-full mt-1 bg-background border border-border rounded-lg px-2 py-1 text-[11px] font-semibold outline-none focus:border-primary resize-none"\n                    />\n                    <button'''
+          replace_once('src/routes/pos.tsx',anchor,replacement,'POS item notes UI')
+          # Do not wipe per-item notes when loading a captain order.
+          p.write_text(s,encoding='utf-8')
+
+          # Oven KDS: display the item note, never the item price/currency.
+          p=Path('src/routes/oven.tsx'); s=p.read_text(encoding='utf-8')
+          # Insert once after the item name in the KDS item row. Use a conservative JSX anchor.
+          candidates=[
+            ('''<span className="font-bold">{item.name_ar}</span>''','''<span className="font-bold">{item.name_ar}</span>\n                        {item.notes && <div className="mt-1 text-xs font-semibold text-amber-700">📝 {item.notes}</div>}'''),
+            ('''<div className="font-bold text-sm">{item.name_ar}</div>''','''<div className="font-bold text-sm">{item.name_ar}</div>\n                        {item.notes && <div className="mt-1 text-xs font-semibold text-amber-700">📝 {item.notes}</div>}'''),
+          ]
+          done=False
+          for old,new in candidates:
+              if old in s:
+                  s=s.replace(old,new,1); done=True; break
+          if not done:
+              # Keep the build safe if the KDS markup uses a different label shape; the order data still carries notes.
+              print('Oven item-name JSX anchor not found; data propagation remains enabled')
+          p.write_text(s,encoding='utf-8')
+          PY
+
+      - name: Verify build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit and remove workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/routes/admin/mall.tsx src/shared/services/mallContractTemplates.ts src/components/TableOrderModal.tsx src/routes/pos.tsx src/routes/oven.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: restore exact mall contracts and per-item kitchen notes [auto-contract-notes]"
+          git push
+          git rm .github/workflows/apply-contracts-and-item-notes.yml
+          git commit -m "chore: remove temporary contract notes workflow [auto-contract-notes]"
+          git push
