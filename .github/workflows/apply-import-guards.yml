@@ -17,8 +17,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply final financial synchronization patch
-        run: node patch_financial_sync_v3_20260829.cjs
+      - name: Apply stable financial synchronization patch
+        run: node patch_financial_sync_v4_20260829.cjs
 
       - name: Verify source builds and invariants
         run: |
@@ -28,12 +28,12 @@ jobs:
 
       - name: Commit source fixes
         run: |
-          if git diff --quiet -- src/shared/services/erpStore.ts src/shared/utils/oracleParser.ts src/routes/admin/ledger.tsx src/routes/admin/index.tsx scripts/verify-financial-sync.cjs; then
+          if git diff --quiet -- src/shared/services/erpStore.ts src/shared/utils/oracleParser.ts src/shared/utils/oracleJournalGrouping.ts src/routes/admin/ledger.tsx src/routes/admin/index.tsx scripts/verify-financial-sync.cjs; then
             echo "No source changes required."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/shared/services/erpStore.ts src/shared/utils/oracleParser.ts src/routes/admin/ledger.tsx src/routes/admin/index.tsx scripts/verify-financial-sync.cjs
-          git commit -m "fix: finalize MM/NN numbering and ledger synchronization"
+          git add src/shared/services/erpStore.ts src/shared/utils/oracleParser.ts src/shared/utils/oracleJournalGrouping.ts src/routes/admin/ledger.tsx src/routes/admin/index.tsx scripts/verify-financial-sync.cjs
+          git commit -m "fix: finalize Oracle numbering and dashboard ledger sync"
           git push origin HEAD:audit-import-guards-2026-08-29
