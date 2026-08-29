@@ -1,4 +1,4 @@
-name: Apply import journal fixes
+name: Final journal import verification
 
 on:
   push:
@@ -6,29 +6,17 @@ on:
       - audit-import-guards-2026-08-29
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  harden:
+  verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout branch
+      - name: Checkout completed branch
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Apply final journal display ordering
-        run: node patch_journal_default_sort_v7_20260829.cjs
-
-      - name: Commit source fixes
+      - name: Production build verification
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/routes/admin/ledger.tsx
-          if git diff --cached --quiet; then
-            echo "No journal ordering changes required."
-          else
-            git commit -m "fix: default journal view to MM/NN reference order"
-          fi
-          git pull --rebase origin audit-import-guards-2026-08-29
-          git push origin HEAD:audit-import-guards-2026-08-29
+          npm ci
+          npm run build
