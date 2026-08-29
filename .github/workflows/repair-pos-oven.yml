@@ -13,109 +13,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Patch POS and table order protocol
+      - name: Repair receipt totals
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          # Add the missing local kitchen protocol methods.
-          p = Path('src/shared/services/tableOrdersStore.ts')
-          s = p.read_text(encoding='utf-8')
-          marker = '''  public markKitchenCompletedByTableId(tableId: string) {'''
-          methods = '''  public sendOrderToKitchen(orderId: string) {
-    const target = this.orders.find((o) => o.id === orderId);
-    if (!target) return;
-    target.sentToKitchen = true;
-    target.kitchenOrderId = target.kitchenOrderId || `KITCHEN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    target.kitchenCompleted = false;
-    this.saveState();
-    this.notify();
-  }
-
-  public completeKitchenOrder(orderId: string) {
-    const target = this.orders.find((o) => o.id === orderId);
-    if (!target) return;
-    target.kitchenCompleted = true;
-    target.updated_at = new Date().toISOString();
-    this.saveState();
-    this.notify();
-  }
-
-'''
-          if 'public sendOrderToKitchen' not in s:
-              if marker not in s: raise SystemExit('tableOrdersStore marker missing')
-              s = s.replace(marker, methods + marker, 1)
-          p.write_text(s, encoding='utf-8')
-
-          # Bridge a successfully-created POS order into the existing local table-order protocol.
           p = Path('src/routes/pos.tsx')
           s = p.read_text(encoding='utf-8')
-          marker = '''      // Post to ERP automated journal entries and update treasury balances (Cashier / Bank)'''
-          bridge = '''      // Keep the existing POS -> Oven protocol in sync. The database order remains the
-      // source used by multi-device KDS; this local mirror keeps same-origin tabs in sync too.
-      try {
-        const localKitchenOrder = tableOrdersStore.saveOrder({
-          table_id: data.table_id || `pos-${data.id}`,
-          table_number: Number((allTables.find((t) => t.id === data.table_id) as any)?.number || 0),
-          table_name: (allTables.find((t) => t.id === data.table_id) as any)?.name || null,
-          items: cart.map((c) => ({ item: c.item, quantity: c.quantity })),
-          order_type: orderType,
-          notes: finalNotes || "",
-          selectedAdditions,
-          subtotal: Number(finalSubtotal.toFixed(2)),
-          tax: Number(finalTax.toFixed(2)),
-          total: Number(finalTotal.toFixed(2)),
-          status: "draft",
-          sentToKitchen: true,
-          kitchenCompleted: false,
-          is_self_order: false,
-        });
-        tableOrdersStore.sendOrderToKitchen(localKitchenOrder.id);
-      } catch (kitchenSyncError) {
-        console.warn("POS local kitchen handoff failed; database order remains available:", kitchenSyncError);
-      }
 
-'''
-          if 'tableOrdersStore.sendOrderToKitchen(localKitchenOrder.id)' not in s:
-              if marker not in s: raise SystemExit('POS ERP marker missing')
-              s = s.replace(marker, bridge + marker, 1)
+          # The database order is authoritative, but some adapters/legacy records can
+          # return empty financial fields. Rebuild the printable values from the items
+          # when a stored value is zero/empty so the receipt can never silently print 0.
+          anchor = '''  const handlePrint = () => {\n    const isConnected = printerService.isPrinterConnected();'''
+          replacement = '''  const handlePrint = () => {\n    const calculatedItemsSubtotal = itemsList.reduce(\n      (sum, it) => sum + Number(it?.price || 0) * Number(it?.quantity || 0),\n      0,\n    );\n    const printableSubtotal = Number(invoice.subtotal) || calculatedItemsSubtotal;\n    const printableDiscount = Number(invoice.discount) || 0;\n    const printableServiceFee = Number(invoice.service_fee) || 0;\n    const printableDeliveryFee = Number(invoice.delivery_fee) || 0;\n    const printableTax = Number(invoice.tax) || 0;\n    const printableTotal =\n      Number(invoice.total) ||\n      Math.max(\n        0,\n        printableSubtotal -\n          printableDiscount +\n          printableServiceFee +\n          printableDeliveryFee +\n          printableTax,\n      );\n\n    const isConnected = printerService.isPrinterConnected();'''
+          if anchor not in s:
+              raise SystemExit('InvoiceView handlePrint marker missing')
+          if 'const calculatedItemsSubtotal = itemsList.reduce(' not in s:
+              s = s.replace(anchor, replacement, 1)
 
-          # Make the printable receipt robust when a DB adapter returns zero/empty financial fields.
-          marker = '''    const receiptData = {
-      storeName: receiptSettings.storeName || t.title,'''
-          replacement = '''    const calculatedItemsSubtotal = itemsList.reduce(
-      (sum, it) => sum + Number(it.price || 0) * Number(it.quantity || 0),
-      0,
-    );
-    const printableSubtotal = Number(invoice.subtotal) || calculatedItemsSubtotal;
-    const printableDiscount = Number(invoice.discount) || 0;
-    const printableServiceFee = Number(invoice.service_fee) || 0;
-    const printableDeliveryFee = Number(invoice.delivery_fee) || 0;
-    const printableTax = Number(invoice.tax) || 0;
-    const printableTotal =
-      Number(invoice.total) ||
-      Math.max(
-        0,
-        printableSubtotal - printableDiscount + printableServiceFee + printableDeliveryFee + printableTax,
-      );
+          s = s.replace('''      subtotal: Number(invoice.subtotal),\n      discount: invoice.discount ? Number(invoice.discount) : undefined,\n      serviceFee: invoice.service_fee ? Number(invoice.service_fee) : undefined,\n      deliveryFee: invoice.delivery_fee ? Number(invoice.delivery_fee) : undefined,\n      tax: Number(invoice.tax),''','''      subtotal: printableSubtotal,\n      discount: printableDiscount || undefined,\n      serviceFee: printableServiceFee || undefined,\n      deliveryFee: printableDeliveryFee || undefined,\n      tax: printableTax,''',1)
 
-    const receiptData = {
-      storeName: receiptSettings.storeName || t.title,'''
-          if marker not in s: raise SystemExit('receipt data marker missing')
-          s = s.replace(marker, replacement, 1)
-          s = s.replace('''      subtotal: Number(invoice.subtotal),
-      discount: invoice.discount ? Number(invoice.discount) : undefined,
-      serviceFee: invoice.service_fee ? Number(invoice.service_fee) : undefined,
-      deliveryFee: invoice.delivery_fee ? Number(invoice.delivery_fee) : undefined,
-      tax: Number(invoice.tax),''','''      subtotal: printableSubtotal,
-      discount: printableDiscount || undefined,
-      serviceFee: printableServiceFee || undefined,
-      deliveryFee: printableDeliveryFee || undefined,
-      tax: printableTax,''',1)
-          s = s.replace('''      total: Number(invoice.total),
-      thankYouMessage:''','''      total: printableTotal,
-      currency,
-      thankYouMessage:''',1)
+          s = s.replace('''      total: Number(invoice.total),\n      thankYouMessage:''','''      total: printableTotal,\n      currency,\n      thankYouMessage:''',1)
+
+          # Keep the on-screen invoice consistent with the same fallback values.
+          s = s.replace('''  return (\n    <div className="p-8" id="invoice"''','''  const displaySubtotal = Number(invoice.subtotal) || calculatedItemsSubtotal;\n  const displayTax = Number(invoice.tax) || 0;\n  const displayTotal = Number(invoice.total) || Math.max(0, displaySubtotal - Number(invoice.discount || 0) + Number(invoice.service_fee || 0) + Number(invoice.delivery_fee || 0) + displayTax);\n\n  return (\n    <div className="p-8" id="invoice"''',1)
+          s = s.replace('formatPrice(Number(invoice.subtotal))', 'formatPrice(displaySubtotal)', 1)
+          s = s.replace('formatPrice(Number(invoice.tax))', 'formatPrice(displayTax)', 1)
+          s = s.replace('formatPrice(Number(invoice.total))', 'formatPrice(displayTotal)', 1)
+
           p.write_text(s, encoding='utf-8')
           PY
       - name: Verify build
@@ -126,7 +51,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/routes/pos.tsx src/shared/services/tableOrdersStore.ts
+          git add src/routes/pos.tsx
           git diff --cached --quiet && exit 0
-          git commit -m "fix: restore POS receipt values and oven handoff [auto-pos-oven-fix]"
+          git commit -m "fix: restore POS receipt values [auto-pos-oven-fix]"
           git push
