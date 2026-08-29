@@ -84,8 +84,14 @@ class TableOrdersStore {
     this.listeners.forEach((fn) => fn());
   }
 
+  /**
+   * IMPORTANT: return the same array reference until the store actually changes.
+   * useSyncExternalStore requires a cached snapshot; returning [...this.orders]
+   * on every read creates a new snapshot on every render and can cause an
+   * infinite re-render loop in Captain/Oven consumers.
+   */
   public getAllOrders(): TableOrder[] {
-    return [...this.orders];
+    return this.orders;
   }
 
   public getOrderByTableId(tableId: string): TableOrder | undefined {
