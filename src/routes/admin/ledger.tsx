@@ -760,24 +760,30 @@ function LedgerPage() {
       const seqA = a.sequence ?? 0;
       const seqB = b.sequence ?? 0;
 
+      const yearA = Number(String(a.date || "").slice(0, 4)) || 0;
+      const yearB = Number(String(b.date || "").slice(0, 4)) || 0;
       if (journalSortOrder === "oldest") {
-        if (dateA !== dateB) return dateA - dateB;
+        if (yearA !== yearB) return yearA - yearB;
         if (refA !== refB) return refA - refB;
         if (seqA !== seqB) return seqA - seqB;
+        if (dateA !== dateB) return dateA - dateB;
         return a.id.localeCompare(b.id);
       } else if (journalSortOrder === "newest") {
-        if (dateA !== dateB) return dateB - dateA;
+        if (yearA !== yearB) return yearB - yearA;
         if (refA !== refB) return refB - refA;
         if (seqA !== seqB) return seqB - seqA;
+        if (dateA !== dateB) return dateB - dateA;
         return b.id.localeCompare(a.id);
       } else if (journalSortOrder === "ref_asc") {
+        if (yearA !== yearB) return yearA - yearB;
         if (refA !== refB) return refA - refB;
-        if (dateA !== dateB) return dateA - dateB;
-        return seqA - seqB;
+        if (seqA !== seqB) return seqA - seqB;
+        return dateA - dateB;
       } else if (journalSortOrder === "ref_desc") {
+        if (yearA !== yearB) return yearB - yearA;
         if (refA !== refB) return refB - refA;
-        if (dateA !== dateB) return dateB - dateA;
-        return seqB - seqA;
+        if (seqA !== seqB) return seqB - seqA;
+        return dateB - dateA;
       }
       return dateA - dateB;
     });
@@ -2143,7 +2149,7 @@ function LedgerPage() {
                   variant="default"
                   size="sm"
                   onClick={() => setIsSaveConfirmOpen(true)}
-                  disabled={isSavingToDb || journalEntries.length === 0}
+                  disabled={isSavingToDb || !hasUnsavedChanges}
                   className={`gap-1.5 rounded-xl text-white font-bold shadow-sm text-xs ${
                     hasUnsavedChanges
                       ? "bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-400"
@@ -3773,7 +3779,7 @@ function LedgerPage() {
                 <p>
                   هل أنت متأكد من حفظ وتثبيت عدد{" "}
                   <strong className="text-emerald-700 dark:text-emerald-400 font-bold font-mono text-base">
-                    {journalEntries.length} قيد محاسبي
+                    {unsavedEntries.length} قيد بحاجة للحفظ محاسبي
                   </strong>{" "}
                   في قاعدة البيانات والتخزين الدائم للنظام؟
                 </p>

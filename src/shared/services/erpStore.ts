@@ -3138,6 +3138,7 @@ export class ERPStore {
       });
     });
     // General Ledger is the accounting source of truth for system-bound accounts.
+    // General Ledger is the accounting source of truth for system-bound accounts.
     this.state.accounts.forEach((acc) => {
       if (acc.system_binding && acc.system_binding !== "none" && acc.sync_status !== "pending") {
         acc.balance = balanceMap[acc.code] ?? acc.initial_balance ?? 0;
