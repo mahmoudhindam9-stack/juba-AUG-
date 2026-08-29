@@ -13,7 +13,7 @@ describe("Oracle import parser", () => {
     expect(parseOracleNumber("1,234.56")).toBe(1234.56);
     expect(parseOracleNumber("1.234,56")).toBe(1234.56);
     expect(parseOracleNumber("(1,234.56)")).toBe(-1234.56);
-    expect(parseOracleNumber("١٬٢٣٤٫٥٦")).toBe(null);
+    expect(parseOracleNumber("١٬٢٣٤٫٥٦")).toBe(1234.56);
   });
 
   it("accepts a 2021-style sheet with reordered columns and preserves currency/rate", () => {
