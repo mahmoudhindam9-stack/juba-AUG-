@@ -2,7 +2,7 @@
  * Financial safety helpers used by ERP mutation paths.
  *
  * These helpers intentionally fail closed: invalid monetary values, rates,
- * or unbalanced journal lines must never be silently accepted.
+ * or invalid journal lines must never be silently accepted.
  */
 export function assertPositiveAmount(value: unknown, field = "amount"): number {
   const amount = Number(value);
@@ -38,6 +38,9 @@ export function assertBalancedJournalLines(
     }
     if (debit > 0 && credit > 0) {
       throw new Error("A journal line cannot contain both debit and credit");
+    }
+    if (debit === 0 && credit === 0) {
+      throw new Error("A journal line must contain a positive debit or credit");
     }
     debitTotal += debit;
     creditTotal += credit;
