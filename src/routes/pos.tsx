@@ -654,6 +654,7 @@ function Index() {
             name_ar: c.item.name_ar,
             price: c.item.price,
             quantity: c.quantity,
+            notes: c.notes || "",
             requires_oven: (c.item as any).requires_oven || false,
             cost_price: Number(singleItemCost.toFixed(2)),
           };

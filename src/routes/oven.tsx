@@ -196,11 +196,10 @@ function OvenPage() {
   const updateOrder = async () => {
     if (!editingOrder) return;
     try {
-      const newTotal = Number(editTotal) || 0;
       if (!editingOrder.isLocalStore && editingOrder.id) {
         const { error } = await supabase
           .from("orders")
-          .update({ notes: editNotes, total: newTotal })
+          .update({ notes: editNotes })
           .eq("id", editingOrder.id);
         if (error) throw error;
       }
@@ -350,13 +349,20 @@ function OvenPage() {
                       key={idx}
                       className="flex justify-between items-center border-b border-slate-100 pb-2 last:border-0 last:pb-0"
                     >
-                      <div className="flex items-center gap-1.5 font-bold text-sm text-slate-800">
+                      <div className="flex-1 min-w-0 font-bold text-sm text-slate-800">
+                        <div className="flex items-center gap-1.5">
                         {item.requires_oven && (
                           <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-extrabold border border-orange-200">
                             فرن 🍕
                           </span>
                         )}
                         <span>{item.name_ar || item.name}</span>
+                        </div>
+                        {item.notes && (
+                          <div className="mt-1 text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                            ملاحظة: {item.notes}
+                          </div>
+                        )}
                       </div>
                       <div className="font-black bg-slate-900 text-white px-2 py-0.5 rounded text-xs">
                         x{item.quantity}
@@ -367,15 +373,11 @@ function OvenPage() {
               </div>
 
               <div className="p-3 bg-slate-50 border-t border-slate-100 mt-auto flex items-center justify-between gap-2">
-                <div className="font-black text-sm text-emerald-600">
-                  {formatOrderPrice(order.total, order.notes)}
-                </div>
                 <div className="flex items-center gap-1.5">
                   <Button
                     onClick={() => {
                       setEditingOrder(order);
                       setEditNotes(order.notes || "");
-                      setEditTotal(order.total ? order.total.toString() : "0");
                     }}
                     variant="outline"
                     size="icon"
@@ -425,15 +427,6 @@ function OvenPage() {
                   value={editNotes}
                   onChange={(e) => setEditNotes(e.target.value)}
                   placeholder="ملاحظات أو تعليمات خاصة..."
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold">الإجمالي</Label>
-                <Input
-                  type="number"
-                  value={editTotal}
-                  onChange={(e) => setEditTotal(e.target.value)}
-                  placeholder="0.00"
                 />
               </div>
               <div className="flex justify-end gap-2 pt-3 border-t">

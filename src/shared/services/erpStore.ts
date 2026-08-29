@@ -483,6 +483,23 @@ export interface MallShop {
     id_image?: string;
     language: "ar" | "en";
     created_at: string;
+    authorized_representative?: string;
+    tenant_address?: string;
+    floor?: string;
+    area?: string;
+    lease_term?: string;
+    renewal_option?: string;
+    currency?: string;
+    payment_due_date?: string;
+    payment_method?: string;
+    service_charge?: number;
+    electricity_included?: boolean;
+    water_included?: boolean;
+    other_charges?: string;
+    annual_escalation?: string;
+    fit_out_period?: string;
+    custom_shop_name?: string;
+    custom_activity?: string;
   };
 }
 

@@ -353,9 +353,7 @@ function MallManagementPage() {
   const handleSaveContract = () => {
     if (
       !contractForm.shop_id ||
-      !contractForm.tenant_name ||
-      !contractForm.contract_image ||
-      !contractForm.id_image
+      !contractForm.tenant_name
     ) {
       return;
     }

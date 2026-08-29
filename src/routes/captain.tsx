@@ -161,6 +161,7 @@ function CaptainPage() {
 
         // Save as a TableOrder directly
         tableOrdersStore.saveOrder({
+          id: order.id,
           table_id: tblId,
           table_number: tblNum,
           table_name: tblName,
@@ -197,13 +198,16 @@ function CaptainPage() {
       table_id: order.table_id,
       table_number: parseInt(order.table_id.replace("tbl-", "")) || 999,
       table_name: `طاولة ${order.table_id.replace("tbl-", "")}`,
-      items: order.items,
+      items: (order.items || []).map((item: any) => ({ ...item, notes: item?.notes || "" })),
       order_type: "dine_in",
       notes: order.notes,
       selectedAdditions: [],
       subtotal: order.subtotal,
       tax: order.tax,
       total: order.total,
+      sentToKitchen: Boolean(order.sentToKitchen),
+      kitchenCompleted: Boolean(order.kitchenCompleted),
+      kitchenOrderId: order.kitchenOrderId,
     });
 
     toast({ title: "تم قبول الطلب وإرساله للكاشير بنجاح." });
@@ -214,7 +218,7 @@ function CaptainPage() {
       table_id: order.table_id,
       table_number: parseInt(order.table_id.replace("tbl-", "")) || 999,
       table_name: `طاولة ${order.table_id.replace("tbl-", "")}`,
-      items: order.items,
+      items: (order.items || []).map((item: any) => ({ ...item, notes: item?.notes || "" })),
       order_type: "dine_in",
       notes: order.notes,
       selectedAdditions: [],

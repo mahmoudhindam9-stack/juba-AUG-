@@ -164,6 +164,7 @@ export function TableOrderModal({
       items: cart,
       order_type: "dine_in",
       notes: "",
+      items: cart.map((line) => ({ ...line, notes: line.notes || "" })),
       selectedAdditions,
       subtotal: Number(subTotal.toFixed(2)),
       tax: Number(tax.toFixed(2)),
@@ -225,6 +226,7 @@ export function TableOrderModal({
               price: c.item.price,
               quantity: c.quantity,
               notes: c.notes || "",
+              selectedAdditions: c.selectedAdditions || [],
               requires_oven: c.item.requires_oven || false,
             })),
           })
@@ -310,6 +312,7 @@ export function TableOrderModal({
       items: cart,
       order_type: "dine_in",
       notes: "",
+      items: cart.map((line) => ({ ...line, notes: line.notes || "" })),
       selectedAdditions,
       subtotal: Number(subTotal.toFixed(2)),
       tax: Number(tax.toFixed(2)),
