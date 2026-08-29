@@ -1,0 +1,44 @@
+name: repair restaurant management
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: ${{ !contains(github.event.head_commit.message, '[repair-restaurant]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Apply restaurant repair
+        run: node scripts/repair-restaurant-management.cjs
+
+      - name: Verify changed files
+        run: |
+          git diff --check
+          git diff -- src/routes/oven.tsx src/routes/pos.tsx
+
+      - name: Commit and push repair
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/routes/oven.tsx src/routes/pos.tsx
+          git commit -m "fix: restore restaurant kitchen bridge and receipt values [repair-restaurant]" || exit 0
+          git push origin HEAD:main
+
+      - name: Remove one-time repair files
+        if: ${{ success() }}
+        run: |
+          git rm -f scripts/repair-restaurant-management.cjs .github/workflows/repair-restaurant-management.yml || true
+          git commit -m "chore: remove one-time restaurant repair runner [repair-restaurant]" || exit 0
+          git push origin HEAD:main
