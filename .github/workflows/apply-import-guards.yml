@@ -1,0 +1,33 @@
+name: Apply import journal guards
+
+on:
+  push:
+    branches:
+      - audit-import-guards-2026-08-29
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply fail-closed journal validation
+        run: node patch_erp_validation.cjs
+
+      - name: Commit hardened ERP store
+        run: |
+          if git diff --quiet -- src/shared/services/erpStore.ts; then
+            echo "No ERP store changes required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/shared/services/erpStore.ts
+          git commit -m "fix: fail-closed journal validation on import path"
+          git push origin HEAD:audit-import-guards-2026-08-29
