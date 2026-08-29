@@ -96,6 +96,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { JournalEntryCurrencyGroups } from "@/components/JournalEntryCurrencyGroups";
 
 export const Route = createFileRoute("/admin/ledger")({
   head: () => ({ meta: [{ title: "حساب الأستاذ العام والدفاتر المالية" }] }),
@@ -2553,215 +2554,18 @@ function LedgerPage() {
                           </div>
                         </div>
 
-                        {/* Entry Lines */}
-                        <div className="p-0 overflow-x-auto" dir="rtl">
-                          <table className="w-full text-sm text-right border-collapse">
-                            <thead className="bg-muted/30 text-muted-foreground text-xs font-bold border-b">
-                              <tr>
-                                <th className="p-3 pr-5 text-right">طرف القيد / الحساب المالي</th>
-                                <th className="p-3 text-right">رقم الحساب</th>
-                                <th className="p-3 text-right">البيان / الشرح التفصيلي</th>
-                                <th className="p-3 text-center text-emerald-700 dark:text-emerald-400 bg-emerald-500/5">
-                                  مدين (المبلغ بالعملة)
-                                </th>
-                                <th className="p-3 text-center text-rose-700 dark:text-rose-400 bg-rose-500/5">
-                                  دائن (المبلغ بالعملة)
-                                </th>
-                                <th className="p-3 text-center">العملة / المعامل</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y">
-                              {entry.lines.map((line, idx) => {
-                                const acc = accounts.find((a) => a.code === line.account_code);
-                                const lineCurr = line.currency || entry.currency || "USD";
-                                const lineRate = Number(line.rate) || 1;
-                                const isDebit = Number(line.debit) > 0;
+                        {/* Entry Lines - grouped by currency */}
+        <JournalEntryCurrencyGroups
+          entry={entry}
+          accounts={accounts}
+          formatCurrency={formatCurrency}
+          getLineBaseValue={getLineBaseValue}
+          totalBaseDebit={totalBaseDebit}
+          totalBaseCredit={totalBaseCredit}
+          isBalanced={isBalanced}
+        />
 
-                                return (
-                                  <tr key={idx} className="hover:bg-muted/15 transition">
-                                    <td className="p-3 pr-5 font-medium">
-                                      <div className="flex items-center gap-2">
-                                        {isDebit ? (
-                                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 shrink-0">
-                                            من حـ/
-                                          </span>
-                                        ) : (
-                                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/20 shrink-0 mr-4">
-                                            إلى حـ/
-                                          </span>
-                                        )}
-                                        <span
-                                          className={`font-semibold ${
-                                            isDebit
-                                              ? "text-emerald-900 dark:text-emerald-100"
-                                              : "text-rose-900 dark:text-rose-100"
-                                          }`}
-                                        >
-                                          {acc?.name_ar || line.description || "حساب محاسبي"}
-                                        </span>
-                                      </div>
-                                    </td>
-                                    <td className="p-3 font-mono text-xs text-muted-foreground font-semibold">
-                                      {line.account_code}
-                                    </td>
-                                    <td className="p-3 text-xs text-foreground/80 max-w-xs truncate">
-                                      {line.description || entry.description || "-"}
-                                    </td>
-                                    <td className="p-3 font-mono font-bold text-center text-emerald-700 dark:text-emerald-400 bg-emerald-500/5">
-                                      {Number(line.debit) > 0 ? (
-                                        <div>
-                                          <span>
-                                            {formatCurrency(Number(line.debit), lineCurr)}
-                                          </span>
-                                          {lineCurr !== "USD" && (
-                                            <span className="block text-[10px] text-muted-foreground font-normal">
-                                              (={" "}
-                                              {formatCurrency(
-                                                lineRate > 0
-                                                  ? lineRate >= 1
-                                                    ? Number(line.debit) / lineRate
-                                                    : Number(line.debit) * lineRate
-                                                  : Number(line.debit),
-                                                "USD",
-                                              )}
-                                              )
-                                            </span>
-                                          )}
-                                        </div>
-                                      ) : (
-                                        <span className="text-muted-foreground/40">-</span>
-                                      )}
-                                    </td>
-                                    <td className="p-3 font-mono font-bold text-center text-rose-700 dark:text-rose-400 bg-rose-500/5">
-                                      {Number(line.credit) > 0 ? (
-                                        <div>
-                                          <span>
-                                            {formatCurrency(Number(line.credit), lineCurr)}
-                                          </span>
-                                          {lineCurr !== "USD" && (
-                                            <span className="block text-[10px] text-muted-foreground font-normal">
-                                              (={" "}
-                                              {formatCurrency(
-                                                lineRate > 0
-                                                  ? lineRate >= 1
-                                                    ? Number(line.credit) / lineRate
-                                                    : Number(line.credit) * lineRate
-                                                  : Number(line.credit),
-                                                "USD",
-                                              )}
-                                              )
-                                            </span>
-                                          )}
-                                        </div>
-                                      ) : (
-                                        <span className="text-muted-foreground/40">-</span>
-                                      )}
-                                    </td>
-                                    <td className="p-3 text-center">
-                                      <Badge
-                                        variant="outline"
-                                        className="font-mono text-[10px] px-1.5 py-0"
-                                      >
-                                        {lineCurr} {lineRate !== 1 ? `@ ${lineRate}` : ""}
-                                      </Badge>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                            <tfoot className="divide-y border-t bg-muted/20">
-                              {/* Currency-specific totals */}
-                              {entryCurrencies.map((curr) => {
-                                const currLines = entry.lines.filter(
-                                  (l) => (l.currency || entry.currency || "USD") === curr,
-                                );
-                                const cDebit = currLines.reduce(
-                                  (s, l) => s + (Number(l.debit) || 0),
-                                  0,
-                                );
-                                const cCredit = currLines.reduce(
-                                  (s, l) => s + (Number(l.credit) || 0),
-                                  0,
-                                );
-
-                                const cBaseDebit = currLines.reduce((s, l) => {
-                                  return s + getLineBaseValue(l.debit, l.rate || 1, l.currency || curr || "USD");
-                                }, 0);
-
-                                const cBaseCredit = currLines.reduce((s, l) => {
-                                  return s + getLineBaseValue(l.credit, l.rate || 1, l.currency || curr || "USD");
-                                }, 0);
-
-                                return (
-                                  <tr key={curr} className="text-xs font-semibold bg-muted/10">
-                                    <td
-                                      colSpan={3}
-                                      className="p-2.5 pr-5 text-right text-muted-foreground"
-                                    >
-                                      <span className="font-bold text-foreground">
-                                        مجموع حركة عملة ({curr}):
-                                      </span>
-                                    </td>
-                                    <td className="p-2.5 font-mono text-center font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/5">
-                                      <div>
-                                        <span>{formatCurrency(cDebit, curr)}</span>
-                                        {curr !== "USD" && (
-                                          <span className="block text-[10px] text-emerald-600/80 font-normal">
-                                            (= {formatCurrency(cBaseDebit, "USD")})
-                                          </span>
-                                        )}
-                                      </div>
-                                    </td>
-                                    <td className="p-2.5 font-mono text-center font-bold text-rose-700 dark:text-rose-400 bg-rose-500/5">
-                                      <div>
-                                        <span>{formatCurrency(cCredit, curr)}</span>
-                                        {curr !== "USD" && (
-                                          <span className="block text-[10px] text-rose-600/80 font-normal">
-                                            (= {formatCurrency(cBaseCredit, "USD")})
-                                          </span>
-                                        )}
-                                      </div>
-                                    </td>
-                                    <td className="p-2.5 text-center">
-                                      <Badge variant="secondary" className="font-mono text-[10px]">
-                                        {curr}
-                                      </Badge>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-
-                              {/* Net/Final Total row in USD */}
-                              <tr className="bg-primary/5 dark:bg-primary/10 font-bold border-t-2 border-primary/30 text-sm">
-                                <td
-                                  colSpan={3}
-                                  className="p-3 pr-5 text-right text-foreground font-black"
-                                >
-                                  الصافي / الإجمالي النهائي للقيد بالدولار (USD):
-                                </td>
-                                <td className="p-3 font-mono text-center font-black text-emerald-700 dark:text-emerald-400 bg-emerald-500/15">
-                                  {formatCurrency(totalBaseDebit, "USD")}
-                                </td>
-                                <td className="p-3 font-mono text-center font-black text-rose-700 dark:text-rose-400 bg-rose-500/15">
-                                  {formatCurrency(totalBaseCredit, "USD")}
-                                </td>
-                                <td className="p-3 text-center">
-                                  <Badge
-                                    className={`font-mono text-xs font-bold ${
-                                      isBalanced
-                                        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300"
-                                        : "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300"
-                                    }`}
-                                  >
-                                    {isBalanced ? "متزن ✓" : "غير متزن ⚠️"}
-                                  </Badge>
-                                </td>
-                              </tr>
-                            </tfoot>
-                          </table>
-                        </div>
-
-                        {/* Bottom Balance Difference Bar */}
+        {/* Bottom Balance Difference Bar */}
                         <div
                           className={`px-4 py-2 text-xs font-semibold flex items-center justify-between border-t ${
                             isBalanced
