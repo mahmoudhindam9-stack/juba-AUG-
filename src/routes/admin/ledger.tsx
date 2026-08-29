@@ -762,6 +762,8 @@ function LedgerPage() {
 
       const yearA = Number(String(a.date || "").slice(0, 4)) || 0;
       const yearB = Number(String(b.date || "").slice(0, 4)) || 0;
+      const yearA = Number(String(a.date || "").slice(0, 4)) || 0;
+      const yearB = Number(String(b.date || "").slice(0, 4)) || 0;
       if (journalSortOrder === "oldest") {
         if (yearA !== yearB) return yearA - yearB;
         if (refA !== refB) return refA - refB;
@@ -779,6 +781,13 @@ function LedgerPage() {
         if (refA !== refB) return refA - refB;
         if (seqA !== seqB) return seqA - seqB;
         return dateA - dateB;
+      } else if (journalSortOrder === "ref_desc") {
+        if (yearA !== yearB) return yearB - yearA;
+        if (refA !== refB) return refB - refA;
+        if (seqA !== seqB) return seqB - seqA;
+        return dateB - dateA;
+      }
+      return dateA - dateB;
       } else if (journalSortOrder === "ref_desc") {
         if (yearA !== yearB) return yearB - yearA;
         if (refA !== refB) return refB - refA;
