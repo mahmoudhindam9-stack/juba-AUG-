@@ -18,7 +18,7 @@ jobs:
           fetch-depth: 0
 
       - name: Apply final financial synchronization patch
-        run: node patch_financial_sync_v2_20260829.cjs
+        run: node patch_financial_sync_v3_20260829.cjs
 
       - name: Verify source builds and invariants
         run: |
@@ -35,5 +35,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/shared/services/erpStore.ts src/shared/utils/oracleParser.ts src/routes/admin/ledger.tsx src/routes/admin/index.tsx scripts/verify-financial-sync.cjs
-          git commit -m "fix: finalize journal numbering and ledger synchronization"
+          git commit -m "fix: finalize MM/NN numbering and ledger synchronization"
           git push origin HEAD:audit-import-guards-2026-08-29
