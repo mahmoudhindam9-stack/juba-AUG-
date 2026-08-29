@@ -33,7 +33,8 @@ function LoginPage() {
     }
 
     const trimmedUser = username.trim().toLowerCase();
-    const trimmedPass = password.trim();
+    // Passwords are secrets, not display text: never trim them before verification.
+    const enteredPass = password;
 
     // 1. Direct verify against Super Admin and System users in erpStore
     const localUsers = erpStore.getUsers() as import("@/shared/services/erpStore").SystemUser[];
@@ -47,13 +48,13 @@ function LoginPage() {
       (trimmedUser === "admin" ||
         trimmedUser === "admin@restocash.com" ||
         trimmedUser === "admin@restocash.local") &&
-      (trimmedPass === "123456" || trimmedPass === "123");
+      (enteredPass === "123456" || enteredPass === "123");
 
     const isUserMatch =
       matchedUser &&
       (matchedUser.password
-        ? matchedUser.password === trimmedPass
-        : isSuperAdminMatch || trimmedPass === "123456" || trimmedPass === "123");
+        ? matchedUser.password === enteredPass
+        : isSuperAdminMatch || enteredPass === "123456" || enteredPass === "123");
 
     if (isSuperAdminMatch || isUserMatch) {
       const activeUsername = matchedUser ? matchedUser.username : "admin";
@@ -67,7 +68,7 @@ function LoginPage() {
       try {
         await supabase.auth.signInWithPassword({
           email: activeEmail,
-          password: trimmedPass,
+          password: enteredPass,
         });
       } catch (ignored) {
         // Continue with local ERP session
@@ -82,7 +83,7 @@ function LoginPage() {
     const emailToLogin = trimmedUser.includes("@") ? trimmedUser : `${trimmedUser}@restocash.com`;
     const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
       email: emailToLogin,
-      password: trimmedPass,
+      password: enteredPass,
     });
 
     if (signInData?.session) {
