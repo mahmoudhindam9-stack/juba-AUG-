@@ -18,7 +18,7 @@ jobs:
           fetch-depth: 0
 
       - name: Apply final journal display ordering
-        run: node patch_journal_sort_v5_20260829.cjs
+        run: node patch_journal_sort_v6_20260829.cjs
 
       - name: Commit source fixes
         run: |
