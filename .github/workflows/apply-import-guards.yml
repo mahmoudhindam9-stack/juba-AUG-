@@ -17,23 +17,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply ERP journal validation
-        run: node patch_erp_validation.cjs
+      - name: Apply final financial synchronization patch
+        run: node patch_financial_sync_v2_20260829.cjs
 
-      - name: Apply Oracle journal grouping and numbering fix
-        run: node patch_oracle_2021_import.cjs
-
-      - name: Apply durable journal persistence
-        run: node patch_journal_persistence.cjs
-
-      - name: Apply ledger async save and truthful import errors
-        run: node patch_ledger_persistence.cjs
-
-      - name: Show created accounts in import report
-        run: node patch_ledger_account_report.cjs
-
-      - name: Apply dashboard and ledger synchronization
-        run: node patch_financial_sync_20260829.cjs
+      - name: Verify source builds and invariants
+        run: |
+          npm ci
+          node scripts/verify-financial-sync.cjs
+          npm run build
 
       - name: Commit source fixes
         run: |
@@ -44,5 +35,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/shared/services/erpStore.ts src/shared/utils/oracleParser.ts src/routes/admin/ledger.tsx src/routes/admin/index.tsx scripts/verify-financial-sync.cjs
-          git commit -m "fix: synchronize dashboard balances with general ledger"
+          git commit -m "fix: finalize journal numbering and ledger synchronization"
           git push origin HEAD:audit-import-guards-2026-08-29
