@@ -4101,6 +4101,22 @@ export class ERPStore {
       console.warn("Accounting period / year is locked:", check.reason);
       throw new Error(check.reason || "You cannot edit restrictions in a closed year.");
     }
+    if (!Array.isArray(lines) || lines.length < 2) {
+      throw new Error("A journal entry requires at least two lines");
+    }
+    for (const line of lines) {
+      const debit = Number(line?.debit ?? 0);
+      const credit = Number(line?.credit ?? 0);
+      if (!Number.isFinite(debit) || !Number.isFinite(credit) || debit < 0 || credit < 0) {
+        throw new Error("Journal debit/credit values must be finite and non-negative");
+      }
+      if (debit > 0 && credit > 0) {
+        throw new Error("A journal line cannot contain both debit and credit");
+      }
+      if (debit === 0 && credit === 0) {
+        throw new Error("A journal line must contain a positive debit or credit");
+      }
+    }
     const totalDebit = lines.reduce(
       (sum, l) => sum + this.getLineBaseValue(l.debit, l.rate || 1, l.currency || "USD"),
       0,
@@ -4109,12 +4125,13 @@ export class ERPStore {
       (sum, l) => sum + this.getLineBaseValue(l.credit, l.rate || 1, l.currency || "USD"),
       0,
     );
-    if (Math.abs(totalDebit - totalCredit) > 0.5) {
+    if (Math.abs(totalDebit - totalCredit) > 0.000001) {
       console.error(
         `Double-entry balance mismatch error: Debit (Base): ${totalDebit}, Credit (Base): ${totalCredit}`,
       );
-      if (!customId?.startsWith("ORACLE")) return;
-      else console.warn("Bypassing strict double-entry validation for legacy Oracle import.");
+      throw new Error(
+        `Unbalanced journal entry: debit=${totalDebit}, credit=${totalCredit}`,
+      );
     }
     const entry = {
       id:
