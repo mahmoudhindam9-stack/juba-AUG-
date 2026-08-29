@@ -29,6 +29,9 @@ jobs:
       - name: Apply ledger async save and truthful import errors
         run: node patch_ledger_persistence.cjs
 
+      - name: Normalize Oracle journal numbers and report created accounts
+        run: node patch_journal_numbering_report.cjs
+
       - name: Commit source fixes
         run: |
           if git diff --quiet -- src/shared/services/erpStore.ts src/shared/utils/oracleParser.ts src/routes/admin/ledger.tsx; then
@@ -38,5 +41,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/shared/services/erpStore.ts src/shared/utils/oracleParser.ts src/routes/admin/ledger.tsx
-          git commit -m "fix: complete Oracle import and journal persistence flow"
+          git commit -m "fix: normalize Oracle journal numbering and account import report"
           git push origin HEAD:audit-import-guards-2026-08-29
