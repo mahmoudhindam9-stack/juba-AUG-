@@ -18,7 +18,7 @@ jobs:
           fetch-depth: 0
 
       - name: Apply final journal display ordering
-        run: node patch_journal_sort_v6_20260829.cjs
+        run: node patch_journal_default_sort_v7_20260829.cjs
 
       - name: Commit source fixes
         run: |
@@ -28,7 +28,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "No journal ordering changes required."
           else
-            git commit -m "fix: order journal display by year month journal sequence"
+            git commit -m "fix: default journal view to MM/NN reference order"
           fi
           git pull --rebase origin audit-import-guards-2026-08-29
           git push origin HEAD:audit-import-guards-2026-08-29
