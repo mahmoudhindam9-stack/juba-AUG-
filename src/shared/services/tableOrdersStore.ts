@@ -57,11 +57,8 @@ class TableOrdersStore {
         return;
       }
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        this.orders = JSON.parse(raw);
-      } else {
-        this.orders = [];
-      }
+      if (raw) this.orders = JSON.parse(raw);
+      else this.orders = [];
     } catch (e) {
       console.error("Failed to load table orders:", e);
       this.orders = [];
@@ -72,9 +69,7 @@ class TableOrdersStore {
     try {
       if (typeof window === "undefined" || typeof localStorage === "undefined") return;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.orders));
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new Event("table-orders-updated"));
-      }
+      window.dispatchEvent(new Event("table-orders-updated"));
     } catch (e) {
       console.error("Failed to save table orders:", e);
     }
@@ -82,9 +77,7 @@ class TableOrdersStore {
 
   public subscribe(listener: () => void) {
     this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
+    return () => this.listeners.delete(listener);
   }
 
   private notify() {
@@ -92,13 +85,11 @@ class TableOrdersStore {
   }
 
   public getAllOrders(): TableOrder[] {
-    return this.orders;
+    return [...this.orders];
   }
 
   public getOrderByTableId(tableId: string): TableOrder | undefined {
-    return this.orders.find(
-      (o) => o.table_id === tableId && (o.status === "draft" || o.status === "sent_to_cashier"),
-    );
+    return this.orders.find((o) => o.table_id === tableId && (o.status === "draft" || o.status === "sent_to_cashier"));
   }
 
   public getPendingCashierOrders(): TableOrder[] {
@@ -106,37 +97,40 @@ class TableOrdersStore {
   }
 
   public saveOrder(orderData: Omit<TableOrder, "id" | "created_at" | "updated_at">): TableOrder {
-    const existingIndex = this.orders.findIndex(
-      (o) =>
-        o.table_id === orderData.table_id &&
-        (o.status === "draft" || o.status === "sent_to_cashier"),
-    );
-
+    const existingIndex = this.orders.findIndex((o) => o.table_id === orderData.table_id && (o.status === "draft" || o.status === "sent_to_cashier"));
     const now = new Date().toISOString();
-
     if (existingIndex >= 0) {
-      const existing = this.orders[existingIndex];
-      const updated: TableOrder = {
-        ...existing,
-        ...orderData,
-        updated_at: now,
-      };
+      const updated: TableOrder = { ...this.orders[existingIndex], ...orderData, updated_at: now };
       this.orders[existingIndex] = updated;
       this.saveState();
       this.notify();
       return updated;
-    } else {
-      const newOrder: TableOrder = {
-        id: `tbl-ord-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        ...orderData,
-        created_at: now,
-        updated_at: now,
-      };
-      this.orders.push(newOrder);
-      this.saveState();
-      this.notify();
-      return newOrder;
     }
+    const newOrder: TableOrder = { id: `tbl-ord-${Date.now()}-${Math.floor(Math.random() * 1000)}`, ...orderData, created_at: now, updated_at: now };
+    this.orders.push(newOrder);
+    this.saveState();
+    this.notify();
+    return newOrder;
+  }
+
+  public sendOrderToKitchen(orderId: string) {
+    const target = this.orders.find((o) => o.id === orderId);
+    if (!target) return;
+    target.sentToKitchen = true;
+    target.kitchenCompleted = false;
+    target.kitchenOrderId = target.kitchenOrderId || `KITCHEN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    target.updated_at = new Date().toISOString();
+    this.saveState();
+    this.notify();
+  }
+
+  public completeKitchenOrder(orderId: string) {
+    const target = this.orders.find((o) => o.id === orderId);
+    if (!target) return;
+    target.kitchenCompleted = true;
+    target.updated_at = new Date().toISOString();
+    this.saveState();
+    this.notify();
   }
 
   public updateStatus(orderId: string, status: TableOrder["status"]) {
