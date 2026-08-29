@@ -14,6 +14,7 @@ import {
   groupOracleRowsIntoJournalEntries,
   type ParsedOracleRow,
 } from "@/shared/utils/oracleParser";
+import { groupOracleRowsIntoJournalEntriesOrdered } from "@/shared/utils/oracleJournalGrouping";
 
 const getLineBaseValue = (amount: number | string, rate: number | string, currency = "USD"): number => {
   return erpStore.getLineBaseValue(amount, rate, currency);
@@ -305,6 +306,12 @@ function LedgerPage() {
     }
   };
 
+  const showImportReport = (result: any, importedEntries: JournalEntry[], newlyCreatedAccounts: Account[]) => {
+    const balancedEntriesCount = importedEntries.filter((entry) => checkIsEntryBalanced(entry)).length;
+    const totalBaseUSD = importedEntries.reduce((sum, entry) => sum + (entry.lines || []).reduce((s, l) => s + getLineBaseValue(l.debit, l.rate || 1, l.currency || entry.currency || "USD"), 0), 0);
+    setSaveReportData({ savedEntriesCount: result.insertedEntries, savedEntries: importedEntries, balancedEntriesCount, unbalancedEntriesCount: importedEntries.length - balancedEntriesCount, newAccountsCreated: newlyCreatedAccounts.length, newlyCreatedAccounts, totalAccountsCount: erpStore.getState().accounts.length, linkedTreasuryTransactions: result.linkedTreasuryTransactions, totalBaseUSD, savedAt: new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
+    setIsSaveReportOpen(true);
+  };
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -334,14 +341,17 @@ function LedgerPage() {
             return;
           }
 
-          const newEntries = groupOracleRowsIntoJournalEntries(parsedRows);
+          const newEntries = groupOracleRowsIntoJournalEntriesOrdered(parsedRows);
 
           // Insert journal entries and link with treasuries & chart of accounts
+          const accountsBeforeImport = new Set((erpStore.getState().accounts || []).map((a) => a.code));
           const result = erpStore.importJournalEntriesAndSyncTreasuries(newEntries, {
             sourceName: file.name,
           });
+          const newlyCreatedAccounts = (erpStore.getState().accounts || []).filter((a) => !accountsBeforeImport.has(a.code));
 
           // Re-sync and update state
+          showImportReport(result, newEntries, newlyCreatedAccounts);
           setErpState({ ...erpStore.getState() });
 
           toast({
@@ -393,7 +403,7 @@ function LedgerPage() {
         });
         return;
       }
-      const entries = groupOracleRowsIntoJournalEntries(rows);
+      const entries = groupOracleRowsIntoJournalEntriesOrdered(rows);
       setParsedEntriesPreview(entries);
       setParsedRowsCount(rows.length);
       toast({
@@ -414,9 +424,12 @@ function LedgerPage() {
 
   const handleConfirmPasteImport = () => {
     if (parsedEntriesPreview.length === 0) return;
+    const pasteAccountsBeforeImport = new Set((erpStore.getState().accounts || []).map((a) => a.code));
     const result = erpStore.importJournalEntriesAndSyncTreasuries(parsedEntriesPreview, {
       sourceName: "معالجة واستيراد جدول القيود",
     });
+    const pasteNewlyCreatedAccounts = (erpStore.getState().accounts || []).filter((a) => !pasteAccountsBeforeImport.has(a.code));
+    showImportReport(result, parsedEntriesPreview, pasteNewlyCreatedAccounts);
     setErpState({ ...erpStore.getState() });
     setIsPasteModalOpen(false);
     setPasteRawText("");
@@ -1364,7 +1377,7 @@ function LedgerPage() {
           {/* Save & Persist All Data */}
           <Button
             onClick={() => setIsSaveConfirmOpen(true)}
-            disabled={isSavingToDb || journalEntries.length === 0}
+            disabled={isSavingToDb || !hasUnsavedChanges}
             className={`gap-2 rounded-xl text-white font-bold shadow-sm ${
               hasUnsavedChanges
                 ? "bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-400"
@@ -1377,7 +1390,7 @@ function LedgerPage() {
               variant="secondary"
               className="mr-1 bg-black/30 text-white text-[11px] px-1.5 py-0 font-mono"
             >
-              {journalEntries.length} قيد
+              {unsavedEntries.length} قيد بحاجة للحفظ
             </Badge>
           </Button>
 
@@ -3869,7 +3882,7 @@ function LedgerPage() {
               </div>
 
               {/* Tabbed Report Details */}
-              <Tabs defaultValue="entries" className="w-full">
+              <Tabs defaultValue={saveReportData.newAccountsCreated > 0 ? "accounts" : "entries"} className="w-full">
                 <TabsList className="grid grid-cols-2 w-full max-w-md">
                   <TabsTrigger value="entries" className="gap-2">
                     <FileText className="h-4 w-4" />

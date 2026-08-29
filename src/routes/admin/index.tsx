@@ -2870,6 +2870,9 @@ function TreasuryAccountCard({
   const containers = tr.containers || [];
   const hasContainers = containers.length > 0;
 
+  const liveAccountBalance = tr.account_code ? (erpStore.getState().accounts || []).find((a) => a.code === tr.account_code)?.balance : undefined;
+  const displayBalance = liveAccountBalance !== undefined ? Number(liveAccountBalance) : Number(tr.balance || 0);
+
   return (
     <Card
       onClick={onClick}
@@ -2933,7 +2936,7 @@ function TreasuryAccountCard({
               الرصيد بالعملة الأصلية:
             </span>
             <span className="font-bold text-foreground text-[11px]">
-              {formatTreasuryCurrency(tr.balance, tr.currency)}
+              {formatTreasuryCurrency(displayBalance, tr.currency)}
             </span>
           </div>
         )}
@@ -2947,11 +2950,11 @@ function TreasuryAccountCard({
             {formatPrice(
               tr.type === "cash"
                 ? tr.currency === "USD"
-                  ? tr.balance
-                  : tr.balance / (erpStore.getState().exchangeRates?.[tr.currency] || 1)
+                  ? displayBalance
+                  : displayBalance / (erpStore.getState().exchangeRates?.[tr.currency] || 1)
                 : tr.currency === "USD"
-                  ? tr.balance
-                  : tr.balance / (erpStore.getState().exchangeRates?.[tr.currency] || 1),
+                  ? displayBalance
+                  : displayBalance / (erpStore.getState().exchangeRates?.[tr.currency] || 1),
             )}
           </span>
         </div>
