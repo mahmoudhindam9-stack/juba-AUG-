@@ -97,7 +97,7 @@ export function UnifiedFinancialOverview({
   const printSummary = () =>
     printAccountingDocument({
       title: "الملخص المالي الموحد",
-      subtitle: `${currentBranch?.name_ar || currentBranch?.name || "الفرع الحالي"} — مصدر الأرقام: دليل الحسابات ودفتر الأستاذ العام",
+      subtitle: `${currentBranch?.name_ar || currentBranch?.name || "الفرع الحالي"} — مصدر الأرقام: دليل الحسابات ودفتر الأستاذ العام`,
       documentNo: `FIN-SUM-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}`,
       columns: [
         { key: "metric", label: "المؤشر" },
@@ -172,7 +172,7 @@ export function UnifiedFinancialOverview({
 
   const exportExcel = () => {
     const workbook = XLSX.utils.book_new();
-    const metricsSheet = XLSX.utils.json_to_sheet([
+    const metricsSheet = XLSX.utils.aoa_to_sheet([
       ["المؤشر", "القيمة"],
       ["الأصول", summary.assets],
       ["الالتزامات", summary.liabilities],
