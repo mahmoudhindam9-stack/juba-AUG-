@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 import { erpStore, type Account } from "@/shared/services/erpStore";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/hooks/use-settings";
+import { printAccountingDocument } from "@/shared/utils/printAccountingDocument";
 import {
   Landmark,
   Plus,
@@ -1638,7 +1639,31 @@ function AccountsPage() {
               <DialogFooter className="gap-2 border-t border-border pt-3">
                 <Button
                   variant="outline"
-                  onClick={() => window.print()}
+                  onClick={() => printAccountingDocument({
+          title: `كشف حساب — ${ledgerData.account?.name_ar || ""}`,
+          subtitle: `الحساب ${ledgerData.account?.code || ""} | دفتر الأستاذ العام`,
+          documentNo: `ACCOUNT-${ledgerData.account?.code || "NA"}`,
+          columns: [
+            { key: "date", label: "التاريخ" },
+            { key: "reference", label: "رقم المرجع" },
+            { key: "description", label: "البيان" },
+            { key: "debit", label: "مدين", align: "left" },
+            { key: "credit", label: "دائن", align: "left" },
+            { key: "runningBalance", label: "الرصيد التراكمي", align: "left" },
+          ],
+          rows: (ledgerData.entries || []).map((entry) => ({
+            date: entry.date || "-",
+            reference: entry.reference || entry.id || "-",
+            description: entry.description || "-",
+            debit: entry.debit > 0 ? entry.debit.toLocaleString("en-US") : "-",
+            credit: entry.credit > 0 ? entry.credit.toLocaleString("en-US") : "-",
+            runningBalance: Number(entry.runningBalance || 0).toLocaleString("en-US"),
+          })),
+          totals: [
+            { label: "عدد الحركات", value: String((ledgerData.entries || []).length) },
+            { label: "الرصيد الحالي", value: Number(ledgerData.account?.balance || 0).toLocaleString("en-US") },
+          ],
+        })}
                   className="font-bold text-xs gap-1.5"
                 >
                   <Printer size={14} />
