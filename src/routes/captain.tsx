@@ -190,9 +190,18 @@ function CaptainPage() {
   }, [tablesList]);
 
   const handleAcceptOrder = async (order: any) => {
-    // We update status in supabase so it moves to kitchen / cashier depending on flow
-    // Or we can import it into local tableOrdersStore if Cashier only reads from there
-    // If cashier reads from tableOrdersStore, we inject it:
+    if (order?.id) {
+      const { error } = await supabase
+        .from("orders")
+        .update({ status: "sent_to_cashier" })
+        .eq("id", order.id);
+      if (error) {
+        toast({ title: "تعذر إرسال الطلب للكاشير", description: error.message, variant: "destructive" });
+        return;
+      }
+    }
+
+
     tableOrdersStore.saveOrder({
       status: "sent_to_cashier",
       table_id: order.table_id,

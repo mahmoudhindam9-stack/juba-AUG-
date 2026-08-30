@@ -126,6 +126,25 @@ function MenuPage() {
       created_at: new Date().toISOString(),
     };
 
+    // Persist the same order so Captain, Cashier and Oven share one durable identity.
+    try {
+      const { error } = await supabase.from("orders").upsert({
+        id: orderPayload.id,
+        table_id: orderPayload.table_id,
+        items: orderPayload.items,
+        order_type: orderPayload.order_type,
+        notes: orderPayload.notes,
+        subtotal: Number(orderPayload.subtotal || 0),
+        tax: Number(orderPayload.tax || 0),
+        total: Number(orderPayload.total || 0),
+        status: "pending_captain",
+        created_at: orderPayload.created_at,
+      }, { onConflict: "id" });
+      if (error) throw error;
+    } catch (error) {
+      console.warn("Self-order database bridge warning:", error);
+    }
+
     // Broadcast the order to the Captain via Supabase Realtime Channels
     const channel = supabase.channel("orders_channel");
     channel.subscribe(async (status) => {
