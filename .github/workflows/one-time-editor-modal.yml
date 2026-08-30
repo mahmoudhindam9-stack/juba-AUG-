@@ -1,0 +1,110 @@
+name: One-time editor modal migration
+
+on:
+  push:
+    branches:
+      - fix/external-order-currency-tracking
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Patch editor UX
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text(encoding='utf-8')
+              if new not in s:
+                  if old not in s:
+                      raise SystemExit(f'pattern not found in {path}: {old[:120]!r}')
+                  s = s.replace(old, new, 1)
+                  p.write_text(s, encoding='utf-8')
+
+          menu = 'src/routes/admin/menu.tsx'
+          replace_once(menu,
+              '  const [editingItem, setEditingItem] = useState<MenuItem | null>(null);',
+              '  const [editingItem, setEditingItem] = useState<MenuItem | null>(null);\n  const [isItemEditorOpen, setIsItemEditorOpen] = useState(false);')
+          replace_once(menu,
+              '      setEditingItem(null);\n      setItemForm({',
+              '      setEditingItem(null);\n      setIsItemEditorOpen(false);\n      setItemForm({')
+          replace_once(menu,
+              '  const startEditItem = (item: MenuItem) => {\n    setEditingItem(item);',
+              '  const startEditItem = (item: MenuItem) => {\n    setEditingItem(item);\n    setIsItemEditorOpen(true);')
+          replace_once(menu,
+              '    window.scrollTo({ top: 0, behavior: "smooth" });\n  };',
+              '  };')
+          replace_once(menu,
+              '  const cancelEditItem = () => {',
+              '  const requestCloseItemEditor = () => {\n    if (window.confirm("لديك تغييرات قد تكون غير محفوظة. هل تريد تجاهلها وإغلاق النافذة؟")) cancelEditItem();\n  };\n\n  const cancelEditItem = () => {')
+          replace_once(menu,
+              '  const cancelEditItem = () => {\n    setEditingItem(null);',
+              '  const cancelEditItem = () => {\n    setEditingItem(null);\n    setIsItemEditorOpen(false);')
+          replace_once(menu,
+              '<div className="bg-card border border-border p-5 rounded-2xl space-y-5">',
+              '<div className={isItemEditorOpen ? "fixed inset-0 z-[70] overflow-y-auto bg-card p-4 sm:p-6" : "hidden"}>')
+          replace_once(menu,
+              '              {editingItem && (\n                <Button variant="outline" onClick={cancelEditItem} className="font-bold">\n                  إلغاء التعديل\n                </Button>\n              )}',
+              '              <Button variant="outline" onClick={requestCloseItemEditor} className="font-bold">\n                تجاهل التعديلات\n              </Button>')
+          replace_once(menu,
+              '    <div className="space-y-6 text-right" dir="rtl">',
+              '    <div className="space-y-6 text-right" dir="rtl">')
+          # Add button immediately before the item search field inside the catalog section.
+          p = Path(menu); s = p.read_text(encoding='utf-8')
+          needle = '              <div className="relative flex-1 max-w-md">'
+          add = '              <Button type="button" onClick={() => { cancelEditItem(); setIsItemEditorOpen(true); }} className="font-bold gap-2 shrink-0">\n                <Plus size={15} /> إضافة صنف جديد\n              </Button>\n' + needle
+          if 'إضافة صنف جديد' not in s and needle in s:
+              s = s.replace(needle, add, 1)
+          p.write_text(s, encoding='utf-8')
+
+          inv = 'src/routes/admin/inventory.tsx'
+          replace_once(inv,
+              '  const [editing, setEditing] = useState<Inventory | null>(null);',
+              '  const [editing, setEditing] = useState<Inventory | null>(null);\n  const [isInventoryEditorOpen, setIsInventoryEditorOpen] = useState(false);')
+          replace_once(inv,
+              '      setEditing(null);\n      setForm({',
+              '      setEditing(null);\n      setIsInventoryEditorOpen(false);\n      setForm({')
+          replace_once(inv,
+              '  const startEdit = (i: Inventory) => {',
+              '  const requestCloseInventoryEditor = () => {\n    if (window.confirm("لديك تغييرات قد تكون غير محفوظة. هل تريد تجاهلها وإغلاق النافذة؟")) { setEditing(null); setIsInventoryEditorOpen(false); }\n  };\n\n  const openNewInventoryEditor = () => { setEditing(null); setIsInventoryEditorOpen(true); };\n\n  const startEdit = (i: Inventory) => {\n    setIsInventoryEditorOpen(true);')
+          replace_once(inv,
+              '<div className="bg-card border border-border p-5 rounded-2xl space-y-4">',
+              '<div className={isInventoryEditorOpen ? "fixed inset-0 z-[70] overflow-y-auto bg-card p-4 sm:p-6" : "hidden"}>')
+          replace_once(inv,
+              '              <Button\n                variant="outline"\n                onClick={() => {\n                  setEditing(null);',
+              '              <Button\n                variant="outline"\n                onClick={requestCloseInventoryEditor}')
+          replace_once(inv,
+              'إلغاء التعديل',
+              'تجاهل التعديلات')
+          p = Path(inv); s = p.read_text(encoding='utf-8')
+          needle = '              <div className="relative flex-1 max-w-md">'
+          add = '              <Button type="button" onClick={openNewInventoryEditor} className="font-bold gap-2 shrink-0">\n                <Plus size={15} /> إضافة صنف جديد\n              </Button>\n' + needle
+          if 'onClick={openNewInventoryEditor}' not in s and needle in s:
+              s = s.replace(needle, add, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Build
+        run: |
+          npm ci
+          npm run build
+      - name: Commit changes and remove migration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/routes/admin/menu.tsx src/routes/admin/inventory.tsx .github/workflows/one-time-editor-modal.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: move menu and inventory editors into modals"
+          git push
+          git rm -f .github/workflows/one-time-editor-modal.yml || true
+          git commit -m "chore: remove one-time editor modal migration"
+          git push || true
