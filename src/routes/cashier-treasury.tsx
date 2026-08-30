@@ -470,6 +470,12 @@ function CashierTreasuryPage() {
     return { totalOrdersCount, unsyncedCount, totalSalesAmount };
   })();
 
+  const shiftSalesAmount = (() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return (ordersQuery.data || []).filter((o) => o && o.status !== "cancelled" && new Date(o.created_at || now) >= start).reduce((sum, o) => sum + Number(o.total || 0), 0);
+  })();
+
   // Refund mutation linked directly to order and its original currency
   const refundMutation = useMutation({
     mutationFn: async ({
@@ -779,7 +785,7 @@ function CashierTreasuryPage() {
 
           <div className="flex items-center gap-2 self-end sm:self-center flex-wrap">
             <Button
-              onClick={() => setTransferDialogOpen(true)}
+              onClick={() => { setTransferAmount(shiftSalesAmount); setTransferDialogOpen(true); }}
               className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-2 shadow-sm transition active:scale-95"
             >
               <ArrowLeftRight size={16} />
@@ -1935,6 +1941,7 @@ function CashierTreasuryPage() {
                   className="w-full h-10 rounded-xl font-bold"
                   min={0}
                 />
+                <button type="button" onClick={() => setTransferAmount(shiftSalesAmount)} className="mt-1 text-[11px] font-black text-purple-700 hover:text-purple-900 underline underline-offset-2">ملء من إجمالي مبيعات الشيفت: {shiftSalesAmount.toLocaleString()} {transferCurrency}</button>
               </div>
               <div>
                 <label className="text-xs font-bold block mb-1 text-slate-700">
