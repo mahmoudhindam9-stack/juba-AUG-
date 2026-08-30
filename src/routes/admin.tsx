@@ -65,6 +65,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
   const navigate = useNavigate();
   const pathname = location.pathname;
   const [user, setUser] = useState<{ email?: string } | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -74,15 +75,33 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
         data: { session },
       } = await supabase.auth.getSession();
 
-      if (session?.user?.email) {
-        setUser({ email: session.user.email });
-      } else if (localUser) {
-        setUser({ email: localUser });
-      } else {
-        navigate({ to: "/login" });
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (session?.user?.email) {
+          setUser({ email: session.user.email });
+        } else if (localUser) {
+          setUser({ email: localUser });
+        } else {
+          navigate({ to: "/login" });
+          return;
+        }
+      } catch (error) {
+        console.error("Restocash auth check failed:", error);
+        if (localUser) {
+          setUser({ email: localUser });
+        } else {
+          navigate({ to: "/login" });
+          return;
+        }
+      } finally {
+        setAuthChecking(false);
       }
     }
 
+    const localUser = localStorage.getItem("restocash_auth_user");
     checkAuth();
 
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -112,6 +131,18 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
     setUser(null);
     navigate({ to: "/login" });
   };
+
+  if (authChecking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-6" dir="rtl">
+        <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
+          <RestocashLogo size={32} />
+          <p className="mt-4 text-sm font-bold text-foreground">جاري التحقق من جلسة الدخول…</p>
+          <p className="mt-2 text-xs text-muted-foreground">يرجى الانتظار لحظات.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) return null;
 
