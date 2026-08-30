@@ -228,6 +228,7 @@ export function TableOrderModal({
               notes: c.notes || "",
               selectedAdditions: c.selectedAdditions || [],
               selectedAdditions: c.selectedAdditions || [],
+              selectedAdditions: c.selectedAdditions || [],
               requires_oven: c.item.requires_oven || false,
             })),
           })
