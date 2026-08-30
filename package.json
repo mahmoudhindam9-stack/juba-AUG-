@@ -14,6 +14,7 @@
     "verify:financial": "node scripts/verify-financial-sync.cjs",
     "verify:journal": "node scripts/verify-journal-numbering-and-account-report.cjs",
     "verify:cleanup": "node scripts/verify-cleanup.cjs",
+    "verify:restaurant-flow": "node scripts/verify-restaurant-flow.cjs",
     "format": "prettier --write .",
     "test": "vitest"
   },
