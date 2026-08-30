@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { erpStore, type Account } from "@/shared/services/erpStore";
 import { inventoryService } from "@/features/inventory/services/inventoryService";
 import { AuditOperationsModal } from "@/components/admin/AuditOperationsModal";
+import { UnifiedFinancialOverview } from "@/components/admin/UnifiedFinancialOverview";
 import {
   UtensilsCrossed,
   Package,
@@ -351,31 +352,37 @@ function AdminDashboard() {
 
   // Calculate Treasury stats
   const totalCashBalance = useMemo(() => {
-    return erpState.treasuries
-      .filter((t) => t.branch_id === currentBranch.id && t.type === "cash")
+    return branchTreasuries
+      .filter((t) => t.type === "cash")
       .reduce((sum, t) => {
-        const rate = erpState.exchangeRates?.[t.currency] || 1;
-        // Since exchange rate usually defined as 1 USD = X EGP.
-        // If currency is EGP and rate is 50, then to get USD value we do balance / 50.
-        // If currency is already USD, rate is 1.
-        const baseValue = t.currency === "USD" ? t.balance : t.balance / rate;
-        return sum + baseValue;
+        const account = (erpState.accounts || []).find((a) =>
+          (t.account_code && a.code === t.account_code) || a.system_binding === `treasury_${t.id}`,
+        );
+        return sum + Number(account?.balance ?? t.balance ?? 0);
       }, 0);
-  }, [erpState.treasuries, currentBranch.id, erpState.exchangeRates]);
+  }, [branchTreasuries, erpState.accounts]);
 
   const totalBankBalance = useMemo(() => {
-    return erpState.treasuries
-      .filter((t) => t.branch_id === currentBranch.id && t.type === "bank")
+    return branchTreasuries
+      .filter((t) => t.type === "bank")
       .reduce((sum, t) => {
-        const rate = erpState.exchangeRates?.[t.currency] || 1;
-        const baseValue = t.currency === "USD" ? t.balance : t.balance / rate;
-        return sum + baseValue;
+        const account = (erpState.accounts || []).find((a) =>
+          (t.account_code && a.code === t.account_code) || a.system_binding === `treasury_${t.id}`,
+        );
+        return sum + Number(account?.balance ?? t.balance ?? 0);
       }, 0);
-  }, [erpState.treasuries, currentBranch.id, erpState.exchangeRates]);
+  }, [branchTreasuries, erpState.accounts]);
 
   const branchTreasuries = useMemo(() => {
-    return erpState.treasuries.filter((t) => t.branch_id === currentBranch.id && !t.deleted);
-  }, [erpState.treasuries, currentBranch.id]);
+    return erpState.treasuries.filter((t) => {
+      if (t.branch_id !== currentBranch.id || t.deleted) return false;
+      const account = (erpState.accounts || []).find((a) =>
+        (t.account_code && a.code === t.account_code) || a.system_binding === `treasury_${t.id}`,
+      );
+      const label = `${t.name_ar || ""} ${t.account_code || ""} ${account?.name_ar || ""}`.toLocaleLowerCase("ar-EG");
+      return !t.system_binding?.includes("treasury_cib") && !/cib|سيب|البنك الرئيسي/.test(label);
+    });
+  }, [erpState.treasuries, erpState.accounts, currentBranch.id]);
 
   const accountingSummary = useMemo(() => {
     const accounts = erpState.accounts || [];
@@ -662,6 +669,13 @@ function AdminDashboard() {
           </Link>
         </div>
       </div>
+
+
+      <UnifiedFinancialOverview
+        erpState={erpState}
+        currentBranch={currentBranch}
+        onOpenOperations={() => setIsAuditOperationsOpen(true)}
+      />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="bg-muted p-1 rounded-xl flex flex-wrap gap-1 h-auto">

@@ -92,10 +92,10 @@ export function AuditOperationsModal({
   );
 
   const filtered = useMemo(() => {
-    const q = normalize(search);
+    const tokens = normalize(search).split(/\s+/).filter(Boolean);
     return prepared
       .filter((log) => severity === "all" || normalize(log.severity || "info") === severity)
-      .filter((log) => !q || log._search.includes(q))
+      .filter((log) => tokens.length === 0 || tokens.every((token) => log._search.includes(token)))
       .sort(
         (a, b) =>
           new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
