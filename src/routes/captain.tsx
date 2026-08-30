@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { CaptainSelfOrderPanel } from "@/components/CaptainSelfOrderPanel";
 import { useSettings } from "@/hooks/use-settings";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -457,6 +458,8 @@ function CaptainPage() {
           </div>
         </div>
       </header>
+      <CaptainSelfOrderPanel />
+
 
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 overflow-auto">
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 mt-6">

@@ -20,6 +20,7 @@ const getLineBaseValue = (amount: number | string, rate: number | string, curren
   return erpStore.getLineBaseValue(amount, rate, currency);
 };
 import { AccountSearchSelect } from "@/components/AccountSearchSelect";
+import { printAccountingDocument } from "@/shared/utils/printAccountingDocument";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/hooks/use-settings";
 import {
@@ -110,6 +111,43 @@ const ACCOUNT_TYPE_LABELS: Record<Account["type"], string> = {
   revenue: "إيرادات",
   expense: "مصروفات",
 };
+
+function buildLedgerPrintRows(entries: any[], accounts: any[]) {
+  return (entries || []).map((entry) => ({
+    date: entry.date || "-",
+    reference: entry.reference || "-",
+    description: entry.description || "-",
+    currency: entry.currency || "EGP",
+    debit: (entry.lines || []).reduce((n: number, l: any) => n + Number(l.debit || 0), 0),
+    credit: (entry.lines || []).reduce((n: number, l: any) => n + Number(l.credit || 0), 0),
+    accounts: (entry.lines || []).map((line: any) => `${line.account_code || ""} — ${line.account_name || accounts.find((a: any) => a.code === line.account_code)?.name_ar || "حساب غير معرف"}`).join(" | "),
+  }));
+}
+
+function printLedgerDocument(rows: any[], accounting = false) {
+  printAccountingDocument({
+    title: accounting ? "مستند محاسبي — دفتر الأستاذ العام" : "تقرير القيود المحاسبية",
+    subtitle: `عدد القيود: ${rows.length} | المصدر: دفتر الأستاذ العام الموحد`,
+    documentNo: `LEDGER-${new Date().toISOString().slice(0,10).replaceAll("-","")}`,
+    columns: [
+      {key:"date",label:"التاريخ"},{key:"reference",label:"رقم القيد"},{key:"description",label:"البيان"},{key:"currency",label:"العملة",align:"center"},
+      {key:"debit",label:"المدين",align:"left"},{key:"credit",label:"الدائن",align:"left"},{key:"accounts",label:"الحسابات وأكوادها"}
+    ],
+    rows,
+    totals: [
+      {label:"عدد القيود",value:String(rows.length)},
+      {label:"إجمالي المدين",value:rows.reduce((n,r)=>n+Number(r.debit||0),0).toLocaleString("en-US")},
+      {label:"إجمالي الدائن",value:rows.reduce((n,r)=>n+Number(r.credit||0),0).toLocaleString("en-US")}
+    ]
+  });
+}
+
+function exportLedgerDocumentToExcel(rows: any[]) {
+  const flat = rows.map((r) => ({"التاريخ":r.date,"رقم القيد":r.reference,"البيان":r.description,"العملة":r.currency,"المدين":r.debit,"الدائن":r.credit,"الحسابات وأكوادها":r.accounts}));
+  if (!flat.length) { window.alert("لا توجد قيود لتصديرها."); return; }
+  const ws = XLSX.utils.json_to_sheet(flat); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "القيود");
+  XLSX.writeFile(wb, `القيود_المحاسبية_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
 
 function LedgerPage() {
   const { toast } = useToast();
@@ -1881,6 +1919,12 @@ function LedgerPage() {
       </div>
 
       {/* Tabs list */}
+      <div className="flex flex-wrap items-center gap-2 mb-4 print:hidden">
+        <Button type="button" variant="outline" onClick={() => printLedgerDocument(buildLedgerPrintRows(erpState?.journalEntries || [], erpState?.accounts || []), false)} className="font-bold gap-2" title="طباعة القيود"><Printer size={15}/> طباعة القيود</Button>
+        <Button type="button" variant="outline" onClick={() => printLedgerDocument(buildLedgerPrintRows(erpState?.journalEntries || [], erpState?.accounts || []), true)} className="font-bold gap-2" title="طباعة مستند محاسبي"><FileText size={15}/> مستند محاسبي</Button>
+        <Button type="button" variant="outline" onClick={() => exportLedgerDocumentToExcel(buildLedgerPrintRows(erpState?.journalEntries || [], erpState?.accounts || []))} className="font-bold gap-2" title="تصدير القيود إلى Excel"><FileSpreadsheet size={15}/> Excel</Button>
+      </div>
+
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
         <TabsList className="bg-muted/80 p-1 rounded-xl w-full sm:w-auto grid grid-cols-2 sm:grid-cols-4 gap-1 h-auto">
           <TabsTrigger value="ledger" className="rounded-lg py-2 text-xs md:text-sm font-medium">

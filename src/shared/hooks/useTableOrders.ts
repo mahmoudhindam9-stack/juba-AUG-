@@ -6,9 +6,12 @@ export function useTableOrders() {
 
   useEffect(() => {
     setOrders(tableOrdersStore.getAllOrders());
-    return tableOrdersStore.subscribe(() => {
+    const unsubscribe = tableOrdersStore.subscribe(() => {
       setOrders([...tableOrdersStore.getAllOrders()]);
     });
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   return {

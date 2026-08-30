@@ -8,6 +8,7 @@ import { tableOrdersStore } from "@/shared/services/tableOrdersStore";
 import { MenuItem } from "@/shared/types";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { CustomerOrderTracker } from "@/components/CustomerOrderTracker";
 
 export const Route = createFileRoute("/menu")({
   component: MenuPage,
@@ -27,6 +28,7 @@ function MenuPage() {
 
   const [cart, setCart] = useState<any[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [trackingToken, setTrackingToken] = useState("");
 
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [customNotes, setCustomNotes] = useState("");
@@ -112,6 +114,7 @@ function MenuPage() {
 
     const tableNum = table ? parseInt(table) : 999;
     const resolvedTableId = tableId || table_id || (table ? `tbl-${tableNum}` : "tbl-999");
+    const trackingTokenForOrder = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `trk_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
     const orderPayload = {
       id: "ord_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
@@ -124,6 +127,11 @@ function MenuPage() {
       total: totalAmount,
       status: "STATUS_PENDING_CAPTAIN",
       created_at: new Date().toISOString(),
+      pricing_currency: "EGP",
+      payment_currency: "EGP",
+      payment_exchange_rate: 1,
+      payment_amount: totalAmount,
+      customer_tracking_token: trackingTokenForOrder,
     };
 
     // Persist the same order so Captain, Cashier and Oven share one durable identity.
@@ -139,6 +147,11 @@ function MenuPage() {
         total: Number(orderPayload.total || 0),
         status: "pending_captain",
         created_at: orderPayload.created_at,
+        pricing_currency: orderPayload.pricing_currency,
+        payment_currency: orderPayload.payment_currency,
+        payment_exchange_rate: orderPayload.payment_exchange_rate,
+        payment_amount: orderPayload.payment_amount,
+        customer_tracking_token: orderPayload.customer_tracking_token,
       }, { onConflict: "id" });
       if (error) throw error;
     } catch (error) {
@@ -157,6 +170,7 @@ function MenuPage() {
 
         supabase.removeChannel(channel);
 
+        setTrackingToken(orderPayload.customer_tracking_token);
         setCart([]);
         setIsCartOpen(false);
         toast({
@@ -415,6 +429,8 @@ function MenuPage() {
           </div>
         </div>
       )}
+      {trackingToken ? <CustomerOrderTracker token={trackingToken} onClose={() => setTrackingToken("")} /> : null}
+
     </div>
   );
 }
