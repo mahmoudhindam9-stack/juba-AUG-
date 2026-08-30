@@ -1,4 +1,3 @@
-// @ts-nocheck
 export class TranslationService {
   private map: Record<string, string> = {};
   private observer: MutationObserver | null = null;
@@ -8,27 +7,31 @@ export class TranslationService {
     this.loadMap();
   }
 
-  loadMap() {
+  loadMap(): void {
     if (typeof window === "undefined") return;
     try {
-      this.map = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
-    } catch (e) {
-      console.warn("Failed to load translation map:", e);
+      const parsed: unknown = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
+      this.map = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, string>)
+        : {};
+    } catch (error) {
+      console.warn("Failed to load translation map:", error);
+      this.map = {};
     }
   }
 
-  saveMap(newMap: Record<string, string>) {
+  saveMap(newMap: Record<string, string>): void {
     this.map = { ...this.map, ...newMap };
     if (typeof window !== "undefined") {
       localStorage.setItem("custom_text_map", JSON.stringify(this.map));
     }
   }
 
-  getMap() {
+  getMap(): Record<string, string> {
     return this.map;
   }
 
-  applyToDOM(root: Node) {
+  applyToDOM(root: Node): void {
     if (typeof document === "undefined") return;
     if (Object.keys(this.map).length === 0) return;
 
@@ -48,7 +51,7 @@ export class TranslationService {
       if (el.tagName === "SCRIPT" || el.tagName === "STYLE" || el.tagName === "NOSCRIPT") return;
 
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
-      let node;
+      let node: Node | null;
       const nodesToReplace: { node: Node; oldStr: string; newStr: string }[] = [];
 
       while ((node = walker.nextNode())) {
@@ -61,26 +64,26 @@ export class TranslationService {
         }
       }
 
-      nodesToReplace.forEach(({ node, oldStr, newStr }) => {
-        if (node.nodeValue) {
-          node.nodeValue = node.nodeValue.replace(oldStr, newStr);
+      nodesToReplace.forEach(({ node: textNode, oldStr, newStr }) => {
+        if (textNode.nodeValue) {
+          textNode.nodeValue = textNode.nodeValue.replace(oldStr, newStr);
         }
       });
     }
   }
 
-  start() {
+  start(): void {
     if (typeof window === "undefined" || this.isObserving) return;
     if (Object.keys(this.map).length === 0) return;
 
-    this.observer = new MutationObserver((mutations) => {
-      mutations.forEach((m) => {
-        if (m.type === "childList") {
-          m.addedNodes.forEach((node) => {
+    this.observer = new MutationObserver((mutations: MutationRecord[]) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === "childList") {
+          mutation.addedNodes.forEach((node) => {
             this.applyToDOM(node);
           });
-        } else if (m.type === "characterData") {
-          this.applyToDOM(m.target);
+        } else if (mutation.type === "characterData") {
+          this.applyToDOM(mutation.target);
         }
       });
     });

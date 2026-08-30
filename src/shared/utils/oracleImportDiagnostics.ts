@@ -67,8 +67,15 @@ export function parseOracleNumber(value: unknown): number | null {
       ? s.replace(/\./g, "").replace(",", ".")
       : s.replace(/,/g, "");
   } else if (s.includes(",")) {
-    const parts = s.split(",");
-    s = parts.length === 2 && parts[1].length <= 6 ? `${parts[0]}.${parts[1]}` : s.replace(/,/g, "");
+    const isThousandsGrouped = /^[-+]?\d{1,3}(,\d{3})+$/.test(s);
+    if (isThousandsGrouped) {
+      s = s.replace(/,/g, "");
+    } else {
+      const parts = s.split(",");
+      s = parts.length === 2 && parts[0] !== "" && parts[1].length >= 1 && parts[1].length <= 6
+        ? `${parts[0]}.${parts[1]}`
+        : s.replace(/,/g, "");
+    }
   }
 
   const n = Number(s);

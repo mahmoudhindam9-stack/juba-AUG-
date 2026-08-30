@@ -11,12 +11,33 @@ const store = read('src/shared/services/erpStore.ts');
 const grouping = read('src/shared/utils/oracleJournalGrouping.ts');
 
 const checks = [
-  ['save button is gated by unsaved journals', ledger.includes('disabled={isSavingToDb || !hasUnsavedChanges}')],
-  ['Oracle ordered grouping is used by ledger import', ledger.includes('groupOracleRowsIntoJournalEntriesOrdered')],
-  ['Oracle grouping keys include year/month/journal sequence', grouping.includes('String(year) +') && grouping.includes('padStart(2, "0")')],
+  [
+    'save button is gated by unsaved journals',
+    ledger.includes('disabled={isSavingToDb || !hasUnsavedChanges}'),
+  ],
+  [
+    'Oracle ordered grouping is used by ledger import',
+    ledger.includes('groupOracleRowsIntoJournalEntriesOrdered'),
+  ],
+  [
+    'Oracle grouping identity includes year/month/journal sequence',
+    grouping.includes('const key = `${year}|${String(month).padStart(2, "0")}|${sequence}`'),
+  ],
+  [
+    'Oracle grouping implementation protects Map lookups',
+    grouping.includes('const existing = groups.get(key);') &&
+      grouping.includes('if (existing) {') &&
+      grouping.includes('groups.set(key, { year, month, sequence, date: row.date, rows: [row] });'),
+  ],
   ['created accounts are exposed to the import report', ledger.includes('newlyCreatedAccounts')],
-  ['dashboard treasury cards can read live GL balances', dashboard.includes('liveAccountBalance') && dashboard.includes('displayBalance')],
-  ['system-bound balances use the journal balance map', store.includes('acc.balance = balanceMap[acc.code]')],
+  [
+    'dashboard treasury cards can read live GL balances',
+    dashboard.includes('liveAccountBalance') && dashboard.includes('displayBalance'),
+  ],
+  [
+    'system-bound balances use the journal balance map',
+    store.includes('acc.balance = balanceMap[acc.code]'),
+  ],
 ];
 
 const failed = checks.filter(([, ok]) => !ok);

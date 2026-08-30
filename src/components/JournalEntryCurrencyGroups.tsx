@@ -1,6 +1,7 @@
 import React from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { JournalEntry } from "@/shared/services/erpStore";
 
 type JournalLine = {
   account_code: string;
@@ -14,7 +15,7 @@ type JournalLine = {
 type Account = { code: string; name_ar?: string };
 
 type Props = {
-  entry: any;
+  entry: JournalEntry;
   accounts: Account[];
   formatCurrency: (value: number, currency?: string) => string;
   getLineBaseValue: (amount: number | string, rate: number | string, currency?: string) => number;
