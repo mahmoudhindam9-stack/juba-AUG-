@@ -40,7 +40,7 @@ jobs:
           replace_once(
               'src/routes/captain.tsx',
               '  const handleAcceptOrder = async (order: any) => {\n    // We update status in supabase so it moves to kitchen / cashier depending on flow\n    // Or we can import it into local tableOrdersStore if Cashier only reads from there\n    // If cashier reads from tableOrdersStore, we inject it:',
-              '  const handleAcceptOrder = async (order: any) => {\n    if (order?.id) {\n      const { error } = await supabase\n        .from("orders")\n        .update({ status: "sent_to_cashier" })\n        .eq("id", order.id);\n      if (error) {\n        toast({ title: "تعذر إرسال الطلب للكاشير", description: error.message, variant: "destructive" });\n        return;\n      }\n    }\n',
+              '  const handleAcceptOrder = async (order: any) => {\n    if (order?.id) {\n      const { error } = await supabase\n        .from("orders")\n        .update({ status: "sent_to_cashier" })\n        .eq("id", order.id);\n      if (error) {\n        toast({ title: "تعذر إرسال الطلب للكاشير", description: error.message, variant: "destructive" });\n        return;\n      }\n    }\n\n',
               'persist Captain acceptance',
           )
 
@@ -52,23 +52,7 @@ jobs:
               'live Cashier order bridge',
           )
 
-          # The Cashier should be the gate that releases a Captain order to Oven.
-          marker = '              <div className="space-y-3">\n'
-          p = Path('src/routes/cashier-treasury.tsx')
-          s = p.read_text(encoding='utf-8')
-          if 'const [processingCaptainOrderId' not in s:
-              anchor = '  const [isSyncing, setIsSyncing] = useState(false);'
-              insertion = anchor + '\n  const [processingCaptainOrderId, setProcessingCaptainOrderId] = useState<string | null>(null);\n\n  const releaseCaptainOrderToKitchen = async (order: Order) => {\n    if (!order?.id || processingCaptainOrderId === order.id) return;\n    setProcessingCaptainOrderId(order.id);\n    try {\n      const { error } = await supabase\n        .from("orders")\n        .update({ status: "pending", payment_method: order.payment_method || "cash" })\n        .eq("id", order.id);\n      if (error) throw error;\n      queryClient.invalidateQueries({ queryKey: ["cashier-treasury", "orders"] });\n      toast({ title: lang === "ar" ? "تم تحصيل الطلب وإرساله للمطبخ" : "Order released to kitchen" });\n    } catch (error) {\n      toast({ title: lang === "ar" ? "تعذر إرسال الطلب للمطبخ" : "Kitchen release failed", description: String(error), variant: "destructive" });\n    } finally {\n      setProcessingCaptainOrderId(null);\n    }\n  };'
-              s = s.replace(anchor, insertion, 1)
-          # Add a visible action only for Captain-approved orders.
-          if 'إرسال للمطبخ' not in s:
-              target = '                          <Button\n                            size="sm"\n                            variant="destructive"'
-              replacement = '                          {order.status === "sent_to_cashier" && (\n                            <Button\n                              size="sm"\n                              onClick={() => releaseCaptainOrderToKitchen(order)}\n                              disabled={processingCaptainOrderId === order.id}\n                              className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs h-9 px-4 rounded-xl"\n                            >\n                              {lang === "ar" ? "تحصيل وإرسال للمطبخ" : "Collect & Send to Kitchen"}\n                            </Button>\n                          )}\n\n                          <Button\n                            size="sm"\n                            variant="destructive"'
-              if target in s:
-                  s = s.replace(target, replacement, 1)
-          p.write_text(s, encoding='utf-8')
-
-          # Receipt invariant: preserve the exact order totals/currency already produced by POS.
+          # Receipt invariant: POS already carries the exact totals/tax/currency fields.
           receipt = Path('src/routes/pos.tsx').read_text(encoding='utf-8')
           required = [
               'const displaySubtotal',
@@ -81,6 +65,13 @@ jobs:
           if missing:
               raise SystemExit('Receipt invariant failed: ' + ', '.join(missing))
           print('PASS: receipt value invariants')
+
+          # Oven bridge invariant already lives in the repository.
+          oven = Path('src/routes/oven.tsx').read_text(encoding='utf-8')
+          for needle in ['oven_orders_channel', 'NEW_OVEN_ORDER', 'from("orders")']:
+              if needle not in oven:
+                  raise SystemExit('Oven bridge invariant failed: ' + needle)
+          print('PASS: oven bridge invariants')
 
       - name: Verify
         run: |
