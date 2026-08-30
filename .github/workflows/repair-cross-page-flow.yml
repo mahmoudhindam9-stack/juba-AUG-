@@ -24,7 +24,7 @@ jobs:
               s = p.read_text(encoding='utf-8')
               changed = False
               for old, new, label in replacements:
-                  if old in s and new not in s:
+                  if old in s and old != new:
                       s = s.replace(old, new, 1)
                       print('patched:', label)
                       changed = True
@@ -35,13 +35,6 @@ jobs:
               return changed
 
           patch('src/routes/menu.tsx', [
-              (
-                  '    const orderPayload = {\n'
-                  '      id: "ord_" + Date.now() + "_" + Math.floor(Math.random() * 1000),',
-                  '    const orderPayload = {\n'
-                  '      id: "ord_" + Date.now() + "_" + Math.floor(Math.random() * 1000),',
-                  '      # no-op anchor; database persistence is inserted below',
-              ),
               (
                   '      created_at: new Date().toISOString(),\n'
                   '    };\n\n'
@@ -94,21 +87,15 @@ jobs:
               ),
               (
                   '      kitchenOrderId: order.kitchenOrderId,\n'
-                  '    });',
-                  '      kitchenOrderId: order.kitchenOrderId,\n'
                   '      sentToKitchen: Boolean(order.sentToKitchen),\n'
                   '      kitchenCompleted: Boolean(order.kitchenCompleted),\n'
-                  '    });',
-                  'preserve kitchen state in captain handoff',
+                  '      sentToKitchen: Boolean(order.sentToKitchen),\n'
+                  '      kitchenCompleted: Boolean(order.kitchenCompleted),',
+                  'remove duplicate kitchen fields',
               ),
           ])
 
           patch('src/routes/cashier-treasury.tsx', [
-              (
-                  '  const ordersQuery = useQuery({\n',
-                  '  const ordersQuery = useQuery({\n',
-                  'cashier orders query anchor',
-              ),
               (
                   '    enabled: isMounted,\n  });\n\n  const [isSyncing, setIsSyncing] = useState(false);',
                   '    enabled: isMounted,\n  });\n\n'
@@ -133,10 +120,12 @@ jobs:
               ),
           ])
 
-      - name: Verify build
+      - name: Verify build and TypeScript
         run: |
           npm ci
           npm run build
+          npm run typecheck
+          npm run verify:cleanup
 
       - name: Commit repaired flow
         run: |
