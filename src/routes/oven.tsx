@@ -62,23 +62,27 @@ function OvenPage() {
     };
   }, []);
 
-  const getOrderCurrency = (notes: string | null) => {
-    if (!notes) return "USD";
-    if (notes.includes("العملة: EGP") || notes.includes("EGP")) return "EGP";
-    if (notes.includes("العملة: SSP") || notes.includes("SSP")) return "SSP";
-    if (notes.includes("العملة: USD") || notes.includes("USD")) return "USD";
-    return "USD";
-  };
+  const getKitchenNotes = (rawNotes: string | null | undefined): string => {
+    if (!rawNotes) return "";
+    const cleaned = String(rawNotes)
+      .split("|")
+      .map((part) => part.trim())
+      .filter((part) => {
+        if (!part) return false;
+        // Filter out currency mentions (e.g. "العملة: USD", "Currency: USD")
+        if (/^(العملة|currency)\s*:/i.test(part)) return false;
+        // Filter out delivery fee mentions (e.g. "رسوم توصيل: 20.00", "رسوم التوصيل: 20")
+        if (/^(رسوم\s*(ال)?توصيل|delivery\s*fee)\s*:/i.test(part)) return false;
+        // Filter out other cashier financial metadata
+        if (/^(الخصم|discount)\s*:/i.test(part)) return false;
+        if (/^(خدمة\s*صالة|service\s*fee)\s*:/i.test(part)) return false;
+        if (/^AUTH#\s*:/i.test(part)) return false;
+        return true;
+      })
+      .join(" | ")
+      .trim();
 
-  const formatOrderPrice = (amount: number, notes: string | null) => {
-    const curr = getOrderCurrency(notes);
-    const val = Number(amount || 0).toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-    if (curr === "EGP") return `${val} ج.م`;
-    if (curr === "SSP") return `${val} ج.ج.س`;
-    return `${val} $`;
+    return cleaned;
   };
 
   const fetchPendingOrders = async () => {
@@ -114,8 +118,10 @@ function OvenPage() {
           items: Array.isArray(lo.items)
             ? lo.items.map((i) => ({
                 id: i?.item?.id || i?.id || Math.random().toString(),
-                name_ar: i?.item?.name_ar || i?.name_ar || "عنصر غير معروف",
+                name_ar: i?.item?.name_ar || i?.name_ar || i?.name || "عنصر غير معروف",
                 quantity: i?.quantity || 1,
+                notes: i?.notes || i?.note || "",
+                selectedAdditions: i?.selectedAdditions || i?.item?.selectedAdditions || [],
                 requires_oven: i?.item?.requires_oven || i?.requires_oven || false,
               }))
             : [],
@@ -337,38 +343,74 @@ function OvenPage() {
               </div>
 
               <div className="p-4 flex-1">
-                {order.notes && (
-                  <div className="mb-3 p-2 bg-amber-50 rounded-lg text-xs font-bold border border-amber-200 text-amber-900">
-                    {order.notes}
-                  </div>
-                )}
+                {(() => {
+                  const kitchenNotes = getKitchenNotes(order.notes);
+                  if (!kitchenNotes) return null;
+                  return (
+                    <div className="mb-3 p-2 bg-amber-50 rounded-lg text-xs font-bold border border-amber-200 text-amber-900">
+                      {kitchenNotes}
+                    </div>
+                  );
+                })()}
 
                 <div className="space-y-2.5">
-                  {displayItems.map((item: any, idx: number) => (
-                    <div
-                      key={idx}
-                      className="flex justify-between items-center border-b border-slate-100 pb-2 last:border-0 last:pb-0"
-                    >
-                      <div className="flex-1 min-w-0 font-bold text-sm text-slate-800">
-                        <div className="flex items-center gap-1.5">
-                        {item.requires_oven && (
-                          <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-extrabold border border-orange-200">
-                            فرن 🍕
-                          </span>
-                        )}
-                        <span>{item.name_ar || item.name}</span>
+                  {displayItems.map((item: any, idx: number) => {
+                    const itemNote = (item.notes || item.note || "").trim();
+                    const additions = Array.isArray(item.selectedAdditions)
+                      ? item.selectedAdditions
+                      : [];
+
+                    return (
+                      <div
+                        key={idx}
+                        className="bg-slate-50/80 border border-slate-200/90 rounded-xl p-2.5 transition-colors"
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="flex-1 min-w-0 font-bold text-sm text-slate-900">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {item.requires_oven && (
+                                <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-black border border-orange-200">
+                                  فرن 🍕
+                                </span>
+                              )}
+                              <span className="text-sm font-black text-slate-900">
+                                {item.name_ar || item.name}
+                              </span>
+                            </div>
+
+                            {additions.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {additions.map((add: any, aIdx: number) => (
+                                  <span
+                                    key={aIdx}
+                                    className="text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 px-1.5 py-0.5 rounded-md"
+                                  >
+                                    +{typeof add === "string"
+                                      ? add
+                                      : `${add.icon || ""} ${add.name_ar || add.name || ""}`}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="font-black bg-slate-900 text-white px-2 py-0.5 rounded-md text-xs shrink-0">
+                            ×{item.quantity}
+                          </div>
                         </div>
-                        {item.notes && (
-                          <div className="mt-1 text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
-                            ملاحظة: {item.notes}
+
+                        {itemNote && (
+                          <div className="mt-2 text-xs font-bold text-amber-950 bg-amber-100/95 border border-amber-300 rounded-lg px-2.5 py-1.5 flex items-start gap-1.5 shadow-2xs">
+                            <span className="text-amber-600 shrink-0 mt-0.5">⚠️</span>
+                            <div className="flex-1 min-w-0 leading-relaxed">
+                              <span className="text-amber-800 font-extrabold ml-1">ملاحظة:</span>
+                              <span className="font-bold">{itemNote}</span>
+                            </div>
                           </div>
                         )}
                       </div>
-                      <div className="font-black bg-slate-900 text-white px-2 py-0.5 rounded text-xs">
-                        x{item.quantity}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -377,7 +419,7 @@ function OvenPage() {
                   <Button
                     onClick={() => {
                       setEditingOrder(order);
-                      setEditNotes(order.notes || "");
+                      setEditNotes(getKitchenNotes(order.notes));
                     }}
                     variant="outline"
                     size="icon"

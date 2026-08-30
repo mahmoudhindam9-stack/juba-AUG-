@@ -1826,7 +1826,7 @@ function LedgerPage() {
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2">
                     <div>
                       <span className="text-xs text-muted-foreground">رقم القيد: </span>
-                      <strong className="font-mono text-foreground">
+                      <strong className="font-mono font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-300 dark:border-indigo-700 px-2 py-0.5 rounded-md inline-block">
                         {newEntryId || "تلقائي"} {newEntryRef ? `(${newEntryRef})` : ""}
                       </strong>
                     </div>
@@ -2482,7 +2482,7 @@ function LedgerPage() {
                             </span>
                             <Badge
                               variant="outline"
-                              className="font-mono text-xs font-bold px-2.5 py-1 border-primary/40 bg-primary/10 text-primary"
+                              className="font-mono text-xs font-black px-2.5 py-1 border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 shadow-xs"
                             >
                               قيد رقم: {entry.reference}
                             </Badge>
@@ -3112,7 +3112,7 @@ function LedgerPage() {
                       <div className="flex items-center gap-2 pt-1">
                         <Badge
                           variant="outline"
-                          className="font-mono font-bold text-xs bg-primary/10 text-primary border-primary/30 px-2.5 py-1"
+                          className="font-mono font-black text-xs bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700 px-3 py-1 shadow-xs"
                         >
                           قيد رقم: {selectedJournal.reference}
                         </Badge>
@@ -3483,7 +3483,10 @@ function LedgerPage() {
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <Badge variant="secondary" className="font-mono">
+                            <Badge
+                              variant="outline"
+                              className="font-mono font-black text-[11px] bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700 px-2 py-0.5"
+                            >
                               #{entry.reference || idx + 1}
                             </Badge>
                             {entryCurrencies.map((c) => (
@@ -3780,7 +3783,7 @@ function LedgerPage() {
                               <td className="p-2.5 pr-4 font-mono text-muted-foreground">
                                 {i + 1}
                               </td>
-                              <td className="p-2.5 font-bold font-mono text-primary">
+                              <td className="p-2.5 font-black font-mono text-indigo-700 dark:text-indigo-400">
                                 {je.reference || je.id}
                               </td>
                               <td className="p-2.5 font-mono text-muted-foreground">{je.date}</td>

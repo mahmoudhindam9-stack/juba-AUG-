@@ -2885,28 +2885,38 @@ export class ERPStore {
     const treasuryAccountCode =
       tr.type === "bank" ? "102000" : tr.branch_id === "branch-2" ? "101001" : "101000";
     const diff = recon.difference;
+    const curr = tr.currency || "USD";
+    const rate = this.getExchangeRate(curr);
     const lines = [];
     if (diff > 0) {
       lines.push({
         account_code: treasuryAccountCode,
         debit: diff,
         credit: 0,
+        currency: curr,
+        rate: rate,
       });
       lines.push({
         account_code: "401000",
         debit: 0,
         credit: diff,
+        currency: curr,
+        rate: rate,
       });
     } else if (diff < 0) {
       lines.push({
         account_code: "506000",
         debit: Math.abs(diff),
         credit: 0,
+        currency: curr,
+        rate: rate,
       });
       lines.push({
         account_code: treasuryAccountCode,
         debit: 0,
         credit: Math.abs(diff),
+        currency: curr,
+        rate: rate,
       });
     }
     if (lines.length > 0)
@@ -2914,6 +2924,7 @@ export class ERPStore {
         `تسوية جرد مالي لخزينة ${tr.name_ar}`,
         lines,
         `REC-${recon.id.substring(4, 9).toUpperCase()}`,
+        curr,
       );
   }
   addTreasuryTransaction(
@@ -2950,7 +2961,7 @@ export class ERPStore {
       treasury_id: treasuryId,
       type,
       amount,
-      currency,
+      currency: currency || tr.currency || "USD",
       payment_method: paymentMethod || "cash",
       note,
       related_entity_id: relatedId,
@@ -2961,7 +2972,7 @@ export class ERPStore {
     this.logAction(
       this.state.currentUser,
       "حركة مالية على الخزينة",
-      `تم إجراء حركة ${type} بقيمة ${amount} ج.م على خزينة ${tr.name_ar}`,
+      `تم إجراء حركة ${type} بقيمة ${amount} ${tx.currency} على خزينة ${tr.name_ar}`,
       "TRANSACTION",
       `balance: ${beforeBal}`,
       `balance: ${tr.balance}`,
@@ -2976,17 +2987,23 @@ export class ERPStore {
     if (tx.type === "sales") creditAccount = "401000";
     else if (tx.type === "expense") creditAccount = "504000";
     else if (tx.type === "purchase") creditAccount = "103000";
+    const curr = tx.currency || tr.currency || "USD";
+    const rate = this.getExchangeRate(curr);
     const lines = [];
     if (tx.type === "deposit" || tx.type === "sales" || tx.type === "transfer_in") {
       lines.push({
         account_code: debitAccount,
         debit: tx.amount,
         credit: 0,
+        currency: curr,
+        rate: rate,
       });
       lines.push({
         account_code: creditAccount,
         debit: 0,
         credit: tx.amount,
+        currency: curr,
+        rate: rate,
       });
     } else if (
       tx.type === "withdrawal" ||
@@ -2998,15 +3015,19 @@ export class ERPStore {
         account_code: creditAccount,
         debit: tx.amount,
         credit: 0,
+        currency: curr,
+        rate: rate,
       });
       lines.push({
         account_code: debitAccount,
         debit: 0,
         credit: tx.amount,
+        currency: curr,
+        rate: rate,
       });
     }
     if (lines.length > 0)
-      this.addJournalEntry(tx.note, lines, `TX-${tx.id.substring(3, 8).toUpperCase()}`);
+      this.addJournalEntry(tx.note, lines, `TX-${tx.id.substring(3, 8).toUpperCase()}`, curr);
   }
   addAccount(
     code,
@@ -3964,6 +3985,32 @@ export class ERPStore {
     return val / r;
   }
 
+  getExchangeRate(currency?: string): number {
+    const curr = String(currency || "USD").toUpperCase().trim();
+    if (curr === "USD" || !curr) return 1;
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+      try {
+        const stored = localStorage.getItem("app_exchange_rates");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed[curr] === "number" && parsed[curr] > 0) {
+            return Number(parsed[curr]);
+          }
+        }
+      } catch (e) {}
+    }
+    if (
+      this.state.exchangeRates &&
+      typeof this.state.exchangeRates[curr] === "number" &&
+      this.state.exchangeRates[curr] > 0
+    ) {
+      return Number(this.state.exchangeRates[curr]);
+    }
+    if (curr === "EGP") return 50;
+    if (curr === "SSP") return 100;
+    return 1;
+  }
+
   generateJournalReference(
     dateStr?: string,
     providedRef?: string,
@@ -4094,7 +4141,26 @@ export class ERPStore {
     if (!Array.isArray(lines) || lines.length < 2) {
       throw new Error("A journal entry requires at least two lines");
     }
-    this.ensureJournalAccounts(lines, currency || "EGP");
+
+    const defaultEntryCurrency = (currency || lines[0]?.currency || "USD").toUpperCase();
+
+    // Auto-synchronize currency and conversion rate (معامل التحويل) on every line
+    lines.forEach((line) => {
+      const lineCurr = (line.currency || defaultEntryCurrency || "USD").toUpperCase();
+      line.currency = lineCurr;
+      if (
+        line.rate === undefined ||
+        line.rate === null ||
+        Number(line.rate) <= 0 ||
+        (Number(line.rate) === 1 && lineCurr !== "USD")
+      ) {
+        line.rate = this.getExchangeRate(lineCurr);
+      } else {
+        line.rate = Number(line.rate);
+      }
+    });
+
+    this.ensureJournalAccounts(lines, defaultEntryCurrency);
     for (const line of lines) {
       const debit = Number(line?.debit ?? 0);
       const credit = Number(line?.credit ?? 0);
@@ -4135,7 +4201,7 @@ export class ERPStore {
       lines,
       created_at: /* @__PURE__ */ new Date().toISOString(),
       reference: this.generateJournalReference(targetDate, reference),
-      currency: currency || lines[0]?.currency || "EGP",
+      currency: defaultEntryCurrency,
       created_by: this.state.currentUser,
       is_approved: true,
     };
@@ -4158,27 +4224,35 @@ export class ERPStore {
     let treasuryAccount = "101000";
     if (paymentMethod === "card") treasuryAccount = "102000";
     else if (paymentMethod === "wallet") treasuryAccount = "103000";
+    const rate = this.getExchangeRate(currency);
     const lines = [
       {
         account_code: treasuryAccount,
         debit: total,
         credit: 0,
+        currency: currency,
+        rate: rate,
       },
       {
         account_code: "401000",
         debit: 0,
         credit: subtotal,
+        currency: currency,
+        rate: rate,
       },
       {
         account_code: "202000",
         debit: 0,
         credit: tax,
+        currency: currency,
+        rate: rate,
       },
     ];
     this.addJournalEntry(
       `فاتورة مبيعات POS - طلب رقم #${orderNumber}`,
       lines,
       `INV-${orderNumber}`,
+      currency,
     );
     try {
       this.addTreasuryTransaction(
@@ -4289,19 +4363,29 @@ export class ERPStore {
     let treasuryAccount = "101000";
     if (paymentMethod === "card") treasuryAccount = "102000";
     else if (paymentMethod === "wallet") treasuryAccount = "103000";
+    const rate = this.getExchangeRate(currency);
     const lines = [
       {
         account_code: "401000",
         debit: total,
         credit: 0,
+        currency: currency,
+        rate: rate,
       },
       {
         account_code: treasuryAccount,
         debit: 0,
         credit: total,
+        currency: currency,
+        rate: rate,
       },
     ];
-    this.addJournalEntry(`مرتجع مبيعات POS - طلب رقم #${orderNumber}`, lines, `SRT-${orderNumber}`);
+    this.addJournalEntry(
+      `مرتجع مبيعات POS - طلب رقم #${orderNumber}`,
+      lines,
+      `SRT-${orderNumber}`,
+      currency,
+    );
     try {
       this.addTreasuryTransaction(
         treasuryId,
@@ -4328,6 +4412,10 @@ export class ERPStore {
   ) {
     const supplier = this.state.suppliers.find((s) => s.id === supplierId);
     const targetSupAcc = supplierAccountCode || supplier?.account_code || "201000";
+    const resolvedRate =
+      rate && rate > 0 && !(rate === 1 && currency !== "USD")
+        ? rate
+        : this.getExchangeRate(currency);
 
     const lines = [
       {
@@ -4335,7 +4423,7 @@ export class ERPStore {
         debit: total,
         credit: 0,
         currency: currency || "USD",
-        rate: rate,
+        rate: resolvedRate,
         description: `استلام مخزون بضاعة - أمر شراء #${poId.substring(3, 8)}`,
       },
       {
@@ -4343,7 +4431,7 @@ export class ERPStore {
         debit: 0,
         credit: total,
         currency: currency || "USD",
-        rate: rate,
+        rate: resolvedRate,
         description: `استحقاق المورد (${supplier?.name_ar || "مورد"}) - أمر شراء #${poId.substring(3, 8)}`,
       },
     ];
@@ -4366,6 +4454,10 @@ export class ERPStore {
       (s) => s.id === this.state.purchaseOrders.find((p) => p.id === poId)?.supplier_id,
     );
     const targetSupAcc = supplierAccountCode || supplier?.account_code || "201000";
+    const resolvedRate =
+      rate && rate > 0 && !(rate === 1 && currency !== "USD")
+        ? rate
+        : this.getExchangeRate(currency);
 
     const lines = [
       {
@@ -4373,7 +4465,7 @@ export class ERPStore {
         debit: amount,
         credit: 0,
         currency: currency || "USD",
-        rate: rate,
+        rate: resolvedRate,
         description: `مرتجع بضائع للمورد (${supplier?.name_ar || "مورد"}) - أمر شراء #${poId.substring(3, 8)}`,
       },
       {
@@ -4381,7 +4473,7 @@ export class ERPStore {
         debit: 0,
         credit: amount,
         currency: currency || "USD",
-        rate: rate,
+        rate: resolvedRate,
         description: `تخفيض مخزون بضاعة مرتجعة - أمر شراء #${poId.substring(3, 8)}`,
       },
     ];
@@ -4392,50 +4484,64 @@ export class ERPStore {
       currency,
     );
   }
-  postExpenseJournal(voucherId, amount, accountCode, costCenter, branchId) {
+  postExpenseJournal(voucherId, amount, accountCode, costCenter, branchId, currency = "EGP") {
+    const rate = this.getExchangeRate(currency);
     const lines = [
       {
         account_code: accountCode,
         debit: amount,
         credit: 0,
         cost_center: costCenter,
+        currency: currency,
+        rate: rate,
       },
       {
         account_code: branchId === "branch-2" ? "101001" : "101000",
         debit: 0,
         credit: amount,
+        currency: currency,
+        rate: rate,
       },
     ];
     this.addJournalEntry(
       `سند صرف مصروفات - رقم #${voucherId.substring(4, 9)}`,
       lines,
       `EXP-${voucherId.substring(4, 9).toUpperCase()}`,
+      currency,
     );
   }
-  postRevenueJournal(voucherId, amount, accountCode, costCenter, branchId) {
+  postRevenueJournal(voucherId, amount, accountCode, costCenter, branchId, currency = "EGP") {
+    const rate = this.getExchangeRate(currency);
     const lines = [
       {
         account_code: branchId === "branch-2" ? "101001" : "101000",
         debit: amount,
         credit: 0,
+        currency: currency,
+        rate: rate,
       },
       {
         account_code: accountCode,
         debit: 0,
         credit: amount,
         cost_center: costCenter,
+        currency: currency,
+        rate: rate,
       },
     ];
     this.addJournalEntry(
       `سند قبض إيرادات متنوعة - رقم #${voucherId.substring(4, 9)}`,
       lines,
       `REV-${voucherId.substring(4, 9).toUpperCase()}`,
+      currency,
     );
   }
-  postTreasuryTransferJournal(fromTreasuryId, toTreasuryId, amount, branchId) {
+  postTreasuryTransferJournal(fromTreasuryId, toTreasuryId, amount, branchId, currency?: string) {
     const fromT = this.state.treasuries.find((t) => t.id === fromTreasuryId);
     const toT = this.state.treasuries.find((t) => t.id === toTreasuryId);
     if (!fromT || !toT) return;
+    const curr = currency || fromT.currency || "USD";
+    const rate = this.getExchangeRate(curr);
     const fromAcc =
       fromT.type === "bank" ? "102000" : fromT.branch_id === "branch-2" ? "101001" : "101000";
     const lines = [
@@ -4444,93 +4550,126 @@ export class ERPStore {
           toT.type === "bank" ? "102000" : toT.branch_id === "branch-2" ? "101001" : "101000",
         debit: amount,
         credit: 0,
+        currency: curr,
+        rate: rate,
       },
       {
         account_code: fromAcc,
         debit: 0,
         credit: amount,
+        currency: curr,
+        rate: rate,
       },
     ];
     this.addJournalEntry(
       `حركة تحويل مالي بين الخزائن - من ${fromT.name_ar} إلى ${toT.name_ar}`,
       lines,
       `TRF-${Math.floor(Math.random() * 8999) + 1e3}`,
+      curr,
     );
   }
-  postCashDepositJournal(treasuryId, amount, branchId) {
+  postCashDepositJournal(treasuryId, amount, branchId, currency?: string) {
+    const tr = this.state.treasuries.find((t) => t.id === treasuryId);
+    const curr = currency || tr?.currency || "USD";
+    const rate = this.getExchangeRate(curr);
     const lines = [
       {
         account_code: branchId === "branch-2" ? "101001" : "101000",
         debit: amount,
         credit: 0,
+        currency: curr,
+        rate: rate,
       },
       {
         account_code: "301000",
         debit: 0,
         credit: amount,
+        currency: curr,
+        rate: rate,
       },
     ];
     this.addJournalEntry(
       `إيداع تمويل مالي مباشر بالخزينة`,
       lines,
       `DEP-${Math.floor(Math.random() * 8999) + 1e3}`,
+      curr,
     );
   }
-  postCashWithdrawalJournal(treasuryId, amount, branchId) {
+  postCashWithdrawalJournal(treasuryId, amount, branchId, currency?: string) {
+    const tr = this.state.treasuries.find((t) => t.id === treasuryId);
+    const curr = currency || tr?.currency || "USD";
+    const rate = this.getExchangeRate(curr);
     const lines = [
       {
         account_code: "301000",
         debit: amount,
         credit: 0,
+        currency: curr,
+        rate: rate,
       },
       {
         account_code: branchId === "branch-2" ? "101001" : "101000",
         debit: 0,
         credit: amount,
+        currency: curr,
+        rate: rate,
       },
     ];
     this.addJournalEntry(
       `سحب نقدي مباشر تمويلي من الخزينة`,
       lines,
       `WDL-${Math.floor(Math.random() * 8999) + 1e3}`,
+      curr,
     );
   }
-  postInventoryAdjustmentJournal(docNumber, amount, branchId) {
+  postInventoryAdjustmentJournal(docNumber, amount, branchId, currency = "USD") {
+    const rate = this.getExchangeRate(currency);
     const lines = [
       {
         account_code: "506000",
         debit: Math.abs(amount),
         credit: 0,
+        currency: currency,
+        rate: rate,
       },
       {
         account_code: "103000",
         debit: 0,
         credit: Math.abs(amount),
+        currency: currency,
+        rate: rate,
       },
     ];
     this.addJournalEntry(
       `تسوية جرد مخزني - هدر وخسائر - مستند #${docNumber}`,
       lines,
       `ADJ-${docNumber.substring(4)}`,
+      currency,
     );
   }
-  postInventoryConsumptionJournal(orderNumber, totalCost, branchId) {
+  postInventoryConsumptionJournal(orderNumber, totalCost, branchId, currency = "USD") {
+    const rate = this.getExchangeRate(currency);
     const lines = [
       {
         account_code: "501000",
         debit: totalCost,
         credit: 0,
+        currency: currency,
+        rate: rate,
       },
       {
         account_code: "103000",
         debit: 0,
         credit: totalCost,
+        currency: currency,
+        rate: rate,
       },
     ];
     this.addJournalEntry(
       `قيد استهلاك بوم المطبخ (Recipe Consumption) - طلب #${orderNumber}`,
       lines,
       `CON-${orderNumber}`,
+      currency,
     );
   }
   createPurchaseOrder(
@@ -5276,11 +5415,15 @@ export class ERPStore {
               : "101000";
         const totalCollected = (contract.deposit_amount || 0) + (contract.advance_payment || 0);
         if (totalCollected > 0) {
+          const curr = (contract.currency || treasury.currency || "USD").toUpperCase();
+          const rate = this.getExchangeRate(curr);
           const lines = [
             {
               account_code: treasuryAccountCode,
               debit: totalCollected,
               credit: 0,
+              currency: curr,
+              rate: rate,
             },
           ];
           if (contract.deposit_amount > 0)
@@ -5288,25 +5431,29 @@ export class ERPStore {
               account_code: "201100",
               debit: 0,
               credit: contract.deposit_amount,
+              currency: curr,
+              rate: rate,
             });
           if (contract.advance_payment > 0)
             lines.push({
               account_code: "201200",
               debit: 0,
               credit: contract.advance_payment,
+              currency: curr,
+              rate: rate,
             });
           this.addJournalEntry(
             `تحصيل تأمين ومقدم عقد إيجار لمحل #${shopId}`,
             lines,
             `CNTR-${Date.now().toString().slice(-6)}`,
-            "USD",
+            curr,
             contract.start_date,
           );
           this.addTreasuryTransaction(
             treasuryId,
             "sales",
             totalCollected,
-            "USD",
+            curr,
             `تحصيل تأمين ومقدم لعقد إيجار محل #${shopId}`,
             `CNTR-${Date.now().toString().slice(-6)}`,
             "cash",
@@ -5368,16 +5515,22 @@ export class ERPStore {
               : "101000";
         const isRefund = payment.amount_paid < 0;
         const absAmount = Math.abs(payment.amount_paid);
+        const curr = (payment.currency || treasury.currency || "USD").toUpperCase();
+        const rate = this.getExchangeRate(curr);
         const lines = [
           {
             account_code: treasuryAccountCode,
             debit: isRefund ? 0 : absAmount,
             credit: isRefund ? absAmount : 0,
+            currency: curr,
+            rate: rate,
           },
           {
             account_code: "401000",
             debit: isRefund ? absAmount : 0,
             credit: isRefund ? 0 : absAmount,
+            currency: curr,
+            rate: rate,
           },
         ];
         this.addJournalEntry(
@@ -5386,14 +5539,14 @@ export class ERPStore {
             : `تحصيل دفعة إيجار للمحل (شهر ${payment.month}/${payment.year})`,
           lines,
           payment.receipt_number || `REC-${Date.now()}`,
-          "USD",
+          curr,
           payment.payment_date || /* @__PURE__ */ new Date().toISOString().split("T")[0],
         );
         this.addTreasuryTransaction(
           treasuryId,
           isRefund ? "withdrawal" : "sales",
           absAmount,
-          "USD",
+          curr,
           isRefund ? `رد مقدم/دفعة إيجار للمحل` : `تحصيل دفعة إيجار للمحل`,
           payment.receipt_number || `REC-${Date.now()}`,
           payment.payment_method === "cash" ? "cash" : "bank_transfer",

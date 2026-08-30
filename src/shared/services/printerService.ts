@@ -14,6 +14,9 @@ export interface PrintableReceiptData {
     name: string;
     quantity: number;
     price: number;
+    notes?: string;
+    note?: string;
+    selectedAdditions?: any[];
   }>;
   subtotal: number;
   discount?: number;
@@ -160,7 +163,16 @@ class ThermalPrinterService {
       .map(
         (it) => `
       <tr>
-        <td style="text-align: right; padding: 4px 0; border-bottom: 1px dashed #eee;">${it.name}</td>
+        <td style="text-align: right; padding: 4px 0; border-bottom: 1px dashed #eee;">
+          <div>${it.name}</div>
+          ${
+            it.notes || it.note
+              ? `<div style="font-size: 10px; color: #444; margin-top: 1px; font-weight: bold;">* ملاحظة: ${
+                  it.notes || it.note
+                }</div>`
+              : ""
+          }
+        </td>
         <td style="text-align: center; padding: 4px 0; border-bottom: 1px dashed #eee;">x${it.quantity}</td>
         <td style="text-align: left; padding: 4px 0; border-bottom: 1px dashed #eee; font-weight: bold;">
           ${(it.price * it.quantity).toFixed(2)} ${data.currency || "ج.م"}

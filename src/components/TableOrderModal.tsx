@@ -19,6 +19,7 @@ import {
   Clock,
   Package,
   ChefHat,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +61,11 @@ export function TableOrderModal({
   const [cart, setCart] = useState<TableCartLine[]>([]);
   const [orderNotes, setOrderNotes] = useState("");
   const [selectedAdditions, setSelectedAdditions] = useState<string[]>([]);
+  const [noteEditingItem, setNoteEditingItem] = useState<{
+    id: string;
+    name: string;
+    notes: string;
+  } | null>(null);
 
   useEffect(() => {
     if (isOpen && table) {
@@ -519,64 +525,118 @@ export function TableOrderModal({
                 cart.map((line) => (
                   <div
                     key={line.item.id}
-                    className="p-2 rounded-xl border border-slate-200 bg-slate-50/50 flex items-center justify-between gap-2"
+                    className="p-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition-all shadow-2xs space-y-1.5"
                   >
-                    <div className="flex-1 min-w-0">
-                      <h5 className="font-bold text-xs text-slate-800 truncate">
+                    <div className="flex items-start justify-between gap-2">
+                      <h5 className="font-bold text-xs text-slate-800 line-clamp-1 flex-1">
                         {line.item.name_ar}
                       </h5>
-                      <textarea
-                        rows={1}
-                        value={line.notes || ""}
-                        onChange={(e) => updateItemNotes(line.item.id, e.target.value)}
-                        placeholder={lang === "ar" ? "ملاحظة لهذا الصنف..." : "Note for this item..."}
-                        className="w-full mt-1 bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px] font-semibold outline-none focus:border-indigo-500 resize-none"
-                      />
-                      <span className="text-[11px] font-bold text-indigo-600 block mt-0.5">
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setNoteEditingItem({
+                              id: line.item.id,
+                              name: line.item.name_ar,
+                              notes: line.notes || "",
+                            })
+                          }
+                          className={`p-1 rounded-md transition ${
+                            line.notes
+                              ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                              : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                          }`}
+                          title={lang === "ar" ? "ملاحظة للصنف" : "Item note"}
+                        >
+                          <FileText size={13} />
+                        </button>
+                        <button
+                          onClick={() => removeFromCart(line.item.id)}
+                          className="w-5 h-5 rounded flex items-center justify-center text-rose-500 hover:bg-rose-50 transition"
+                          title={lang === "ar" ? "حذف" : "Remove"}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {line.notes ? (
+                      <div className="flex items-center justify-between gap-1.5 bg-amber-50 border border-amber-200 text-amber-950 rounded-lg px-2 py-1 text-[10px] font-bold">
+                        <div
+                          className="flex-1 min-w-0 truncate cursor-pointer hover:underline flex items-center gap-1"
+                          onClick={() =>
+                            setNoteEditingItem({
+                              id: line.item.id,
+                              name: line.item.name_ar,
+                              notes: line.notes || "",
+                            })
+                          }
+                        >
+                          <span className="text-amber-700 font-extrabold shrink-0">ملاحظة:</span>
+                          <span className="truncate">{line.notes}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => updateItemNotes(line.item.id, "")}
+                          className="text-amber-700 hover:text-rose-600 p-0.5 rounded transition shrink-0"
+                          title="حذف الملاحظة"
+                        >
+                          <X size={11} />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setNoteEditingItem({
+                            id: line.item.id,
+                            name: line.item.name_ar,
+                            notes: "",
+                          })
+                        }
+                        className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-indigo-600 transition"
+                      >
+                        <Plus size={10} />
+                        <span>{lang === "ar" ? "إضافة ملاحظة..." : "Add note..."}</span>
+                      </button>
+                    )}
+
+                    {line.selectedAdditions && line.selectedAdditions.length > 0 && (
+                      <div className="text-[10px] text-slate-500 font-semibold flex flex-wrap gap-1">
+                        {line.selectedAdditions.map((a: any, aIdx: number) => (
+                          <span
+                            key={aIdx}
+                            className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[9px]"
+                          >
+                            +{a.icon || ""} {a.name_ar}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                      <span className="text-[11px] font-black text-indigo-600">
                         {formatPrice(
                           (line.item.price +
                             (line.selectedAdditions?.reduce((s, a) => s + (a.price || 0), 0) || 0)) *
                             line.quantity,
                         )}
                       </span>
-                      {((line.selectedAdditions && line.selectedAdditions.length > 0) || line.notes) && (
-                        <div className="text-[10px] text-slate-500 mt-1 space-y-0.5 leading-tight">
-                          {line.selectedAdditions && line.selectedAdditions.length > 0 && (
-                            <div>
-                              <span className="font-bold mr-1">إضافات:</span>
-                              {line.selectedAdditions.map((a) => `${a.icon || ""} ${a.name_ar}`).join("، ")}
-                            </div>
-                          )}
-                          {line.notes && (
-                            <div>
-                              <span className="font-bold mr-1">ملاحظات:</span>
-                              {line.notes}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
-                      <button
-                        onClick={() => updateQuantity(line.item.id, -1)}
-                        className="w-5 h-5 rounded flex items-center justify-center text-slate-600 hover:bg-slate-100"
-                      >
-                        <Minus size={11} />
-                      </button>
-                      <span className="text-xs font-black w-4 text-center">{line.quantity}</span>
-                      <button
-                        onClick={() => updateQuantity(line.item.id, 1)}
-                        className="w-5 h-5 rounded flex items-center justify-center text-slate-600 hover:bg-slate-100"
-                      >
-                        <Plus size={11} />
-                      </button>
-                      <button
-                        onClick={() => removeFromCart(line.item.id)}
-                        className="w-5 h-5 rounded flex items-center justify-center text-rose-500 hover:bg-rose-50 mr-0.5"
-                      >
-                        <Trash2 size={11} />
-                      </button>
+                      <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-lg p-0.5">
+                        <button
+                          onClick={() => updateQuantity(line.item.id, -1)}
+                          className="w-5 h-5 rounded flex items-center justify-center text-slate-600 hover:bg-white"
+                        >
+                          <Minus size={11} />
+                        </button>
+                        <span className="text-xs font-black w-4 text-center">{line.quantity}</span>
+                        <button
+                          onClick={() => updateQuantity(line.item.id, 1)}
+                          className="w-5 h-5 rounded flex items-center justify-center text-slate-600 hover:bg-white"
+                        >
+                          <Plus size={11} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))
@@ -669,6 +729,142 @@ export function TableOrderModal({
           </div>
         </div>
       </div>
+
+      {/* Item Note Modal for Captain Order */}
+      {noteEditingItem && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[99999] font-cairo"
+          dir={lang === "ar" ? "rtl" : "ltr"}
+        >
+          <div className="bg-white rounded-3xl p-5 sm:p-6 max-w-md w-full shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-amber-100 text-amber-800 rounded-xl">
+                  <FileText size={18} />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-slate-900">
+                    {lang === "ar" ? "ملاحظة خاصة بالصنف" : "Item Note"}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-bold line-clamp-1">
+                    {noteEditingItem.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setNoteEditingItem(null)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1.5">
+                  {lang === "ar" ? "الملاحظة (بدون بصل، صوص إضافي...):" : "Note description:"}
+                </label>
+                <textarea
+                  rows={3}
+                  value={noteEditingItem.notes}
+                  onChange={(e) =>
+                    setNoteEditingItem((prev) =>
+                      prev ? { ...prev, notes: e.target.value } : null,
+                    )
+                  }
+                  placeholder={
+                    lang === "ar"
+                      ? "اكتب تفاصيل تحضير الصنف المطلوبة..."
+                      : "Type specific item prep instructions..."
+                  }
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs font-bold outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none leading-relaxed"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <span className="text-[11px] font-bold text-slate-500 block mb-2">
+                  {lang === "ar" ? "خيارات سريعة شائعة:" : "Quick Preset Options:"}
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    "بدون بصل",
+                    "بدون ملح",
+                    "بدون شطة",
+                    "صوص إضافي",
+                    "حار جداً 🌶️",
+                    "مستوي زيادة",
+                    "سُكر خفيف",
+                    "سفري",
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => {
+                        setNoteEditingItem((prev) => {
+                          if (!prev) return null;
+                          const existing = prev.notes.trim();
+                          const newNotes = existing ? `${existing}، ${preset}` : preset;
+                          return { ...prev, notes: newNotes };
+                        });
+                      }}
+                      className="text-[11px] font-bold bg-slate-100 hover:bg-amber-100 hover:text-amber-900 border border-slate-200 px-2.5 py-1 rounded-lg transition active:scale-95 text-slate-700"
+                    >
+                      +{preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                {noteEditingItem.notes ? (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    className="gap-1 text-xs font-bold rounded-xl h-9"
+                    onClick={() => {
+                      updateItemNotes(noteEditingItem.id, "");
+                      setNoteEditingItem(null);
+                      toast({ title: "تم حذف ملاحظة الصنف" });
+                    }}
+                  >
+                    <Trash2 size={13} />
+                    {lang === "ar" ? "حذف الملاحظة" : "Delete Note"}
+                  </Button>
+                ) : (
+                  <div />
+                )}
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-xs font-bold rounded-xl h-9"
+                    onClick={() => setNoteEditingItem(null)}
+                  >
+                    {lang === "ar" ? "إلغاء" : "Cancel"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl h-9 gap-1 shadow-sm"
+                    onClick={() => {
+                      updateItemNotes(noteEditingItem.id, noteEditingItem.notes);
+                      setNoteEditingItem(null);
+                      toast({ title: "تم حفظ ملاحظة الصنف بنجاح" });
+                    }}
+                  >
+                    <CheckCircle2 size={14} />
+                    {lang === "ar" ? "حفظ الملاحظة" : "Save Note"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

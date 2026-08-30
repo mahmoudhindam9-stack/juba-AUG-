@@ -19,7 +19,7 @@ export default defineConfig({
     }),
     react(),
     tailwindcss(),
-    netlify(),
+    process.env.NODE_ENV === "production" ? netlify() : null,
   ],
   resolve: {
     tsconfigPaths: true,
@@ -29,5 +29,6 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    allowedHosts: true,
   },
 });

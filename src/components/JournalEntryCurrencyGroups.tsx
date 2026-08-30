@@ -180,7 +180,13 @@ export function JournalEntryCurrencyGroups({
         <CardContent className="p-4">
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-extrabold">إجمالي القيد رقم {entry.reference || entry.id}</span>
+              <span className="font-extrabold text-foreground">إجمالي القيد:</span>
+              <Badge
+                variant="outline"
+                className="font-mono font-black text-xs bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700 px-2.5 py-0.5"
+              >
+                قيد رقم: {entry.reference || entry.id}
+              </Badge>
               <Badge variant="outline" className="font-mono">{currencies.join(" • ")}</Badge>
               <Badge variant="secondary">عملة التطبيق: USD</Badge>
             </div>
