@@ -328,6 +328,24 @@ function CashierTreasuryPage() {
     enabled: isMounted,
   });
 
+  // Live bridge: Captain updates and self-orders immediately invalidate the cashier order list.
+  useEffect(() => {
+    if (!isMounted) return;
+    const channel = supabase
+      .channel("cashier_orders_bridge")
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["cashier-treasury", "orders"] });
+      })
+      .on("broadcast", { event: "CAPTAIN_ORDER_TO_CASHIER" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["cashier-treasury", "orders"] });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isMounted, queryClient]);
+
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Sync operational sales with cashier treasury

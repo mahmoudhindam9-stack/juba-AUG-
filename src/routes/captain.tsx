@@ -190,9 +190,19 @@ function CaptainPage() {
   }, [tablesList]);
 
   const handleAcceptOrder = async (order: any) => {
-    // We update status in supabase so it moves to kitchen / cashier depending on flow
-    // Or we can import it into local tableOrdersStore if Cashier only reads from there
-    // If cashier reads from tableOrdersStore, we inject it:
+    // Persist the captain acceptance in Supabase so the cashier sees the same order across devices.
+    if (order?.id) {
+      const { error } = await supabase
+        .from("orders")
+        .update({ status: "sent_to_cashier" })
+        .eq("id", order.id);
+      if (error) {
+        toast({ title: "تعذر تثبيت الطلب للكاشير", description: error.message, variant: "destructive" });
+        return;
+      }
+    }
+
+    // Keep the same operational object in the local bridge for same-browser consumers.
     tableOrdersStore.saveOrder({
       status: "sent_to_cashier",
       table_id: order.table_id,
@@ -208,6 +218,8 @@ function CaptainPage() {
       sentToKitchen: Boolean(order.sentToKitchen),
       kitchenCompleted: Boolean(order.kitchenCompleted),
       kitchenOrderId: order.kitchenOrderId,
+      sentToKitchen: Boolean(order.sentToKitchen),
+      kitchenCompleted: Boolean(order.kitchenCompleted),
     });
 
     toast({ title: "تم قبول الطلب وإرساله للكاشير بنجاح." });
