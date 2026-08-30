@@ -50,7 +50,7 @@ export class TranslationService {
       const el = root as HTMLElement;
       if (el.tagName === "SCRIPT" || el.tagName === "STYLE" || el.tagName === "NOSCRIPT") return;
 
-      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
       let node: Node | null;
       const nodesToReplace: { node: Node; oldStr: string; newStr: string }[] = [];
 
