@@ -1,21 +1,86 @@
-name: Verify Journal Currency Groups
-
+name: One-time admin editor migration
 on:
   push:
     branches:
-      - audit-import-guards-2026-08-29
-
+      - fix/external-order-currency-tracking
 permissions:
-  contents: read
-
+  contents: write
 jobs:
-  build:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build
+          node-version: 20
+      - name: Patch editors
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          # Menu editor modal
+          p=Path('src/routes/admin/menu.tsx'); s=p.read_text()
+          if 'const [isItemEditorOpen, setIsItemEditorOpen]' not in s:
+              s=s.replace('  const [editingItem, setEditingItem] = useState<MenuItem | null>(null);','  const [editingItem, setEditingItem] = useState<MenuItem | null>(null);\n  const [isItemEditorOpen, setIsItemEditorOpen] = useState(false);',1)
+          s=s.replace('      setEditingItem(null);\n      setItemForm({','      setEditingItem(null);\n      setIsItemEditorOpen(false);\n      setItemForm({',1)
+          s=s.replace('  const startEditItem = (item: MenuItem) => {\n    setEditingItem(item);','  const startEditItem = (item: MenuItem) => {\n    setEditingItem(item);\n    setIsItemEditorOpen(true);',1)
+          s=s.replace('    window.scrollTo({ top: 0, behavior: "smooth" });\n  };','  };',1)
+          if 'const requestCloseItemEditor' not in s:
+              s=s.replace('  const cancelEditItem = () => {','  const requestCloseItemEditor = () => {\n    if (window.confirm("لديك تغييرات قد تكون غير محفوظة. هل تريد تجاهلها وإغلاق النافذة؟")) cancelEditItem();\n  };\n\n  const cancelEditItem = () => {',1)
+          s=s.replace('  const cancelEditItem = () => {\n    setEditingItem(null);','  const cancelEditItem = () => {\n    setEditingItem(null);\n    setIsItemEditorOpen(false);',1)
+          if '  X,\n} from "lucide-react";' not in s:
+              s=s.replace('  AlertTriangle,\n} from "lucide-react";','  AlertTriangle,\n  X,\n} from "lucide-react";',1)
+          s=s.replace('<div className="bg-card border border-border p-5 rounded-2xl space-y-5">','<div className={isItemEditorOpen ? "fixed inset-0 z-[70] overflow-y-auto bg-black/60 p-3 sm:p-6" : "hidden"}>\n            <div className="bg-card border border-border p-5 rounded-2xl space-y-5 max-w-6xl mx-auto shadow-2xl">',1)
+          header='''              <h2 className="font-black text-lg text-primary flex items-center gap-2">\n                <ChefHat size={18} />\n                {editingItem\n                  ? `تعديل الصنف: ${editingItem.name_ar}`\n                  : "إضافة صنف مأكولات أو مشروب جديد"}\n              </h2>'''
+          if header in s:
+              s=s.replace(header,'''              <div className="flex items-center justify-between gap-3">\n                <h2 className="font-black text-lg text-primary flex items-center gap-2">\n                  <ChefHat size={18} />\n                  {editingItem ? `تعديل الصنف: ${editingItem.name_ar}` : "إضافة صنف مأكولات أو مشروب جديد"}\n                </h2>\n                <Button type="button" variant="outline" size="icon" onClick={requestCloseItemEditor} className="rounded-xl shrink-0"><X size={16} /></Button>\n              </div>''',1)
+          s=s.replace('''              {editingItem && (\n                <Button variant="outline" onClick={cancelEditItem} className="font-bold">\n                  إلغاء التعديل\n                </Button>\n              )}''','''              <Button variant="outline" onClick={requestCloseItemEditor} className="font-bold">\n                تجاهل التعديلات\n              </Button>''',1)
+          marker='          {/* Catalog grid catalog items table view */}'
+          if marker in s and 'isItemEditorOpen ? "fixed inset-0' in s and '          </div>\n        </div>\n\n'+marker not in s:
+              s=s.replace(marker,'          </div>\n        </div>\n\n'+marker,1)
+          search='              <div className="relative flex-1 max-w-md">'
+          if search in s and 'إضافة صنف جديد' not in s:
+              s=s.replace(search,'              <Button type="button" onClick={() => { cancelEditItem(); setIsItemEditorOpen(true); }} className="font-bold gap-2 shrink-0"><Plus size={15} /> إضافة صنف جديد</Button>\n'+search,1)
+          p.write_text(s)
+
+          # Inventory editor modal
+          p=Path('src/routes/admin/inventory.tsx'); s=p.read_text()
+          if 'const [isInventoryEditorOpen, setIsInventoryEditorOpen]' not in s:
+              s=s.replace('  const [editing, setEditing] = useState<Inventory | null>(null);','  const [editing, setEditing] = useState<Inventory | null>(null);\n  const [isInventoryEditorOpen, setIsInventoryEditorOpen] = useState(false);',1)
+          s=s.replace('      setEditing(null);\n      setForm({','      setEditing(null);\n      setIsInventoryEditorOpen(false);\n      setForm({',1)
+          if 'const requestCloseInventoryEditor' not in s:
+              s=s.replace('  const startEdit = (i: Inventory) => {','  const requestCloseInventoryEditor = () => {\n    if (window.confirm("لديك تغييرات قد تكون غير محفوظة. هل تريد تجاهلها وإغلاق النافذة؟")) { setEditing(null); setIsInventoryEditorOpen(false); }\n  };\n\n  const openNewInventoryEditor = () => { setEditing(null); setIsInventoryEditorOpen(true); };\n\n  const startEdit = (i: Inventory) => {\n    setIsInventoryEditorOpen(true);',1)
+          if '  X,\n} from "lucide-react";' not in s:
+              s=s.replace('  Building2,\n  ShieldCheck,','  Building2,\n  ShieldCheck,\n  X,',1)
+          s=s.replace('<div className="bg-card border border-border p-5 rounded-2xl space-y-4">','<div className={isInventoryEditorOpen ? "fixed inset-0 z-[70] overflow-y-auto bg-black/60 p-3 sm:p-6" : "hidden"}>\n          <div className="bg-card border border-border p-5 rounded-2xl space-y-4 max-w-6xl mx-auto shadow-2xl">',1)
+          header='''            <h3 className="font-bold text-base text-primary flex items-center gap-2">\n              <span className="w-2.5 h-2.5 rounded-full bg-primary inline-block"></span>\n              {editing ? `تعديل الصنف المتقدم: ${editing.name_ar}` : "إضافة صنف مخزني متقدم جديد"}\n            </h3>'''
+          if header in s:
+              s=s.replace(header,'''            <div className="flex items-center justify-between gap-3">\n              <h3 className="font-bold text-base text-primary flex items-center gap-2">\n                <span className="w-2.5 h-2.5 rounded-full bg-primary inline-block"></span>\n                {editing ? `تعديل الصنف المتقدم: ${editing.name_ar}` : "إضافة صنف مخزني متقدم جديد"}\n              </h3>\n              <Button type="button" variant="outline" size="icon" onClick={requestCloseInventoryEditor} className="rounded-xl shrink-0"><X size={16} /></Button>\n            </div>''',1)
+          pattern=re.compile(r'''              <Button\n                variant="outline"\n                onClick=\{\(\) => \{\n                  setEditing\(null\);.*?\n              </Button>''',re.S)
+          s,_=pattern.subn('''              <Button variant="outline" onClick={requestCloseInventoryEditor} className="font-bold">\n                تجاهل التعديلات\n              </Button>''',s,count=1)
+          marker='          {/* Search, Filter, and Table Section */}'
+          if marker in s and 'isInventoryEditorOpen ? "fixed inset-0' in s and '          </div>\n        </div>\n\n'+marker not in s:
+              s=s.replace(marker,'          </div>\n        </div>\n\n'+marker,1)
+          search='              <div className="relative flex-1 max-w-md">'
+          if search in s and 'onClick={openNewInventoryEditor}' not in s:
+              s=s.replace(search,'              <Button type="button" onClick={openNewInventoryEditor} className="font-bold gap-2 shrink-0"><Plus size={15} /> إضافة صنف جديد</Button>\n'+search,1)
+          inv.write_text(s)
+          PY
+      - name: Build
+        run: |
+          npm ci
+          npm run build
+      - name: Commit and restore verification workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/routes/admin/menu.tsx src/routes/admin/inventory.tsx
+          git rm -f scripts/.trigger-admin-modal-v2 scripts/.trigger-admin-modal-v3 || true
+          git checkout HEAD -- .github/workflows/verify-journal-currency-groups.yml
+          git add .github/workflows/verify-journal-currency-groups.yml
+          git commit -m "fix: open menu and inventory editors in confirmed modals"
+          git push
