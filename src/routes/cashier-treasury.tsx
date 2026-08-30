@@ -11,6 +11,7 @@ import { BackToRestaurantButton } from "@/components/admin/BackToRestaurantButto
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { inventoryService } from "@/features/inventory/services/inventoryService";
+import { printAccountingDocument } from "@/shared/utils/printAccountingDocument";
 import { Order } from "@/shared/types";
 import {
   Coins,
@@ -668,6 +669,57 @@ function CashierTreasuryPage() {
   });
 
   // Export Excel Function with Date Range
+  const getCashierReportRows = (fromDate = startDate, toDate = endDate) => {
+    return transactions.filter((tx) => {
+      const date = new Date(tx.date || tx.created_at || Date.now());
+      if (fromDate && date < new Date(`${fromDate}T00:00:00`)) return false;
+      if (toDate && date > new Date(`${toDate}T23:59:59`)) return false;
+      return true;
+    }).map((tx) => ({
+      number: tx.id,
+      date: new Date(tx.date || tx.created_at || Date.now()).toLocaleString("ar-EG"),
+      type: ({deposit:"إيداع نقدي",sales:"مبيعات POS",withdrawal:"مسحوبات / مصاريف",transfer_in:"تحويل وارد",transfer_out:"تحويل صادر"} as any)[tx.type] || tx.type,
+      method: ({cash:"كاش",card:"بطاقة / فيزا",wallet:"محفظة"} as any)[tx.payment_method || "cash"] || tx.payment_method || "-",
+      currency: tx.currency || "EGP",
+      amount: Number(tx.amount || 0),
+      note: tx.note || "-",
+      reference: tx.related_entity_id || "-",
+    }));
+  };
+
+  const printCashierReport = (mode: "shift" | "range") => {
+    const today = new Date().toISOString().slice(0, 10);
+    const from = mode === "shift" ? today : startDate;
+    const to = mode === "shift" ? today : endDate;
+    const rows = getCashierReportRows(from, to);
+    printAccountingDocument({
+      title: mode === "shift" ? "تقرير شيفت خزينة الكاشير" : "تقرير حركات خزينة الكاشير",
+      subtitle: `${from || "بداية مفتوحة"} → ${to || "نهاية مفتوحة"} | ${cashierTreasury.name_ar} | الحساب 13010130`,
+      documentNo: `CASHIER-${today.replaceAll("-", "")}`,
+      columns: [
+        {key:"number",label:"رقم الحركة"},{key:"date",label:"التاريخ والوقت"},{key:"type",label:"نوع الحركة"},{key:"method",label:"طريقة الدفع"},
+        {key:"currency",label:"العملة",align:"center"},{key:"amount",label:"المبلغ",align:"left"},{key:"note",label:"البيان"},{key:"reference",label:"المرجع"}
+      ],
+      rows,
+      totals: [
+        {label:"عدد الحركات",value:String(rows.length)},
+        {label:"إجمالي مبيعات الشيفت",value:Number(shiftSalesAmount || 0).toLocaleString("en-US")},
+        {label:"رصيد الخزينة الحالي",value:Number(cashierTreasury.balance || 0).toLocaleString("en-US")}
+      ]
+    });
+  };
+
+  const exportCashierReportToExcel = (mode: "shift" | "range") => {
+    const today = new Date().toISOString().slice(0, 10);
+    const from = mode === "shift" ? today : startDate;
+    const to = mode === "shift" ? today : endDate;
+    const rows = getCashierReportRows(from, to);
+    if (!rows.length) { toast({title:"لا توجد حركات",description:"لا توجد بيانات ضمن الفترة المختارة.",variant:"destructive"}); return; }
+    const ws = XLSX.utils.json_to_sheet(rows.map((r) => ({"رقم الحركة":r.number,"التاريخ والوقت":r.date,"نوع الحركة":r.type,"طريقة الدفع":r.method,"العملة":r.currency,"المبلغ":r.amount,"البيان":r.note,"المرجع":r.reference})));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "خزينة الكاشير");
+    XLSX.writeFile(wb, `خزينة_الكاشير_${from || "all"}_${to || "all"}.xlsx`);
+  };
+
   const exportToExcel = () => {
     const typeMap: Record<string, string> = {
       deposit: "إيداع نقدي",
@@ -817,6 +869,10 @@ function CashierTreasuryPage() {
               </span>
             </Button>
 
+            <Button type="button" onClick={() => printCashierReport("shift")} variant="outline" className="border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-2 shadow-sm" title="طباعة شيفت اليوم"><Printer size={16}/><span>طباعة الشيفت</span></Button>
+            <Button type="button" onClick={() => printCashierReport("range")} variant="outline" className="border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-2 shadow-sm" title="طباعة التاريخ المحدد"><Printer size={16}/><span>طباعة الفترة</span></Button>
+            <Button type="button" onClick={() => printCashierReport("range")} variant="outline" className="border-violet-300 bg-violet-50 hover:bg-violet-100 text-violet-800 font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-2 shadow-sm" title="طباعة مستند محاسبي"><FileText size={16}/><span>مستند محاسبي</span></Button>
+            <Button type="button" onClick={() => exportCashierReportToExcel("range")} variant="outline" className="border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-2 shadow-sm" title="تصدير الفترة إلى Excel"><FileSpreadsheet size={16}/><span>Excel للفترة</span></Button>
             <Button
               onClick={() => setExportDialogOpen(true)}
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-2 shadow-sm transition active:scale-95"

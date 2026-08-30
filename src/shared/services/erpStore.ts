@@ -3136,6 +3136,9 @@ export class ERPStore {
     };
   }
   recalculateAccountBalances() {
+    const allJournalLines: any[] = [];
+    (this.state.journalEntries || []).forEach((entry) => (entry.lines || []).forEach((line) => allJournalLines.push(line)));
+    this.ensureJournalAccounts(allJournalLines, "EGP");
     const balanceMap = {};
     this.state.accounts.forEach((acc) => {
       balanceMap[acc.code] = acc.initial_balance || 0;
@@ -4040,6 +4043,47 @@ export class ERPStore {
     return `${periodStr}/${String(seq).padStart(2, "0")}`;
   }
 
+  getCanonicalAccountDefinition(code: string, preferredName?: string) {
+    const normalized = String(code || "").trim();
+    const current = (this.state.accounts || []).find((account) => String(account.code) === normalized && account.name_ar && !String(account.name_ar).includes("حساب محاسبي"));
+    if (current) return { code: normalized, name_ar: current.name_ar, type: current.type, level: current.level || 4, currency: current.currency || "EGP" };
+    const oracle = ORACLE_MIGRATION_ACCOUNTS.find((account: any) => String(account.code) === normalized);
+    if (oracle) return { code: normalized, name_ar: oracle.name_ar, type: oracle.type, level: oracle.level || 4, currency: oracle.currency || "EGP" };
+    const known: Record<string, {name_ar:string,type:Account["type"]}> = {
+      "101000": {name_ar:"الخزائن والنقدية الرئيسية",type:"asset"}, "101001": {name_ar:"خزائن ونقدية فرع جوبا",type:"asset"},
+      "102000": {name_ar:"البنوك والحسابات المصرفية",type:"asset"}, "103000": {name_ar:"المخزون",type:"asset"},
+      "201000": {name_ar:"حسابات الموردين",type:"liability"}, "201100": {name_ar:"تأمينات مستأجري المحلات",type:"liability"},
+      "201200": {name_ar:"دفعات مقدمة من المستأجرين",type:"liability"}, "202000": {name_ar:"ضرائب مستحقة",type:"liability"},
+      "301000": {name_ar:"حساب التمويل ورأس المال",type:"equity"}, "401000": {name_ar:"إيرادات المبيعات",type:"revenue"},
+      "502000": {name_ar:"رواتب وأجور الموظفين",type:"expense"}, "503000": {name_ar:"إيجارات الفروع",type:"expense"},
+      "504000": {name_ar:"الكهرباء والمياه والطاقة",type:"expense"}, "505000": {name_ar:"التسويق والإعلانات",type:"expense"},
+      "506000": {name_ar:"الهدر والمفقودات",type:"expense"}, "600000": {name_ar:"مصروفات تشغيلية متنوعة",type:"expense"},
+    };
+    const fallback = known[normalized] || {name_ar: preferredName || `حساب ${normalized}`, type: normalized.startsWith("4") ? "revenue" : normalized.startsWith("5") || normalized.startsWith("6") ? "expense" : normalized.startsWith("2") ? "liability" : normalized.startsWith("3") ? "equity" : "asset"};
+    return { code: normalized, name_ar: fallback.name_ar, type: fallback.type, level: normalized.length >= 7 ? 4 : 3, currency: "EGP" };
+  }
+
+  ensureJournalAccounts(lines: any[], defaultCurrency = "EGP") {
+    if (!Array.isArray(this.state.accounts)) this.state.accounts = [];
+    (lines || []).forEach((line: any) => {
+      const code = String(line?.account_code || "").trim();
+      if (!code) return;
+      const canonical = this.getCanonicalAccountDefinition(code, line?.account_name || line?.description);
+      let account = this.state.accounts.find((item: any) => String(item.code) === code);
+      if (!account) {
+        account = {code:canonical.code,name_ar:canonical.name_ar,type:canonical.type,level:canonical.level,balance:0,initial_balance:0,status:"active",currency:canonical.currency || defaultCurrency,system_binding:"none"};
+        this.state.accounts.push(account);
+      } else if (!account.name_ar || String(account.name_ar).includes("حساب محاسبي")) {
+        account.name_ar = canonical.name_ar;
+      }
+      account.type = account.type || canonical.type;
+      account.level = account.level || canonical.level;
+      account.currency = account.currency || canonical.currency || defaultCurrency;
+      line.account_code = canonical.code;
+      line.account_name = account.name_ar;
+    });
+  }
+
   addJournalEntry(description, lines, reference, currency = "USD", date, customId) {
     const targetDate = date || /* @__PURE__ */ new Date().toISOString().split("T")[0];
     const check = this.checkCanModifyJournalEntry(targetDate);
@@ -4050,6 +4094,7 @@ export class ERPStore {
     if (!Array.isArray(lines) || lines.length < 2) {
       throw new Error("A journal entry requires at least two lines");
     }
+    this.ensureJournalAccounts(lines, currency || "EGP");
     for (const line of lines) {
       const debit = Number(line?.debit ?? 0);
       const credit = Number(line?.credit ?? 0);
