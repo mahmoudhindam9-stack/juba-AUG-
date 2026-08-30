@@ -1,0 +1,233 @@
+name: External order and cashier shift automation
+on:
+  push:
+    branches: [fix/external-order-currency-tracking]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply application changes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, subprocess
+
+          # Restore the accidentally truncated TableOrderModal from a known-good commit,
+          # then remove only the duplicate object key that broke typecheck.
+          restored = subprocess.check_output([
+              'git','show','885937b0ede71aed380285f94484f4ac38fa9810:src/components/TableOrderModal.tsx'
+          ], text=True)
+          restored = restored.replace('              selectedAdditions: c.selectedAdditions || [],\n              selectedAdditions: c.selectedAdditions || [],\n',
+                                      '              selectedAdditions: c.selectedAdditions || [],\n')
+          Path('src/components/TableOrderModal.tsx').write_text(restored, encoding='utf-8')
+
+          # Fix two pre-existing typecheck blockers.
+          p = Path('src/shared/hooks/useTableOrders.ts')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('    return tableOrdersStore.subscribe(() => {\n      setOrders([...tableOrdersStore.getAllOrders()]);\n    });',
+                        '    const unsubscribe = tableOrdersStore.subscribe(() => {\n      setOrders([...tableOrdersStore.getAllOrders()]);\n    });\n    return () => unsubscribe();')
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('src/shared/services/translationService.ts')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false)',
+                        'document.createTreeWalker(el, NodeFilter.SHOW_TEXT)')
+          p.write_text(s, encoding='utf-8')
+
+          # Cashier: auto-fill transfer amount from shift sales when opening the dialog.
+          p = Path('src/routes/cashier-treasury.tsx')
+          s = p.read_text(encoding='utf-8')
+          old = 'onClick={() => setTransferDialogOpen(true)}'
+          new = 'onClick={() => { setTransferAmount(Number(operationalSalesStats.totalSalesAmount || 0)); setTransferDialogOpen(true); }}'
+          if old in s and new not in s:
+              s = s.replace(old, new, 1)
+          marker = '  // Operational Sales Synchronization Stats\n'
+          if 'const shiftSalesAmount' not in s and marker in s:
+              block = '  const shiftSalesAmount = Number(operationalSalesStats?.totalSalesAmount || 0);\n\n'
+              s = s.replace(marker, block + marker, 1)
+          # Add an explicit helper directly beside the amount field if present.
+          amount_label = 'التحويل / الإيداع"
+'
+          if 'ملء من إجمالي مبيعات الشيفت' not in s and 'transferAmount' in s:
+              pattern = r'(<Input[\s\S]*?value=\{transferAmount\}[\s\S]*?onChange=\{[^}]*\}\s*/>)'
+              m = re.search(pattern, s)
+              if m:
+                  helper = m.group(1) + '\n              <button type="button" onClick={() => setTransferAmount(shiftSalesAmount)} className="text-[11px] font-bold text-purple-700 underline underline-offset-2 mt-1">ملء من إجمالي مبيعات الشيفت: {shiftSalesAmount.toLocaleString()} </button>'
+                  s = s[:m.start()] + helper + s[m.end():]
+          p.write_text(s, encoding='utf-8')
+
+          # Add reusable customer tracking UI.
+          tracker = r'''import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { Clock3, CheckCircle2, ChefHat, ReceiptText, XCircle, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+type TrackerOrder = {
+  id: string;
+  order_number?: string | number;
+  status: string;
+  total: number;
+  payment_currency?: string | null;
+  payment_exchange_rate?: number | null;
+};
+
+const STATUS = {
+  pending_captain: { ar: "بانتظار الكابتن", icon: Clock3 },
+  STATUS_PENDING_CAPTAIN: { ar: "بانتظار الكابتن", icon: Clock3 },
+  sent_to_cashier: { ar: "تم اعتماد الطلب — بانتظار الكاشير", icon: ReceiptText },
+  preparing: { ar: "جاري التجهيز", icon: ChefHat },
+  ready: { ar: "الطلب جاهز", icon: CheckCircle2 },
+  completed: { ar: "تم إنهاء الطلب", icon: CheckCircle2 },
+  cancelled: { ar: "تم إلغاء الطلب", icon: XCircle },
+};
+
+export function CustomerOrderTracker({ token, onClose }: { token: string; onClose?: () => void }) {
+  const [order, setOrder] = useState<TrackerOrder | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const { data, error: dbError } = await supabase
+        .from("orders")
+        .select("id,order_number,status,total,payment_currency,payment_exchange_rate")
+        .eq("customer_tracking_token", token)
+        .maybeSingle();
+      if (!alive) return;
+      setLoading(false);
+      if (dbError) { setError(dbError.message); return; }
+      setOrder(data as TrackerOrder | null);
+    };
+    load();
+    const channel = supabase
+      .channel(`customer-order-${token}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `customer_tracking_token=eq.${token}` }, (payload) => {
+        if (alive) setOrder(payload.new as TrackerOrder);
+      })
+      .subscribe();
+    return () => { alive = false; supabase.removeChannel(channel); };
+  }, [token]);
+
+  if (loading) return <div className="fixed inset-0 z-[90] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center"><div className="bg-white rounded-3xl p-7 font-bold">جاري تحميل حالة الطلب...</div></div>;
+  if (error || !order) return <div className="fixed inset-0 z-[90] bg-slate-950/60 flex items-center justify-center p-4"><div className="bg-white rounded-3xl p-7 max-w-sm w-full text-center"><div className="font-black text-lg">تعذر العثور على الطلب</div><p className="text-sm text-slate-500 mt-2">تحقق من الرابط وحاول مرة أخرى.</p><Button className="mt-5 w-full" onClick={onClose}>إغلاق</Button></div></div>;
+
+  const meta = STATUS[order.status as keyof typeof STATUS] || { ar: "جاري معالجة الطلب", icon: RefreshCw };
+  const Icon = meta.icon;
+  const amount = Number(order.total || 0);
+  return <div className="fixed inset-0 z-[90] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4" dir="rtl">
+    <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200">
+      <div className="flex items-center gap-3"><div className="w-11 h-11 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center"><Icon size={23}/></div><div><div className="font-black text-lg">متابعة طلبي</div><div className="text-xs text-slate-500">رقم الطلب: {order.order_number || order.id}</div></div></div>
+      <div className="mt-6 rounded-2xl bg-slate-50 border border-slate-200 p-5 text-center"><div className="text-sm font-bold text-slate-500">الحالة الحالية</div><div className="text-xl font-black text-slate-900 mt-1">{meta.ar}</div><div className="text-sm font-black text-indigo-600 mt-3">{amount.toLocaleString()} {order.payment_currency || "EGP"}</div>{order.payment_exchange_rate ? <div className="text-[11px] text-slate-500 mt-1">معامل التحويل: {order.payment_exchange_rate}</div> : null}</div>
+      <div className="mt-5 space-y-2 text-xs font-bold text-slate-600"><div>✓ تم استلام طلبك في النظام</div><div>✓ يتم تحديث الحالة تلقائيًا بدون إعادة تحميل الصفحة</div></div>
+      <Button className="w-full mt-6" onClick={onClose}>إغلاق</Button>
+    </div>
+  </div>;
+}
+'''
+          Path('src/components/CustomerOrderTracker.tsx').write_text(tracker, encoding='utf-8')
+
+          # Add self-order control panel for Captain.
+          captain_panel = r'''import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Coins, Send, RefreshCw } from "lucide-react";
+
+export function CaptainSelfOrderPanel() {
+  const queryClient = useQueryClient();
+  const [currency, setCurrency] = useState<Record<string,string>>({});
+  const [rate, setRate] = useState<Record<string,string>>({});
+  const ordersQuery = useQuery({
+    queryKey: ["captain-self-orders"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("orders").select("id,order_number,table_id,total,status,items,created_at,payment_currency,payment_exchange_rate,customer_tracking_token").in("status", ["pending_captain","STATUS_PENDING_CAPTAIN"]).order("created_at", { ascending: true });
+      if (error) throw error;
+      return data || [];
+    }, refetchInterval: 3000,
+  });
+
+  useEffect(() => {
+    const ch = supabase.channel("captain-external-orders")
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => queryClient.invalidateQueries({ queryKey: ["captain-self-orders"] }))
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [queryClient]);
+
+  const orders = ordersQuery.data || [];
+  const updateOrder = async (order:any) => {
+    const payCurrency = currency[order.id] || order.payment_currency || "EGP";
+    const exchange = Number(rate[order.id] || order.payment_exchange_rate || 1);
+    const fields = { payment_currency: payCurrency, payment_exchange_rate: exchange, payment_amount: Number(order.total || 0) * (payCurrency === "EGP" ? 1 : exchange), status: "sent_to_cashier" };
+    const { error } = await supabase.from("orders").update(fields).eq("id", order.id);
+    if (!error) queryClient.invalidateQueries({ queryKey: ["captain-self-orders"] });
+  };
+
+  if (orders.length === 0) return null;
+  return <section className="max-w-7xl mx-auto w-full px-4 mt-5" dir="rtl"><div className="rounded-3xl border border-indigo-200 bg-indigo-50/70 p-5 shadow-sm"><div className="flex items-center justify-between gap-3 mb-4"><div><div className="font-black text-lg text-indigo-950">طلبات العملاء عبر QR</div><div className="text-xs text-indigo-700 mt-1">اختر عملة الدفع ومعامل التحويل ثم أرسل الطلب للكاشير بنفس order.id</div></div><Badge className="bg-indigo-600">{orders.length} طلب</Badge></div><div className="space-y-3">{orders.map((order:any) => { const cur = currency[order.id] || order.payment_currency || "EGP"; return <div key={order.id} className="bg-white rounded-2xl border border-indigo-100 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><div className="font-black">طلب #{order.order_number || order.id}</div><div className="text-xs text-slate-500 mt-1">طاولة {String(order.table_id || "").replace("tbl-", "") || "عام"} · {Number(order.total || 0).toLocaleString()} EGP</div></div><div className="flex items-center gap-2"><select value={cur} onChange={(e)=>setCurrency(s=>({...s,[order.id]:e.target.value}))} className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-xs font-bold"><option value="EGP">EGP</option><option value="USD">USD</option><option value="SSP">SSP</option></select><Input type="number" min="0" step="0.0001" value={rate[order.id] ?? order.payment_exchange_rate ?? 1} onChange={(e)=>setRate(s=>({...s,[order.id]:e.target.value}))} className="w-28 h-9 text-center text-xs font-bold" placeholder="المعامل"/><Button onClick={()=>updateOrder(order)} className="h-9 font-bold gap-1"><Send size={14}/> للكاشير</Button></div></div></div>})}</div></div></section>;
+}
+'''
+          Path('src/components/CaptainSelfOrderPanel.tsx').write_text(captain_panel, encoding='utf-8')
+
+          # Inject components into routes with minimal edits.
+          p = Path('src/routes/menu.tsx'); s = p.read_text(encoding='utf-8')
+          if 'CustomerOrderTracker' not in s:
+              s = s.replace('import { supabase } from "@/integrations/supabase/client";\n', 'import { supabase } from "@/integrations/supabase/client";\nimport { CustomerOrderTracker } from "@/components/CustomerOrderTracker";\n', 1)
+          if 'const [trackingToken' not in s:
+              s = s.replace('  const [isCartOpen, setIsCartOpen] = useState(false);\n', '  const [isCartOpen, setIsCartOpen] = useState(false);\n  const [trackingToken, setTrackingToken] = useState("");\n', 1)
+          # Add token to payload and DB upsert.
+          s = s.replace('      created_at: new Date().toISOString(),\n', '      created_at: new Date().toISOString(),\n      customer_tracking_token: crypto.randomUUID(),\n      payment_currency: "EGP",\n      payment_exchange_rate: 1,\n      payment_amount: totalAmount,\n', 1)
+          s = s.replace('      created_at: orderPayload.created_at,\n', '      created_at: orderPayload.created_at,\n      customer_tracking_token: orderPayload.customer_tracking_token,\n      payment_currency: orderPayload.payment_currency,\n      payment_exchange_rate: orderPayload.payment_exchange_rate,\n      payment_amount: orderPayload.payment_amount,\n', 1)
+          s = s.replace('        setCart([]);\n        setIsCartOpen(false);\n', '        setTrackingToken(orderPayload.customer_tracking_token);\n        setCart([]);\n        setIsCartOpen(false);\n', 1)
+          # Insert tracker near root closing div.
+          if '<CustomerOrderTracker token={trackingToken}' not in s:
+              idx = s.rfind('    </div>\n  );\n}')
+              if idx >= 0:
+                  s = s[:idx] + '      {trackingToken && <CustomerOrderTracker token={trackingToken} onClose={() => setTrackingToken("")} />}\n' + s[idx:]
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('src/routes/captain.tsx'); s = p.read_text(encoding='utf-8')
+          if 'CaptainSelfOrderPanel' not in s:
+              s = s.replace('import { useSyncExternalStore } from "react";\n', 'import { useSyncExternalStore } from "react";\nimport { CaptainSelfOrderPanel } from "@/components/CaptainSelfOrderPanel";\n', 1)
+              needle = '      <main className="flex-1 max-w-7xl mx-auto w-full p-4 overflow-auto">'
+              s = s.replace(needle, '      <CaptainSelfOrderPanel />\n\n' + needle, 1)
+          p.write_text(s, encoding='utf-8')
+
+          # Add the required DB fields as a migration; all optional and backward compatible.
+          mig = Path('supabase/migrations/20260830000000_external_order_payment_tracking.sql')
+          if not mig.exists():
+              mig.write_text('''alter table public.orders add column if not exists customer_tracking_token text;\nalter table public.orders add column if not exists pricing_currency text;\nalter table public.orders add column if not exists payment_currency text;\nalter table public.orders add column if not exists payment_exchange_rate numeric;\nalter table public.orders add column if not exists payment_amount numeric;\ncreate unique index if not exists orders_customer_tracking_token_idx on public.orders(customer_tracking_token) where customer_tracking_token is not null;\n''', encoding='utf-8')
+          PY
+      - name: Verify targeted source
+        run: |
+          test -s src/components/CustomerOrderTracker.tsx
+          test -s src/components/CaptainSelfOrderPanel.tsx
+          grep -q 'customer_tracking_token' src/routes/menu.tsx
+          grep -q 'CaptainSelfOrderPanel' src/routes/captain.tsx
+          grep -q 'ملء من إجمالي مبيعات الشيفت' src/routes/cashier-treasury.tsx
+      - name: Build
+        run: |
+          npm ci
+          npm run typecheck
+          npm run build
+      - name: Commit and cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/CustomerOrderTracker.tsx src/components/CaptainSelfOrderPanel.tsx src/components/TableOrderModal.tsx src/routes/menu.tsx src/routes/captain.tsx src/routes/cashier-treasury.tsx src/shared/hooks/useTableOrders.ts src/shared/services/translationService.ts supabase/migrations/20260830000000_external_order_payment_tracking.sql .github/workflows/external-order-and-cashier-shift.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: complete external order currency flow and cashier shift auto-fill"
+          git push
+          git rm -f .github/workflows/external-order-and-cashier-shift.yml
+          git commit -m "chore: remove one-time external order migration workflow"
+          git push
