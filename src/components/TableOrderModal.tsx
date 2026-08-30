@@ -230,6 +230,7 @@ export function TableOrderModal({
               selectedAdditions: c.selectedAdditions || [],
               selectedAdditions: c.selectedAdditions || [],
               selectedAdditions: c.selectedAdditions || [],
+              selectedAdditions: c.selectedAdditions || [],
               requires_oven: c.item.requires_oven || false,
             })),
           })
