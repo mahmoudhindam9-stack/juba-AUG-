@@ -10,6 +10,10 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "verify:financial": "node scripts/verify-financial-sync.cjs",
+    "verify:journal": "node scripts/verify-journal-numbering-and-account-report.cjs",
+    "verify:cleanup": "node scripts/verify-cleanup.cjs",
     "format": "prettier --write .",
     "test": "vitest"
   },

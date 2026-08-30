@@ -1,18 +1,19 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import {
-  Grid3X3,
-  Wallet,
-  UtensilsCrossed,
-  ClipboardList,
-  Receipt,
-  Utensils,
-  Package,
   ArrowUpRight,
-  Store,
-  Sparkles,
+  ClipboardList,
   Clock,
+  Grid3X3,
+  Package,
+  Receipt,
+  Sparkles,
+  Store,
+  Utensils,
+  UtensilsCrossed,
+  Wallet,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { erpStore } from "@/shared/services/erpStore";
 
@@ -21,10 +22,35 @@ export const Route = createFileRoute("/admin/restaurant")({
   component: RestaurantHubPage,
 });
 
+type RestaurantCounts = {
+  menu: number;
+  inventory: number;
+  orders: number;
+};
+
+function getCounts(): RestaurantCounts {
+  const state = erpStore.getState() as typeof erpStore.state & {
+    menu?: unknown[];
+    inventoryItems?: unknown[];
+    orders?: unknown[];
+  };
+
+  return {
+    menu: state.menu?.length ?? 0,
+    inventory: state.inventoryItems?.length ?? 0,
+    orders: state.orders?.length ?? 0,
+  };
+}
+
 function RestaurantHubPage() {
-  const menuCount = (erpStore.getState() as any).menu?.length || 0;
-  const inventoryCount = (erpStore.getState() as any).inventoryItems?.length || 0;
-  const ordersCount = (erpStore.getState() as any).orders?.length || 0;
+  const [counts, setCounts] = useState<RestaurantCounts>(getCounts);
+
+  useEffect(() => {
+    const unsubscribe = erpStore.subscribe(() => {
+      setCounts(getCounts());
+    });
+    return unsubscribe;
+  }, []);
 
   const modules = [
     {
@@ -70,7 +96,7 @@ function RestaurantHubPage() {
       icon: Receipt,
       color: "from-cyan-500/20 to-blue-500/20 text-cyan-600 dark:text-cyan-400",
       badge: "متابعة",
-      stats: `${ordersCount} طلب مسجل`,
+      stats: `${counts.orders} طلب مسجل`,
     },
     {
       title: "إدارة المنيو والصور والأصناف",
@@ -79,7 +105,7 @@ function RestaurantHubPage() {
       icon: Utensils,
       color: "from-rose-500/20 to-red-500/20 text-rose-600 dark:text-rose-400",
       badge: "القائمة",
-      stats: `${menuCount} صنف في المنيو`,
+      stats: `${counts.menu} صنف في المنيو`,
     },
     {
       title: "المخزن والمستودع",
@@ -88,82 +114,84 @@ function RestaurantHubPage() {
       icon: Package,
       color: "from-amber-600/20 to-yellow-600/20 text-amber-700 dark:text-amber-400",
       badge: "المخزون",
-      stats: `${inventoryCount} صنف مخزني`,
+      stats: `${counts.inventory} صنف مخزني`,
     },
   ];
 
   return (
-    <div className="space-y-6 w-full px-2 lg:px-6 mx-auto pb-12" dir="rtl">
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-l from-slate-900 via-slate-800 to-indigo-950 text-white p-6 sm:p-8 shadow-xl border border-slate-800">
-        <div className="absolute -left-10 -bottom-10 w-64 h-64 bg-primary/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <div className="mx-auto max-w-7xl space-y-6 pb-12" dir="rtl">
+      <section className="relative overflow-hidden rounded-3xl border border-slate-800 bg-gradient-to-l from-slate-900 via-slate-800 to-indigo-950 p-6 text-white shadow-xl sm:p-8">
+        <div className="pointer-events-none absolute -bottom-10 -left-10 h-64 w-64 rounded-full bg-primary/20 blur-3xl" />
+        <div className="relative z-10 flex flex-col justify-between gap-6 md:flex-row md:items-center">
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-amber-300">
-              <Sparkles size={14} />
-              <span>نظام إدارة المطاعم المتقدم - Standalone Hub</span>
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-amber-300 backdrop-blur-md">
+              <Sparkles size={14} aria-hidden="true" />
+              <span>نظام إدارة المطاعم المتقدم</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight">إدارة تشغيل المطعم بالكامل</h1>
-            <p className="text-slate-300 text-sm max-w-2xl leading-relaxed">
-              منصة مركزية متكاملة لجميع عمليات المطعم الكاشير، نقاط البيع، المطبخ، المنيو والمخزن.
-              انقر على أي قسم لفتحه مباشرة.
+            <h1 className="text-2xl font-black tracking-tight sm:text-3xl">إدارة تشغيل المطعم بالكامل</h1>
+            <p className="max-w-2xl text-sm leading-relaxed text-slate-300">
+              منصة مركزية متكاملة للكاشير، نقاط البيع، المطبخ، المنيو والمخزن. اختر القسم الذي تريد فتحه مباشرة.
             </p>
           </div>
-          <div className="flex items-center gap-3 shrink-0">
-            <Link to="/pos">
-              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-black gap-2 shadow-lg cursor-pointer">
-                <Grid3X3 size={18} />
-                فتح نقطة البيع الآن
-              </Button>
-            </Link>
-          </div>
+          <Link to="/pos" className="shrink-0">
+            <Button className="w-full gap-2 bg-primary font-black text-primary-foreground shadow-lg hover:bg-primary/90 sm:w-auto">
+              <Grid3X3 size={18} aria-hidden="true" />
+              فتح نقطة البيع الآن
+            </Button>
+          </Link>
         </div>
-      </div>
+      </section>
 
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-black text-foreground flex items-center gap-2">
-            <Store size={20} className="text-primary" />
+      <section aria-labelledby="restaurant-modules-heading">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <h2 id="restaurant-modules-heading" className="flex items-center gap-2 text-lg font-black text-foreground">
+            <Store size={20} className="text-primary" aria-hidden="true" />
             أقسام نظام تشغيل المطعم
           </h2>
-          <span className="text-xs text-muted-foreground font-bold">{modules.length} أقسام أساسية</span>
+          <span className="text-xs font-bold text-muted-foreground">{modules.length} أقسام أساسية</span>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {modules.map((mod) => (
-            <Link key={mod.to} to={mod.to} className="group">
-              <Card className="h-full border border-border/80 bg-card hover:bg-accent/30 hover:border-primary/50 transition-all duration-300 shadow-sm hover:shadow-xl rounded-2xl overflow-hidden flex flex-col">
-                <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0">
-                  <div className={`p-3 rounded-2xl bg-gradient-to-br ${mod.color} shadow-inner`}>
-                    <mod.icon size={24} />
-                  </div>
-                  <span className="text-[11px] font-bold bg-muted text-muted-foreground px-2.5 py-1 rounded-full border border-border/60">
-                    {mod.badge}
-                  </span>
-                </CardHeader>
-                <CardContent className="flex-1 flex flex-col justify-between space-y-4 pt-1">
-                  <div className="space-y-1.5">
-                    <h3 className="font-black text-lg text-foreground group-hover:text-primary transition flex items-center justify-between">
-                      <span>{mod.title}</span>
-                      <ArrowUpRight
-                        size={18}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 text-primary"
-                      />
-                    </h3>
-                    <CardDescription className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
-                      {mod.description}
-                    </CardDescription>
-                  </div>
-                  <div className="pt-3 border-t border-border/60 flex items-center justify-between text-xs font-bold text-muted-foreground">
-                    <span className="inline-flex items-center gap-1.5 text-primary font-black">
-                      <Clock size={13} />
-                      {mod.stats}
+
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+          {modules.map((module) => {
+            const Icon = module.icon;
+            return (
+              <Link key={module.to} to={module.to} className="group rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2">
+                <Card className="flex h-full flex-col overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm transition-all duration-300 group-hover:border-primary/50 group-hover:bg-accent/30 group-hover:shadow-xl">
+                  <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
+                    <div className={`rounded-2xl bg-gradient-to-br p-3 shadow-inner ${module.color}`}>
+                      <Icon size={24} aria-hidden="true" />
+                    </div>
+                    <span className="rounded-full border border-border/60 bg-muted px-2.5 py-1 text-[11px] font-bold text-muted-foreground">
+                      {module.badge}
                     </span>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
+                  </CardHeader>
+                  <CardContent className="flex flex-1 flex-col justify-between space-y-4 pt-1">
+                    <div className="space-y-1.5">
+                      <h3 className="flex items-center justify-between gap-3 text-lg font-black text-foreground transition group-hover:text-primary">
+                        <span>{module.title}</span>
+                        <ArrowUpRight size={18} className="shrink-0 text-primary opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
+                      </h3>
+                      <CardDescription className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                        {module.description}
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center justify-between border-t border-border/60 pt-3 text-xs font-bold text-muted-foreground">
+                      <span className="inline-flex items-center gap-1.5 font-black text-primary">
+                        <Clock size={13} aria-hidden="true" />
+                        {module.stats}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-primary">
+                        فتح الواجهة
+                        <ArrowUpRight size={14} aria-hidden="true" />
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })}
         </div>
-      </div>
+      </section>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export function OrderTimer({ createdAt }: { createdAt: string }) {
   const [elapsed, setElapsed] = useState<string>("00:00");
@@ -30,8 +30,13 @@ export function OrderTimer({ createdAt }: { createdAt: string }) {
   }, [createdAt]);
 
   return (
-    <div className="flex items-center gap-1.5 bg-slate-900/10 px-2 py-0.5 rounded text-sm font-bold font-mono text-slate-700">
-      <span className="relative flex h-2.5 w-2.5">
+    <div
+      className="flex items-center gap-1.5 bg-slate-900/10 px-2 py-0.5 rounded text-sm font-bold font-mono text-slate-700"
+      role="timer"
+      aria-label={`وقت الطلب المنقضي: ${elapsed}`}
+      aria-live="off"
+    >
+      <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
         <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
       </span>
