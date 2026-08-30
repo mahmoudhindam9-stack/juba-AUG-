@@ -1,13 +1,6 @@
 [build]
   command = "npm run build"
-  publish = "dist"
+  publish = "dist/client"
 
 [build.environment]
   NODE_VERSION = "22"
-
-# TanStack Start prerenders the root page; this fallback also keeps
-# client-side route navigation working when a nested route is requested directly.
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
