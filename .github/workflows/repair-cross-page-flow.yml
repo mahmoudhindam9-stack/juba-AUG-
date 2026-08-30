@@ -1,0 +1,148 @@
+name: Repair Captain Cashier Oven Receipt Flow
+
+on:
+  push:
+    branches: [cleanup/professional-structure]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: ${{ !contains(github.event.head_commit.message, '[auto-crosspage-fix]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch cross-page restaurant flow
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def patch(path, replacements):
+              p = Path(path)
+              s = p.read_text(encoding='utf-8')
+              changed = False
+              for old, new, label in replacements:
+                  if old in s and new not in s:
+                      s = s.replace(old, new, 1)
+                      print('patched:', label)
+                      changed = True
+                  else:
+                      print('already patched/missing:', label)
+              if changed:
+                  p.write_text(s, encoding='utf-8')
+              return changed
+
+          patch('src/routes/menu.tsx', [
+              (
+                  '    const orderPayload = {\n'
+                  '      id: "ord_" + Date.now() + "_" + Math.floor(Math.random() * 1000),',
+                  '    const orderPayload = {\n'
+                  '      id: "ord_" + Date.now() + "_" + Math.floor(Math.random() * 1000),',
+                  '      # no-op anchor; database persistence is inserted below',
+              ),
+              (
+                  '      created_at: new Date().toISOString(),\n'
+                  '    };\n\n'
+                  '    // Broadcast the order to the Captain via Supabase Realtime Channels',
+                  '      created_at: new Date().toISOString(),\n'
+                  '    };\n\n'
+                  '    // Persist the same order so Captain, Cashier and Oven share one durable identity.\n'
+                  '    try {\n'
+                  '      const { error } = await supabase.from("orders").upsert({\n'
+                  '        id: orderPayload.id,\n'
+                  '        table_id: orderPayload.table_id,\n'
+                  '        items: orderPayload.items,\n'
+                  '        order_type: orderPayload.order_type,\n'
+                  '        notes: orderPayload.notes,\n'
+                  '        subtotal: Number(orderPayload.subtotal || 0),\n'
+                  '        tax: Number(orderPayload.tax || 0),\n'
+                  '        total: Number(orderPayload.total || 0),\n'
+                  '        status: "pending_captain",\n'
+                  '        created_at: orderPayload.created_at,\n'
+                  '      }, { onConflict: "id" });\n'
+                  '      if (error) console.warn("Self-order database bridge warning:", error);\n'
+                  '    } catch (error) {\n'
+                  '      console.warn("Self-order database bridge failed; Realtime fallback remains active:", error);\n'
+                  '    }\n\n'
+                  '    // Broadcast the order to the Captain via Supabase Realtime Channels',
+                  'persist self-order before captain broadcast',
+              ),
+          ])
+
+          patch('src/routes/captain.tsx', [
+              (
+                  '  const handleAcceptOrder = async (order: any) => {\n'
+                  '    // We update status in supabase so it moves to kitchen / cashier depending on flow\n'
+                  '    // Or we can import it into local tableOrdersStore if Cashier only reads from there\n'
+                  '    // If cashier reads from tableOrdersStore, we inject it:',
+                  '  const handleAcceptOrder = async (order: any) => {\n'
+                  '    // Persist the captain acceptance in Supabase so the cashier sees the same order across devices.\n'
+                  '    if (order?.id) {\n'
+                  '      const { error } = await supabase\n'
+                  '        .from("orders")\n'
+                  '        .update({ status: "sent_to_cashier" })\n'
+                  '        .eq("id", order.id);\n'
+                  '      if (error) {\n'
+                  '        toast({ title: "تعذر تثبيت الطلب للكاشير", description: error.message, variant: "destructive" });\n'
+                  '        return;\n'
+                  '      }\n'
+                  '    }\n\n'
+                  '    // Keep the same operational object in the local bridge for same-browser consumers.',
+                  'persist captain acceptance for cashier',
+              ),
+              (
+                  '      kitchenOrderId: order.kitchenOrderId,\n'
+                  '    });',
+                  '      kitchenOrderId: order.kitchenOrderId,\n'
+                  '      sentToKitchen: Boolean(order.sentToKitchen),\n'
+                  '      kitchenCompleted: Boolean(order.kitchenCompleted),\n'
+                  '    });',
+                  'preserve kitchen state in captain handoff',
+              ),
+          ])
+
+          patch('src/routes/cashier-treasury.tsx', [
+              (
+                  '  const ordersQuery = useQuery({\n',
+                  '  const ordersQuery = useQuery({\n',
+                  'cashier orders query anchor',
+              ),
+              (
+                  '    enabled: isMounted,\n  });\n\n  const [isSyncing, setIsSyncing] = useState(false);',
+                  '    enabled: isMounted,\n  });\n\n'
+                  '  // Live bridge: Captain updates and self-orders immediately invalidate the cashier order list.\n'
+                  '  useEffect(() => {\n'
+                  '    if (!isMounted) return;\n'
+                  '    const channel = supabase\n'
+                  '      .channel("cashier_orders_bridge")\n'
+                  '      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {\n'
+                  '        queryClient.invalidateQueries({ queryKey: ["cashier-treasury", "orders"] });\n'
+                  '      })\n'
+                  '      .on("broadcast", { event: "CAPTAIN_ORDER_TO_CASHIER" }, () => {\n'
+                  '        queryClient.invalidateQueries({ queryKey: ["cashier-treasury", "orders"] });\n'
+                  '      })\n'
+                  '      .subscribe();\n\n'
+                  '    return () => {\n'
+                  '      supabase.removeChannel(channel);\n'
+                  '    };\n'
+                  '  }, [isMounted, queryClient]);\n\n'
+                  '  const [isSyncing, setIsSyncing] = useState(false);',
+                  'cashier live order invalidation bridge',
+              ),
+          ])
+
+      - name: Verify build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit repaired flow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/routes/menu.tsx src/routes/captain.tsx src/routes/cashier-treasury.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: restore captain cashier oven receipt flow [auto-crosspage-fix]"
+          git push
