@@ -1,209 +1,674 @@
-import React from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { menuService } from "@/features/menu/services/menuService";
+import { tableOrdersStore, TableCartLine } from "@/shared/services/tableOrdersStore";
+import { supabase } from "@/integrations/supabase/client";
+import { useSettings, translations } from "@/hooks/use-settings";
+import { useToast } from "@/hooks/use-toast";
+import { cleanTableId } from "@/shared/utils/inventoryUtils";
+import {
+  X,
+  Search,
+  Plus,
+  Minus,
+  Trash2,
+  Send,
+  Save,
+  UtensilsCrossed,
+  CheckCircle2,
+  Clock,
+  Package,
+  ChefHat,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { JournalEntry } from "@/shared/services/erpStore";
 
-type JournalLine = {
-  account_code: string;
-  debit?: number;
-  credit?: number;
-  currency?: string;
-  rate?: number;
-  description?: string;
+type Table = {
+  id: string;
+  number: number;
+  name: string | null;
+  capacity: number;
+  status: string;
 };
 
-type Account = { code: string; name_ar?: string };
+const TAX_RATE = 0.14;
 
-type Props = {
-  entry: JournalEntry;
-  accounts: Account[];
-  formatCurrency: (value: number, currency?: string) => string;
-  getLineBaseValue: (amount: number | string, rate: number | string, currency?: string) => number;
-  totalBaseDebit: number;
-  totalBaseCredit: number;
-  isBalanced: boolean;
-};
+const additionsList = [
+  { id: "cheese", label_ar: "جبنة إضافية", label_en: "Extra Cheese", price: 15 },
+  { id: "fries", label_ar: "بطاطس مقلية", label_en: "Fries", price: 25 },
+  { id: "sauce", label_ar: "صوص حار", label_en: "Spicy Sauce", price: 5 },
+  { id: "water", label_ar: "مياه معدنية", label_en: "Mineral Water", price: 10 },
+];
 
-const currencyName = (currency: string) => {
-  const names: Record<string, string> = {
-    USD: "الدولار الأمريكي",
-    SSP: "الجنيه الجنوب سوداني",
-    EGP: "الجنيه المصري",
+export function TableOrderModal({
+  table,
+  isOpen,
+  onClose,
+  onOrderSent,
+}: {
+  table: Table;
+  isOpen: boolean;
+  onClose: () => void;
+  onOrderSent?: () => void;
+}) {
+  const { lang, currency, formatPrice, exchangeRates } = useSettings();
+  const { toast } = useToast();
+  const t = translations[lang];
+
+  const [search, setSearch] = useState("");
+  const [activeCategory, setActiveCategory] = useState<string>("all");
+  const [cart, setCart] = useState<TableCartLine[]>([]);
+  const [orderNotes, setOrderNotes] = useState("");
+  const [selectedAdditions, setSelectedAdditions] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (isOpen && table) {
+      const existing = tableOrdersStore.getOrderByTableId(table.id);
+      if (existing) {
+        setCart(existing.items || []);
+        setOrderNotes(existing.notes || "");
+        setSelectedAdditions(existing.selectedAdditions || []);
+      } else {
+        setCart([]);
+        setOrderNotes("");
+        setSelectedAdditions([]);
+      }
+    }
+  }, [isOpen, table]);
+
+  const categoriesQuery = useQuery({
+    queryKey: ["menu_categories"],
+    queryFn: () => menuService.getCategories(),
+    enabled: isOpen,
+  });
+
+  const itemsQuery = useQuery({
+    queryKey: ["menu_items"],
+    queryFn: () => menuService.getMenuItems(true),
+    enabled: isOpen,
+  });
+
+  const filteredItems = useMemo(() => {
+    const items = itemsQuery.data ?? [];
+    return items.filter((i) => {
+      const matchCat = activeCategory === "all" || i.category_id === activeCategory;
+      const matchSearch = !search.trim() || i.name_ar.includes(search.trim());
+      return matchCat && matchSearch;
+    });
+  }, [itemsQuery.data, activeCategory, search]);
+
+  const addToCart = (item: any) => {
+    setCart((prev) => {
+      const existing = prev.find((c) => c.item.id === item.id);
+      if (existing) {
+        return prev.map((c) => (c.item.id === item.id ? { ...c, quantity: c.quantity + 1 } : c));
+      }
+      return [...prev, { item, quantity: 1 }];
+    });
   };
-  return names[currency] || currency;
-};
 
-const currencyIcon = (currency: string) => {
-  if (currency === "USD") return "💵";
-  if (currency === "SSP") return "🇸🇸";
-  if (currency === "EGP") return "🇪🇬";
-  return "💱";
-};
+  const updateQuantity = (id: string, delta: number) => {
+    setCart((prev) =>
+      prev
+        .map((c) => {
+          if (c.item.id === id) {
+            const newQty = c.quantity + delta;
+            return newQty > 0 ? { ...c, quantity: newQty } : null;
+          }
+          return c;
+        })
+        .filter((c): c is TableCartLine => c !== null),
+    );
+  };
 
-export function JournalEntryCurrencyGroups({
-  entry,
-  accounts,
-  formatCurrency,
-  getLineBaseValue,
-  totalBaseDebit,
-  totalBaseCredit,
-  isBalanced,
-}: Props) {
-  const lines: JournalLine[] = entry.lines || [];
-  const currencies = Array.from(
-    new Set(lines.map((line) => line.currency || entry.currency || "USD")),
-  ) as string[];
+  const removeFromCart = (id: string) => {
+    setCart((prev) => prev.filter((c) => c.item.id !== id));
+  };
+
+  const updateItemNotes = (id: string, notes: string) => {
+    setCart((prev) => prev.map((c) => (c.item.id === id ? { ...c, notes } : c)));
+  };
+
+  const toggleAddition = (id: string) => {
+    setSelectedAdditions((prev) =>
+      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id],
+    );
+  };
+
+  const additionsTotal = selectedAdditions.reduce((acc, addId) => {
+    const add = additionsList.find((a) => a.id === addId);
+    return acc + (add ? add.price : 0);
+  }, 0);
+
+  const subTotal = cart.reduce((acc, c) => acc + c.item.price * c.quantity, 0) + additionsTotal;
+  const tax = subTotal * TAX_RATE;
+  const total = subTotal + tax;
+  const itemCount = cart.reduce((a, c) => a + c.quantity, 0);
+
+  const handleSaveDraft = () => {
+    if (cart.length === 0) {
+      toast({
+        title: lang === "ar" ? "السلة فارغة" : "Cart Empty",
+        description:
+          lang === "ar" ? "برجاء اختيار صنف واحد على الأقل" : "Please select at least one item",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    tableOrdersStore.saveOrder({
+      table_id: table.id,
+      table_number: table.number,
+      table_name: table.name,
+      items: cart,
+      order_type: "dine_in",
+      notes: orderNotes,
+      selectedAdditions,
+      subtotal: Number(subTotal.toFixed(2)),
+      tax: Number(tax.toFixed(2)),
+      total: Number(total.toFixed(2)),
+      status: "draft",
+    });
+
+    toast({
+      title: lang === "ar" ? "تم حفظ المسودة" : "Draft Saved",
+      description:
+        lang === "ar"
+          ? `تم حفظ طلب طاولة #${table.number} بنجاح`
+          : `Order for table #${table.number} saved as draft`,
+    });
+
+    onClose();
+  };
+
+  const handleSendToKitchen = async () => {
+    if (cart.length === 0) {
+      toast({
+        title: lang === "ar" ? "السلة فارغة" : "Cart Empty",
+        description:
+          lang === "ar"
+            ? "برجاء اختيار صنف واحد على الأقل قبل الإرسال للمطبخ"
+            : "Please select at least one item before sending to kitchen",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const rate = (exchangeRates && exchangeRates[currency]) || 1;
+    const finalSubtotal = currency === "EGP" ? subTotal : subTotal / rate;
+    const finalTax = currency === "EGP" ? tax : tax / rate;
+    const finalTotal = currency === "EGP" ? total : total / rate;
+
+    try {
+      let kitchenOrderId: string | undefined;
+
+      try {
+        const { data, error } = await supabase
+          .from("orders")
+          .insert({
+            subtotal: Number(finalSubtotal.toFixed(2)),
+            tax: Number(finalTax.toFixed(2)),
+            total: Number(finalTotal.toFixed(2)),
+            payment_method: "cash",
+            order_type: "dine_in",
+            table_id: cleanTableId(table.id),
+            status: "pending",
+            notes: orderNotes
+              ? `طاولة #${table.number} - ${orderNotes}${currency && currency !== "EGP" ? ` | العملة: ${currency}` : ""}`
+              : `طاولة #${table.number}${currency && currency !== "EGP" ? ` | العملة: ${currency}` : ""}`,
+            items: cart.map((c) => ({
+              id: c.item.id,
+              menu_item_id: c.item.id,
+              name_ar: c.item.name_ar,
+              price: c.item.price,
+              quantity: c.quantity,
+              notes: c.notes || "",
+              selectedAdditions: c.selectedAdditions || [],
+              requires_oven: c.item.requires_oven || false,
+            })),
+          })
+          .select("id, order_number")
+          .single();
+
+        if (!error && data) {
+          kitchenOrderId = data.id;
+        }
+      } catch (sbErr) {
+        console.warn("Supabase kitchen order insert fallback to local store:", sbErr);
+      }
+
+      tableOrdersStore.saveOrder({
+        table_id: table.id,
+        table_number: table.number,
+        table_name: table.name,
+        items: cart,
+        order_type: "dine_in",
+        notes: orderNotes,
+        selectedAdditions,
+        subtotal: Number(subTotal.toFixed(2)),
+        tax: Number(tax.toFixed(2)),
+        total: Number(total.toFixed(2)),
+        status: "draft",
+        sentToKitchen: true,
+        kitchenOrderId,
+      });
+
+      try {
+        const validUuid = cleanTableId(table.id);
+        if (validUuid) {
+          await supabase.from("tables").update({ status: "occupied" }).eq("id", validUuid);
+        }
+      } catch (tErr) {
+        console.warn("Table status update warning:", tErr);
+      }
+
+      toast({
+        title: lang === "ar" ? "تم الإرسال إلى المطبخ 👨‍🍳" : "Sent to Kitchen 👨‍🍳",
+        description:
+          lang === "ar"
+            ? `تم إرسال طلب طاولة #${table.number} للمطبخ للتجهيز بنجاح.`
+            : `Table #${table.number} order sent to kitchen for preparation.`,
+      });
+
+      onOrderSent?.();
+      onClose();
+    } catch (e: any) {
+      console.error("Failed to send order to kitchen:", e);
+      toast({
+        variant: "destructive",
+        title: lang === "ar" ? "خطأ في إرسال الطلب" : "Send Error",
+        description:
+          e.message ||
+          (lang === "ar" ? "تعذر إرسال الطلب للمطبخ" : "Failed to send order to kitchen"),
+      });
+    }
+  };
+
+  const handleSendToCashier = async () => {
+    if (cart.length === 0) {
+      toast({
+        title: lang === "ar" ? "السلة فارغة" : "Cart Empty",
+        description:
+          lang === "ar"
+            ? "برجاء اختيار صنف واحد على الأقل قبل الإرسال"
+            : "Please select at least one item before sending",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const existingOrder = tableOrdersStore.getOrderByTableId(table.id);
+
+    tableOrdersStore.saveOrder({
+      table_id: table.id,
+      table_number: table.number,
+      table_name: table.name,
+      items: cart,
+      order_type: "dine_in",
+      notes: orderNotes,
+      selectedAdditions,
+      subtotal: Number(subTotal.toFixed(2)),
+      tax: Number(tax.toFixed(2)),
+      total: Number(total.toFixed(2)),
+      status: "sent_to_cashier",
+      sentToKitchen: existingOrder?.sentToKitchen || false,
+      kitchenOrderId: existingOrder?.kitchenOrderId,
+    });
+
+    try {
+      await supabase.from("tables").update({ status: "cleaning" }).eq("id", table.id);
+    } catch (e) {
+      console.error("Failed to update table status:", e);
+    }
+
+    toast({
+      title: lang === "ar" ? "تم الإرسال للكاشير 🚀" : "Sent to Cashier 🚀",
+      description:
+        lang === "ar"
+          ? `تم إرسال طلب طاولة #${table.number} إلى الكاشير، وتحولت الطاولة إلى وضع التنظيف.`
+          : `Table #${table.number} order sent to Cashier and table switched to cleaning mode.`,
+    });
+
+    onOrderSent?.();
+    onClose();
+  };
+
+  if (!isOpen) return null;
 
   return (
-    <div className="p-3 sm:p-4 space-y-4" dir="rtl">
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-muted/20 px-3 py-2">
-        <span className="font-bold text-sm">تفاصيل القيد حسب العملة</span>
-        <Badge variant="outline" className="font-mono">
-          {currencies.length} {currencies.length === 1 ? "عملة" : "عملات"}
-        </Badge>
-        {currencies.map((currency) => (
-          <Badge key={currency} variant="secondary" className="font-mono font-bold">
-            {currencyIcon(currency)} {currency} — {currencyName(currency)}
-          </Badge>
-        ))}
-      </div>
-
-      {currencies.map((currency) => {
-        const currencyLines = lines.filter(
-          (line) => (line.currency || entry.currency || "USD") === currency,
-        );
-        const debit = currencyLines.reduce((sum, line) => sum + (Number(line.debit) || 0), 0);
-        const credit = currencyLines.reduce((sum, line) => sum + (Number(line.credit) || 0), 0);
-        const baseDebit = currencyLines.reduce(
-          (sum, line) =>
-            sum + getLineBaseValue(line.debit || 0, line.rate || 1, currency),
-          0,
-        );
-        const baseCredit = currencyLines.reduce(
-          (sum, line) =>
-            sum + getLineBaseValue(line.credit || 0, line.rate || 1, currency),
-          0,
-        );
-        const currencyBalanced = Math.abs(debit - credit) < 0.000001;
-
-        return (
-          <Card key={currency} className="rounded-2xl border-2 overflow-hidden">
-            <CardHeader className="bg-muted/30 py-3 px-4 border-b">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <CardTitle className="text-sm sm:text-base font-extrabold flex items-center gap-2">
-                  <span className="text-lg">{currencyIcon(currency)}</span>
-                  <span>{currency}</span>
-                  <span className="text-muted-foreground font-medium">— {currencyName(currency)}</span>
-                </CardTitle>
-                <Badge
-                  className={
-                    currencyBalanced
-                      ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                      : "bg-rose-100 text-rose-800 border-rose-300"
-                  }
-                >
-                  {currencyBalanced ? "متوازن بالعملة ✓" : "غير متوازن ⚠️"}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-right border-collapse">
-                  <thead className="bg-muted/20 text-muted-foreground text-xs font-bold border-b">
-                    <tr>
-                      <th className="p-3 pr-4">الحساب</th>
-                      <th className="p-3">رقم الحساب</th>
-                      <th className="p-3">البيان</th>
-                      <th className="p-3 text-center text-emerald-700">مدين ({currency})</th>
-                      <th className="p-3 text-center text-rose-700">دائن ({currency})</th>
-                      <th className="p-3 text-center">سعر الصرف</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {currencyLines.map((line, index) => {
-                      const account = accounts.find((a) => a.code === line.account_code);
-                      const rate = Number(line.rate) || 1;
-                      return (
-                        <tr key={`${line.account_code}-${index}`} className="hover:bg-muted/20">
-                          <td className="p-3 pr-4 font-semibold">{account?.name_ar || line.description || "حساب محاسبي"}</td>
-                          <td className="p-3 font-mono text-xs">{line.account_code}</td>
-                          <td className="p-3 text-xs max-w-xs">{line.description || entry.description || "-"}</td>
-                          <td className="p-3 font-mono font-bold text-center text-emerald-700 bg-emerald-500/5">
-                            {Number(line.debit) > 0 ? formatCurrency(Number(line.debit), currency) : "-"}
-                          </td>
-                          <td className="p-3 font-mono font-bold text-center text-rose-700 bg-rose-500/5">
-                            {Number(line.credit) > 0 ? formatCurrency(Number(line.credit), currency) : "-"}
-                          </td>
-                          <td className="p-3 text-center font-mono text-xs">
-                            <Badge variant="outline" className="font-mono text-[10px]">
-                              {rate === 1 ? "1.000000" : rate.toLocaleString(undefined, { maximumFractionDigits: 6 })}
-                            </Badge>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot className="bg-muted/30 border-t-2">
-                    <tr className="font-bold">
-                      <td colSpan={3} className="p-3 pr-4">
-                        إجمالي {currency} — {currencyName(currency)}
-                      </td>
-                      <td className="p-3 text-center font-mono text-emerald-700 bg-emerald-500/5">
-                        {formatCurrency(debit, currency)}
-                        {currency !== "USD" && (
-                          <span className="block text-[10px] font-normal text-muted-foreground">
-                            المعادل: {formatCurrency(baseDebit, "USD")}
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-3 text-center font-mono text-rose-700 bg-rose-500/5">
-                        {formatCurrency(credit, currency)}
-                        {currency !== "USD" && (
-                          <span className="block text-[10px] font-normal text-muted-foreground">
-                            المعادل: {formatCurrency(baseCredit, "USD")}
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-3 text-center text-xs">
-                        {currencyBalanced ? "✓ متوازن" : formatCurrency(Math.abs(debit - credit), currency)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
-
-      <Card className="rounded-2xl border-primary/30 bg-primary/5 overflow-hidden">
-        <CardContent className="p-4">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-extrabold">إجمالي القيد رقم {entry.reference || entry.id}</span>
-              <Badge variant="outline" className="font-mono">{currencies.join(" • ")}</Badge>
-              <Badge variant="secondary">عملة التطبيق: USD</Badge>
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
+      <div
+        className="bg-background text-foreground w-full max-w-6xl h-[92vh] rounded-3xl border border-border shadow-2xl flex flex-col overflow-hidden"
+        dir={lang === "ar" ? "rtl" : "ltr"}
+        style={{ fontFamily: '"Tajawal", "Cairo", system-ui, sans-serif' }}
+      >
+        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-black shadow">
+              #{table.number}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="rounded-xl bg-background border p-3">
-                <div className="text-xs text-muted-foreground">إجمالي المدين — المعادل بالدولار</div>
-                <div className="font-mono font-black text-lg text-emerald-700">
-                  {formatCurrency(totalBaseDebit, "USD")}
-                </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-black tracking-tight">
+                  {lang === "ar"
+                    ? `طلب أوردر — طاولة #${table.number}`
+                    : `Order Request — Table #${table.number}`}
+                </h2>
+                {table.name && <span className="text-xs text-slate-400">({table.name})</span>}
               </div>
-              <div className="rounded-xl bg-background border p-3">
-                <div className="text-xs text-muted-foreground">إجمالي الدائن — المعادل بالدولار</div>
-                <div className="font-mono font-black text-lg text-rose-700">
-                  {formatCurrency(totalBaseCredit, "USD")}
-                </div>
-              </div>
-            </div>
-            <div className="text-xs font-semibold">
-              {isBalanced ? "✓ القيد متزن بعد تحويل العملات إلى عملة التطبيق (USD)." : "⚠️ يوجد فرق في المعادل العام بالدولار ويحتاج إلى مراجعة/تسوية."}
+              <p className="text-xs text-slate-400 mt-0.5">
+                {lang === "ar"
+                  ? "اختر الأصناف والإضافات، ثم اضغط إرسال إلى الكاشير"
+                  : "Select items, additions, then send to cashier"}
+              </p>
             </div>
           </div>
-        </CardContent>
-      </Card>
+
+          <div className="flex items-center gap-2">
+            <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 px-3 py-1 font-bold text-xs">
+              <Clock size={12} className="inline ml-1" />
+              {lang === "ar" ? "قيد التجهيز للطاولة" : "Table Order in progress"}
+            </Badge>
+            <button
+              onClick={onClose}
+              className="w-9 h-9 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300 transition"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
+          <div className="flex-1 flex flex-col border-b md:border-b-0 md:border-l border-border bg-slate-50/50 min-w-0 overflow-hidden min-h-0">
+            <div className="p-3 bg-white border-b border-border space-y-2 shrink-0">
+              <div className="relative">
+                <Search
+                  className={`absolute ${lang === "ar" ? "right-3" : "left-3"} top-1/2 -translate-y-1/2 text-muted-foreground`}
+                  size={15}
+                />
+                <input
+                  type="text"
+                  placeholder={lang === "ar" ? "بحث عن صنف..." : "Search menu item..."}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className={`w-full bg-slate-100 border border-slate-200 rounded-xl py-1.5 ${
+                    lang === "ar" ? "pr-9 pl-3" : "pl-9 pr-3"
+                  } text-xs font-bold outline-none focus:border-indigo-500 transition`}
+                />
+              </div>
+
+              <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                <button
+                  onClick={() => setActiveCategory("all")}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition shrink-0 ${
+                    activeCategory === "all"
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                  }`}
+                >
+                  {t.all}
+                </button>
+                {(categoriesQuery.data ?? []).map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => setActiveCategory(c.id)}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold transition shrink-0 ${
+                      activeCategory === c.id
+                        ? "bg-indigo-600 text-white shadow-xs"
+                        : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                    }`}
+                  >
+                    {c.name_ar}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 min-h-0">
+              {itemsQuery.isLoading ? (
+                <div className="col-span-full py-8 text-center text-slate-400 text-xs font-bold">
+                  {lang === "ar" ? "جاري تحميل المنيو..." : "Loading menu..."}
+                </div>
+              ) : filteredItems.length === 0 ? (
+                <div className="col-span-full py-8 text-center text-slate-400 text-xs font-bold">
+                  {lang === "ar" ? "لا توجد أصناف مطابقة" : "No matching items found"}
+                </div>
+              ) : (
+                filteredItems.map((item) => {
+                  const inCartLine = cart.find((c) => c.item.id === item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => addToCart(item)}
+                      className={`group bg-white rounded-2xl border p-2.5 flex flex-col justify-between cursor-pointer hover:shadow-md transition relative ${
+                        inCartLine
+                          ? "border-indigo-500 ring-2 ring-indigo-500/20 bg-indigo-50/20"
+                          : "border-slate-200 hover:border-slate-300"
+                      }`}
+                    >
+                      {inCartLine && (
+                        <div className="absolute top-2 left-2 bg-indigo-600 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shadow z-10">
+                          {inCartLine.quantity}
+                        </div>
+                      )}
+
+                      <div className="space-y-1.5">
+                        {item.image_url ? (
+                          <img
+                            src={item.image_url}
+                            alt={item.name_ar}
+                            className="w-full h-16 object-cover rounded-xl"
+                          />
+                        ) : (
+                          <div className="w-full h-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400">
+                            <UtensilsCrossed size={18} />
+                          </div>
+                        )}
+                        <h4 className="font-bold text-xs text-slate-800 line-clamp-2 leading-tight">
+                          {item.name_ar}
+                        </h4>
+                      </div>
+
+                      <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between">
+                        <span className="text-xs font-black text-indigo-600">
+                          {formatPrice(item.price)}
+                        </span>
+                        <div className="w-5 h-5 rounded-md bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white flex items-center justify-center transition">
+                          <Plus size={12} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="w-full md:w-96 lg:w-[400px] flex flex-col bg-white border-t md:border-t-0 border-border shrink-0 min-h-0 overflow-hidden">
+            <div className="p-3 border-b border-border bg-slate-50 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <UtensilsCrossed size={16} className="text-indigo-600" />
+                <h3 className="font-black text-xs sm:text-sm text-slate-800">
+                  {lang === "ar" ? "سلة الطلب للطاولة" : "Table Order Cart"}
+                </h3>
+              </div>
+              <Badge
+                variant="outline"
+                className="bg-indigo-50 text-indigo-700 border-indigo-200 font-bold text-xs"
+              >
+                {itemCount} {lang === "ar" ? "أصناف" : "items"}
+              </Badge>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
+              {cart.length === 0 ? (
+                <div className="h-full min-h-[120px] flex flex-col items-center justify-center text-center p-4 text-slate-400 space-y-1.5">
+                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-300">
+                    <Package size={20} />
+                  </div>
+                  <p className="text-xs font-bold">
+                    {lang === "ar" ? "السلة فارغة حالياً" : "Cart is currently empty"}
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    {lang === "ar"
+                      ? "اضغط على أي صنف لإضافته إلى الطلب"
+                      : "Click any item to add it to the order"}
+                  </p>
+                </div>
+              ) : (
+                cart.map((line) => (
+                  <div
+                    key={line.item.id}
+                    className="p-2 rounded-xl border border-slate-200 bg-slate-50/50 flex items-center justify-between gap-2"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <h5 className="font-bold text-xs text-slate-800 truncate">
+                        {line.item.name_ar}
+                      </h5>
+                      <textarea
+                        rows={1}
+                        value={line.notes || ""}
+                        onChange={(e) => updateItemNotes(line.item.id, e.target.value)}
+                        placeholder={lang === "ar" ? "ملاحظة لهذا الصنف..." : "Note for this item..."}
+                        className="w-full mt-1 bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px] font-semibold outline-none focus:border-indigo-500 resize-none"
+                      />
+                      <span className="text-[11px] font-bold text-indigo-600 block mt-0.5">
+                        {formatPrice(
+                          (line.item.price +
+                            (line.selectedAdditions?.reduce((s, a) => s + (a.price || 0), 0) || 0)) *
+                            line.quantity,
+                        )}
+                      </span>
+                      {((line.selectedAdditions && line.selectedAdditions.length > 0) || line.notes) && (
+                        <div className="text-[10px] text-slate-500 mt-1 space-y-0.5 leading-tight">
+                          {line.selectedAdditions && line.selectedAdditions.length > 0 && (
+                            <div>
+                              <span className="font-bold mr-1">إضافات:</span>
+                              {line.selectedAdditions.map((a) => `${a.icon || ""} ${a.name_ar}`).join("، ")}
+                            </div>
+                          )}
+                          {line.notes && (
+                            <div>
+                              <span className="font-bold mr-1">ملاحظات:</span>
+                              {line.notes}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
+                      <button
+                        onClick={() => updateQuantity(line.item.id, -1)}
+                        className="w-5 h-5 rounded flex items-center justify-center text-slate-600 hover:bg-slate-100"
+                      >
+                        <Minus size={11} />
+                      </button>
+                      <span className="text-xs font-black w-4 text-center">{line.quantity}</span>
+                      <button
+                        onClick={() => updateQuantity(line.item.id, 1)}
+                        className="w-5 h-5 rounded flex items-center justify-center text-slate-600 hover:bg-slate-100"
+                      >
+                        <Plus size={11} />
+                      </button>
+                      <button
+                        onClick={() => removeFromCart(line.item.id)}
+                        className="w-5 h-5 rounded flex items-center justify-center text-rose-500 hover:bg-rose-50 mr-0.5"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-3 border-t border-border bg-slate-50/50 space-y-2.5 shrink-0">
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                  {lang === "ar" ? "إضافات سريعة:" : "Quick Additions:"}
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {additionsList.map((add) => {
+                    const selected = selectedAdditions.includes(add.id);
+                    return (
+                      <button
+                        key={add.id}
+                        onClick={() => toggleAddition(add.id)}
+                        className={`px-2 py-1 rounded-lg border text-[10px] font-bold flex items-center justify-between transition ${
+                          selected
+                            ? "bg-indigo-600 text-white border-indigo-600"
+                            : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
+                        }`}
+                      >
+                        <span className="truncate">
+                          {lang === "ar" ? add.label_ar : add.label_en}
+                        </span>
+                        <span className="text-[9px] opacity-80 mr-1">+{add.price}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 block mb-0.5">
+                  {lang === "ar" ? "ملاحظات وتخصيص الطلب:" : "Order Notes & Requests:"}
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder={lang === "ar" ? "مثال: بدون بصل، صوص إضافي..." : "e.g. No onions, extra sauce..."}
+                  value={orderNotes}
+                  onChange={(e) => setOrderNotes(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-1.5 text-xs font-semibold outline-none focus:border-indigo-500 transition resize-none"
+                />
+              </div>
+
+              <div className="space-y-0.5 text-[11px] pt-1.5 border-t border-slate-200/80">
+                <div className="flex justify-between text-slate-500">
+                  <span>{lang === "ar" ? "المجموع الفرعي:" : "Subtotal:"}</span>
+                  <span className="font-bold">{formatPrice(subTotal)}</span>
+                </div>
+                <div className="flex justify-between text-slate-500">
+                  <span>{lang === "ar" ? "الضريبة (14%):" : "Tax (14%):"}</span>
+                  <span className="font-bold">{formatPrice(tax)}</span>
+                </div>
+                <div className="flex justify-between text-xs font-black text-slate-900 pt-1 border-t border-slate-200">
+                  <span>{lang === "ar" ? "الإجمالي الكلي:" : "Grand Total:"}</span>
+                  <span className="text-indigo-600">{formatPrice(total)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-2.5 sm:p-3 border-t border-border bg-white grid grid-cols-3 gap-1.5 shrink-0">
+              <Button
+                variant="outline"
+                onClick={handleSaveDraft}
+                className="w-full font-bold text-[11px] sm:text-xs h-10 rounded-xl flex items-center justify-center gap-1 border-slate-300 hover:bg-slate-100 text-slate-700 px-1.5"
+              >
+                <Save size={14} className="shrink-0" />
+                <span className="truncate">{lang === "ar" ? "حفظ مسودة" : "Save Draft"}</span>
+              </Button>
+
+              <Button
+                onClick={handleSendToKitchen}
+                className="w-full font-bold text-[11px] sm:text-xs h-10 rounded-xl flex items-center justify-center gap-1 bg-amber-600 hover:bg-amber-700 text-white shadow-md active:scale-95 transition px-1.5"
+              >
+                <ChefHat size={15} className="shrink-0" />
+                <span className="truncate">{lang === "ar" ? "إرسال للمطبخ" : "Send Kitchen"}</span>
+              </Button>
+
+              <Button
+                onClick={handleSendToCashier}
+                className="w-full font-bold text-[11px] sm:text-xs h-10 rounded-xl flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md active:scale-95 transition px-1.5"
+              >
+                <Send size={14} className="shrink-0" />
+                <span className="truncate">{lang === "ar" ? "إرسال للكاشير" : "Send Cashier"}</span>
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
