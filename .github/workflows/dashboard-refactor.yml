@@ -1,0 +1,41 @@
+name: Dashboard refactor
+
+on:
+  push:
+    branches: [fix/external-order-currency-tracking]
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply refactor
+        run: python3 scripts/refactor-dashboard.py
+      - name: Verify source
+        run: |
+          test -f src/components/admin/AuditOperationsModal.tsx
+          grep -q 'AuditOperationsModal' src/routes/admin/index.tsx
+          grep -q 'data-dashboard-accounting-sync="true"' src/routes/admin/index.tsx
+          ! grep -q 'CIB بنك مصر' src/routes/admin/index.tsx
+          ! grep -q 'value="audit_logs"' src/routes/admin/index.tsx
+      - name: Build
+        run: |
+          npm ci
+          npm run typecheck
+          npm run build
+      - name: Commit and cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/routes/admin/index.tsx src/components/admin/AuditOperationsModal.tsx scripts/refactor-dashboard.py .github/workflows/dashboard-refactor.yml .github/dashboard-refactor-trigger.txt
+          git diff --cached --quiet || git commit -m "feat: sync dashboard accounting and add operations modal"
+          git push
+          git rm -f .github/workflows/dashboard-refactor.yml .github/dashboard-refactor-trigger.txt || true
+          git diff --cached --quiet || git commit -m "chore: remove dashboard migration workflow"
+          git push || true
