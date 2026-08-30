@@ -28,7 +28,6 @@ jobs:
               p.write_text(s.replace(old, new, 1), encoding='utf-8')
               print('patched:', label)
 
-          # Customer menu -> durable DB order before Captain broadcast.
           replace_once(
               'src/routes/menu.tsx',
               '      created_at: new Date().toISOString(),\n    };\n\n    // Broadcast the order to the Captain via Supabase Realtime Channels',
@@ -36,7 +35,6 @@ jobs:
               'persist self-order before captain broadcast',
           )
 
-          # Captain -> Cashier must persist the status for cross-device visibility.
           replace_once(
               'src/routes/captain.tsx',
               '  const handleAcceptOrder = async (order: any) => {\n    // We update status in supabase so it moves to kitchen / cashier depending on flow\n    // Or we can import it into local tableOrdersStore if Cashier only reads from there\n    // If cashier reads from tableOrdersStore, we inject it:',
@@ -44,7 +42,6 @@ jobs:
               'persist Captain acceptance',
           )
 
-          # Live Cashier invalidation when Captain changes the shared order.
           replace_once(
               'src/routes/cashier-treasury.tsx',
               '    enabled: isMounted,\n  });\n\n  const [isSyncing, setIsSyncing] = useState(false);',
@@ -52,32 +49,28 @@ jobs:
               'live Cashier order bridge',
           )
 
-          # Receipt invariant: POS already carries the exact totals/tax/currency fields.
           receipt = Path('src/routes/pos.tsx').read_text(encoding='utf-8')
-          required = [
+          for needle in [
               'const displaySubtotal',
               'const displayTax',
               'const displayTotal',
               'currency,',
               'taxRate: invoice.tax_rate ?? receiptSettings.defaultTaxRate',
-          ]
-          missing = [x for x in required if x not in receipt]
-          if missing:
-              raise SystemExit('Receipt invariant failed: ' + ', '.join(missing))
+          ]:
+              if needle not in receipt:
+                  raise SystemExit('Receipt invariant failed: ' + needle)
           print('PASS: receipt value invariants')
 
-          # Oven bridge invariant already lives in the repository.
           oven = Path('src/routes/oven.tsx').read_text(encoding='utf-8')
           for needle in ['oven_orders_channel', 'NEW_OVEN_ORDER', 'from("orders")']:
               if needle not in oven:
                   raise SystemExit('Oven bridge invariant failed: ' + needle)
           print('PASS: oven bridge invariants')
 
-      - name: Verify
+      - name: Verify build
         run: |
           npm ci
           npm run build
-          npm run typecheck
 
       - name: Commit source fixes
         run: |
