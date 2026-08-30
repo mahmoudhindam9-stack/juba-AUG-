@@ -18,7 +18,9 @@ jobs:
           node-version: 22
 
       - name: Apply final print and account synchronization
-        run: python3 scripts/final-print-account-sync.py
+        run: |
+          python3 scripts/final-print-account-sync.py
+          python3 scripts/fix-ledger-print-syntax.py
 
       - name: Verify required source wiring
         run: |
@@ -44,6 +46,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/shared/utils/printAccountingDocument.ts src/routes/cashier-treasury.tsx src/routes/admin/ledger.tsx src/shared/services/erpStore.ts scripts/final-print-account-sync.py .github/workflows/final-print-account-sync.yml
+          git add src/shared/utils/printAccountingDocument.ts src/routes/cashier-treasury.tsx src/routes/admin/ledger.tsx src/shared/services/erpStore.ts scripts/final-print-account-sync.py scripts/fix-ledger-print-syntax.py .github/workflows/final-print-account-sync.yml
           git diff --cached --quiet || git commit -m "feat: add verified printing exports and canonical account sync"
           git push
