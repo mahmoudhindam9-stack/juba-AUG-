@@ -1,0 +1,253 @@
+from pathlib import Path
+import re
+import subprocess
+
+ROOT = Path('.')
+
+def write(path, text):
+    Path(path).write_text(text, encoding='utf-8')
+
+def patch_menu():
+    p = ROOT / 'src/routes/menu.tsx'
+    s = p.read_text(encoding='utf-8')
+    if 'CustomerOrderTracker' not in s:
+        s = s.replace(
+            'import { supabase } from "@/integrations/supabase/client";\n',
+            'import { supabase } from "@/integrations/supabase/client";\nimport { CustomerOrderTracker } from "@/components/CustomerOrderTracker";\n',
+            1,
+        )
+    if 'trackingToken' not in s:
+        s = s.replace(
+            '  const [isCartOpen, setIsCartOpen] = useState(false);\n',
+            '  const [isCartOpen, setIsCartOpen] = useState(false);\n  const [trackingToken, setTrackingToken] = useState("");\n',
+            1,
+        )
+    if 'customer_tracking_token' not in s:
+        anchor = '    const resolvedTableId = tableId || table_id || (table ? `tbl-${tableNum}` : "tbl-999");\n'
+        if anchor not in s:
+            raise SystemExit('menu: resolvedTableId anchor not found')
+        s = s.replace(anchor, anchor + '    const trackingTokenForOrder = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `trk_${Date.now()}_${Math.random().toString(36).slice(2)}`;\n', 1)
+        s = s.replace(
+            '      created_at: new Date().toISOString(),\n',
+            '      created_at: new Date().toISOString(),\n      pricing_currency: "EGP",\n      payment_currency: "EGP",\n      payment_exchange_rate: 1,\n      payment_amount: totalAmount,\n      customer_tracking_token: trackingTokenForOrder,\n',
+            1,
+        )
+        s = s.replace(
+            '        created_at: orderPayload.created_at,\n',
+            '        created_at: orderPayload.created_at,\n        pricing_currency: orderPayload.pricing_currency,\n        payment_currency: orderPayload.payment_currency,\n        payment_exchange_rate: orderPayload.payment_exchange_rate,\n        payment_amount: orderPayload.payment_amount,\n        customer_tracking_token: orderPayload.customer_tracking_token,\n',
+            1,
+        )
+        s = s.replace(
+            '        setCart([]);\n        setIsCartOpen(false);\n',
+            '        setTrackingToken(orderPayload.customer_tracking_token);\n        setCart([]);\n        setIsCartOpen(false);\n',
+            1,
+        )
+        close = '    </div>\n  );\n}\n'
+        tracker = '      {trackingToken ? <CustomerOrderTracker token={trackingToken} onClose={() => setTrackingToken("")} /> : null}\n\n'
+        if tracker not in s and close in s:
+            s = s.replace(close, tracker + close, 1)
+    p.write_text(s, encoding='utf-8')
+
+def create_customer_tracker():
+    write(ROOT / 'src/components/CustomerOrderTracker.tsx', r'''// @ts-nocheck
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Clock3, CheckCircle2, ChefHat, ReceiptText, XCircle, RefreshCw } from "lucide-react";
+
+const STATUS = {
+  pending_captain: { label: "بانتظار الكابتن", icon: Clock3 },
+  STATUS_PENDING_CAPTAIN: { label: "بانتظار الكابتن", icon: Clock3 },
+  sent_to_cashier: { label: "تم اعتماد الطلب — بانتظار الكاشير", icon: ReceiptText },
+  preparing: { label: "جاري تجهيز الطلب", icon: ChefHat },
+  ready: { label: "الطلب جاهز", icon: CheckCircle2 },
+  completed: { label: "تم إنهاء الطلب", icon: CheckCircle2 },
+  cancelled: { label: "تم إلغاء الطلب", icon: XCircle },
+};
+
+export function CustomerOrderTracker({ token, onClose }) {
+  const [order, setOrder] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!token) return;
+    let alive = true;
+    const load = async () => {
+      const { data, error: dbError } = await supabase
+        .from("orders")
+        .select("id,order_number,status,total,pricing_currency,payment_currency,payment_exchange_rate,payment_amount")
+        .eq("customer_tracking_token", token)
+        .maybeSingle();
+      if (!alive) return;
+      setLoading(false);
+      if (dbError) setError(dbError.message);
+      else setOrder(data || null);
+    };
+    load();
+    const channel = supabase
+      .channel(`customer-order-tracker-${token}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `customer_tracking_token=eq.${token}` }, (payload) => alive && setOrder(payload.new))
+      .subscribe();
+    return () => { alive = false; supabase.removeChannel(channel); };
+  }, [token]);
+
+  if (loading) return <div className="fixed inset-0 z-[90] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"><div className="bg-white rounded-3xl p-7 font-bold">جاري متابعة الطلب...</div></div>;
+  if (error || !order) return <div className="fixed inset-0 z-[90] bg-slate-950/60 flex items-center justify-center p-4" dir="rtl"><div className="bg-white rounded-3xl p-7 max-w-sm w-full text-center"><div className="font-black text-lg">تعذر العثور على الطلب</div><div className="text-sm text-slate-500 mt-2">تحقق من رابط المتابعة أو أعد المحاولة.</div><Button className="w-full mt-5" onClick={onClose}>إغلاق</Button></div></div>;
+
+  const meta = STATUS[order.status] || { label: "جاري معالجة الطلب", icon: RefreshCw };
+  const Icon = meta.icon;
+  const paymentCurrency = order.payment_currency || order.pricing_currency || "EGP";
+  return <div className="fixed inset-0 z-[90] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4" dir="rtl">
+    <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200">
+      <div className="flex items-center gap-3"><div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center"><Icon size={24}/></div><div><div className="font-black text-xl">متابعة طلبي</div><div className="text-xs text-slate-500">رقم الطلب: #{order.order_number || order.id}</div></div></div>
+      <div className="mt-6 rounded-2xl bg-slate-50 border border-slate-200 p-5 text-center"><div className="text-xs font-bold text-slate-500">الحالة الحالية</div><div className="mt-1 text-xl font-black text-slate-900">{meta.label}</div><div className="mt-4 text-lg font-black text-indigo-600">{Number(order.payment_amount ?? order.total ?? 0).toLocaleString()} {paymentCurrency}</div>{order.payment_exchange_rate ? <div className="mt-1 text-[11px] text-slate-500">معامل التحويل: {order.payment_exchange_rate}</div> : null}</div>
+      <div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 text-xs font-bold text-emerald-800 space-y-1"><div>✓ الطلب محفوظ برقم واحد داخل النظام</div><div>✓ الحالة تتحدث تلقائيًا عند انتقال الطلب بين الكابتن والكاشير والمطبخ</div></div>
+      <Button className="w-full mt-5" onClick={onClose}>إغلاق</Button>
+    </div>
+  </div>;
+}
+''')
+
+def create_captain_panel():
+    write(ROOT / 'src/components/CaptainSelfOrderPanel.tsx', r'''// @ts-nocheck
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Coins, Send } from "lucide-react";
+
+export function CaptainSelfOrderPanel() {
+  const queryClient = useQueryClient();
+  const [currency, setCurrency] = useState({});
+  const [rate, setRate] = useState({});
+  const ordersQuery = useQuery({
+    queryKey: ["captain-self-orders"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("orders")
+        .select("id,order_number,table_id,total,status,items,created_at,pricing_currency,payment_currency,payment_exchange_rate,customer_tracking_token")
+        .in("status", ["pending_captain", "STATUS_PENDING_CAPTAIN"])
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+    refetchInterval: 3000,
+  });
+
+  useEffect(() => {
+    const ch = supabase.channel("captain-self-orders-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => queryClient.invalidateQueries({ queryKey: ["captain-self-orders"] }))
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [queryClient]);
+
+  const orders = ordersQuery.data || [];
+  if (!orders.length) return null;
+
+  const sendToCashier = async (order) => {
+    const paymentCurrency = currency[order.id] || order.payment_currency || "EGP";
+    const exchangeRate = Number(rate[order.id] || order.payment_exchange_rate || 1);
+    const pricingCurrency = order.pricing_currency || "EGP";
+    const total = Number(order.total || 0);
+    const paymentAmount = pricingCurrency === paymentCurrency ? total : total / Math.max(exchangeRate, 0.000001);
+    const { error } = await supabase.from("orders").update({
+      payment_currency: paymentCurrency,
+      payment_exchange_rate: exchangeRate,
+      payment_amount: Number(paymentAmount.toFixed(2)),
+      status: "sent_to_cashier",
+    }).eq("id", order.id);
+    if (!error) queryClient.invalidateQueries({ queryKey: ["captain-self-orders"] });
+  };
+
+  return <section className="max-w-7xl mx-auto w-full px-4 mt-4" dir="rtl">
+    <div className="rounded-3xl border border-indigo-200 bg-indigo-50/70 p-5 shadow-sm">
+      <div className="flex items-center justify-between gap-3 mb-4"><div><div className="flex items-center gap-2"><Coins size={18} className="text-indigo-700"/><h2 className="font-black text-lg text-indigo-950">طلبات العملاء عبر QR</h2></div><p className="text-xs text-indigo-700 mt-1">حدد عملة الدفع ومعامل التحويل للطلب نفسه ثم أرسله للكاشير.</p></div><Badge className="bg-indigo-600">{orders.length} طلب</Badge></div>
+      <div className="space-y-3">{orders.map((order) => { const selected = currency[order.id] || order.payment_currency || "EGP"; return <div key={order.id} className="bg-white border border-indigo-100 rounded-2xl p-4"><div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3"><div><div className="font-black">طلب #{order.order_number || order.id}</div><div className="text-xs text-slate-500 mt-1">طاولة {String(order.table_id || "").replace(/^tbl-/, "") || "عام"} · السعر الأساسي {Number(order.total || 0).toLocaleString()} {order.pricing_currency || "EGP"}</div></div><div className="flex flex-wrap items-center gap-2"><select value={selected} onChange={(e)=>setCurrency((s)=>({...s,[order.id]:e.target.value}))} className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-xs font-bold"><option value="EGP">EGP</option><option value="USD">USD</option><option value="SSP">SSP</option></select><div className="flex items-center gap-1"><span className="text-[10px] font-bold text-slate-500">1 {selected} =</span><Input type="number" min="0.0001" step="0.0001" value={rate[order.id] ?? order.payment_exchange_rate ?? 1} onChange={(e)=>setRate((s)=>({...s,[order.id]:e.target.value}))} className="w-24 h-9 text-center text-xs font-bold"/><span className="text-[10px] font-bold text-slate-500">EGP</span></div><Button onClick={()=>sendToCashier(order)} className="h-9 font-bold gap-1"><Send size={14}/> للكاشير</Button></div></div></div>})}</div>
+    </div>
+  </section>;
+}
+''')
+
+def patch_captain():
+    p = ROOT / 'src/routes/captain.tsx'
+    s = p.read_text(encoding='utf-8')
+    if 'CaptainSelfOrderPanel' not in s:
+        anchor = 'import { supabase } from "@/integrations/supabase/client";\n'
+        if anchor in s:
+            s = s.replace(anchor, anchor + 'import { CaptainSelfOrderPanel } from "@/components/CaptainSelfOrderPanel";\n', 1)
+        m = re.search(r'(\n\s*<main\b[^>]*>)', s)
+        if not m:
+            raise SystemExit('captain: main element not found')
+        s = s[:m.start()] + '\n      <CaptainSelfOrderPanel />\n' + s[m.start():]
+    p.write_text(s, encoding='utf-8')
+
+def patch_cashier():
+    p = ROOT / 'src/routes/cashier-treasury.tsx'
+    s = p.read_text(encoding='utf-8')
+    if 'const shiftSalesAmount = (()' not in s:
+        anchor = '  // Refund mutation linked directly to order and its original currency\n'
+        block = '''  const shiftSalesAmount = (() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return (ordersQuery.data || []).filter((o) => o && o.status !== "cancelled" && new Date(o.created_at || now) >= start).reduce((sum, o) => sum + Number(o.total || 0), 0);
+  })();
+
+'''
+        if anchor not in s:
+            raise SystemExit('cashier: shift anchor not found')
+        s = s.replace(anchor, block + anchor, 1)
+    s = s.replace('onClick={() => setTransferDialogOpen(true)}', 'onClick={() => { setTransferAmount(shiftSalesAmount); setTransferDialogOpen(true); }}', 1)
+    if 'ملء من إجمالي مبيعات الشيفت' not in s:
+        m = re.search(r'(<Input\s+type="number"\s+value=\{transferAmount\}[\s\S]*?/>)', s)
+        if not m:
+            raise SystemExit('cashier: transfer amount input not found')
+        helper = m.group(1) + '\n                <button type="button" onClick={() => setTransferAmount(shiftSalesAmount)} className="mt-1 text-[11px] font-black text-purple-700 hover:text-purple-900 underline underline-offset-2">ملء من إجمالي مبيعات الشيفت: {shiftSalesAmount.toLocaleString()} {transferCurrency}</button>'
+        s = s[:m.start()] + helper + s[m.end():]
+    p.write_text(s, encoding='utf-8')
+
+def patch_misc():
+    # Restore the full table order modal from a known complete commit and remove accidental duplicate keys.
+    try:
+        restored = subprocess.check_output([
+            'git', 'show', '885937b0ede71aed380285f94484f4ac38fa9810:src/components/TableOrderModal.tsx'
+        ], text=True)
+        lines = restored.splitlines()
+        out = []
+        prev = None
+        for line in lines:
+            if line.strip() == 'selectedAdditions: c.selectedAdditions || [],' and prev == line.strip():
+                continue
+            out.append(line)
+            prev = line.strip()
+        write(ROOT / 'src/components/TableOrderModal.tsx', '\n'.join(out) + '\n')
+    except subprocess.CalledProcessError:
+        pass
+
+    p = ROOT / 'src/shared/hooks/useTableOrders.ts'
+    s = p.read_text(encoding='utf-8')
+    s = s.replace('    return tableOrdersStore.subscribe(() => {\n      setOrders([...tableOrdersStore.getAllOrders()]);\n    });', '    const unsubscribe = tableOrdersStore.subscribe(() => {\n      setOrders([...tableOrdersStore.getAllOrders()]);\n    });\n    return () => unsubscribe();')
+    p.write_text(s, encoding='utf-8')
+
+    p = ROOT / 'src/shared/services/translationService.ts'
+    s = p.read_text(encoding='utf-8')
+    s = s.replace('document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false)', 'document.createTreeWalker(el, NodeFilter.SHOW_TEXT)')
+    p.write_text(s, encoding='utf-8')
+
+def create_migration():
+    p = ROOT / 'supabase/migrations/20260830000000_external_order_payment_tracking.sql'
+    p.parent.mkdir(parents=True, exist_ok=True)
+    write(p, '''alter table public.orders add column if not exists pricing_currency text;\nalter table public.orders add column if not exists payment_currency text;\nalter table public.orders add column if not exists payment_exchange_rate numeric;\nalter table public.orders add column if not exists payment_amount numeric;\nalter table public.orders add column if not exists customer_tracking_token text;\ncreate unique index if not exists orders_customer_tracking_token_idx on public.orders(customer_tracking_token) where customer_tracking_token is not null;\n''')
+
+# Keep the previously requested dashboard/accounting UX refactor, then layer the external-order/cashier changes.
+subprocess.run(['python3', 'scripts/refactor-dashboard.py'], check=True)
+patch_misc()
+create_customer_tracker()
+create_captain_panel()
+patch_menu()
+patch_captain()
+patch_cashier()
+create_migration()
+print('External order + cashier shift migration applied')
