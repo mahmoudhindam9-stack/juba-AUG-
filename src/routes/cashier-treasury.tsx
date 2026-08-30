@@ -30,6 +30,7 @@ import {
   RotateCcw,
   XCircle,
   FileSpreadsheet,
+  FileText,
   CreditCard,
   Smartphone,
   Clock,
@@ -41,6 +42,7 @@ import {
   CheckCircle2,
   RefreshCw,
   Zap,
+  Printer,
 } from "lucide-react";
 import {
   Dialog,
