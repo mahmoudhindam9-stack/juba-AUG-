@@ -10,17 +10,17 @@ A complete **restaurant management ERP** built on [TanStack Start](https://tanst
 
 ## Modules
 
-| Module | Routes | Notes |
-|---|---|---|
-| **Admin dashboard** | `/admin/*` | accounts, HR, mall, inventory, ledger, menu, orders, receipts, reports, users |
-| **POS** | `/pos` | Table/order lifecycle, upsells, timer |
-| **Captain** | `/captain` | Waiter-facing order station with QR |
-| **Cashier Treasury** | `/cashier-treasury` | Till, payouts, transfers, currency conversion |
-| **Menu** | `/menu` | Recipes linked to inventory ingredients |
+| Module               | Routes              | Notes                                                                         |
+| -------------------- | ------------------- | ----------------------------------------------------------------------------- |
+| **Admin dashboard**  | `/admin/*`          | accounts, HR, mall, inventory, ledger, menu, orders, receipts, reports, users |
+| **POS**              | `/pos`              | Table/order lifecycle, upsells, timer                                         |
+| **Captain**          | `/captain`          | Waiter-facing order station with QR                                           |
+| **Cashier Treasury** | `/cashier-treasury` | Till, payouts, transfers, currency conversion                                 |
+| **Menu**             | `/menu`             | Recipes linked to inventory ingredients                                       |
 
 ## Key capabilities
 
-- **Multi-currency**: EGP + USD with currency *coefficients* and journal-level conversion.
+- **Multi-currency**: EGP + USD with currency _coefficients_ and journal-level conversion.
 - **Atomic inventory**: recipe BOM deduction tied to order completion; tracking mode + multi-warehouse.
 - **Ledger**: journal entries, Excel upload via `ArrayBuffer`, balance validation per currency.
 - **Offline-friendly Supabase client**: graceful fallback fetch wrapper for local mode.
@@ -52,12 +52,12 @@ A complete **restaurant management ERP** built on [TanStack Start](https://tanst
 
 ## Scripts
 
-| Command | Description |
-|---|---|
-| `npm run dev` | Vite dev server (host `0.0.0.0:3000`) |
-| `npm run build` | Production build |
-| `npm run lint` | ESLint |
-| `npm run test` | Vitest |
+| Command         | Description                           |
+| --------------- | ------------------------------------- |
+| `npm run dev`   | Vite dev server (host `0.0.0.0:3000`) |
+| `npm run build` | Production build                      |
+| `npm run lint`  | ESLint                                |
+| `npm run test`  | Vitest                                |
 
 ## Notes for contributors
 

@@ -16,11 +16,19 @@ import {
 } from "@/shared/utils/oracleParser";
 import { groupOracleRowsIntoJournalEntriesOrdered } from "@/shared/utils/oracleJournalGrouping";
 
-const getLineBaseValue = (amount: number | string, rate: number | string, currency = "USD"): number => {
+const getLineBaseValue = (
+  amount: number | string,
+  rate: number | string,
+  currency = "USD",
+): number => {
   return erpStore.getLineBaseValue(amount, rate, currency);
 };
 import { AccountSearchSelect } from "@/components/AccountSearchSelect";
-import { printAccountingDocument } from "@/shared/utils/printAccountingDocument";
+import {
+  printAccountingDocument,
+  printJournalEntryDocument,
+  printImportReportDocument,
+} from "@/shared/utils/printAccountingDocument";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/hooks/use-settings";
 import {
@@ -120,7 +128,12 @@ function buildLedgerPrintRows(entries: any[], accounts: any[]) {
     currency: entry.currency || "EGP",
     debit: (entry.lines || []).reduce((n: number, l: any) => n + Number(l.debit || 0), 0),
     credit: (entry.lines || []).reduce((n: number, l: any) => n + Number(l.credit || 0), 0),
-    accounts: (entry.lines || []).map((line: any) => `${line.account_code || ""} — ${line.account_name || accounts.find((a: any) => a.code === line.account_code)?.name_ar || "حساب غير معرف"}`).join(" | "),
+    accounts: (entry.lines || [])
+      .map(
+        (line: any) =>
+          `${line.account_code || ""} — ${line.account_name || accounts.find((a: any) => a.code === line.account_code)?.name_ar || "حساب غير معرف"}`,
+      )
+      .join(" | "),
   }));
 }
 
@@ -128,25 +141,49 @@ function printLedgerDocument(rows: any[], accounting = false) {
   printAccountingDocument({
     title: accounting ? "مستند محاسبي — دفتر الأستاذ العام" : "تقرير القيود المحاسبية",
     subtitle: `عدد القيود: ${rows.length} | المصدر: دفتر الأستاذ العام الموحد`,
-    documentNo: `LEDGER-${new Date().toISOString().slice(0,10).replaceAll("-","")}`,
+    documentNo: `LEDGER-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}`,
     columns: [
-      {key:"date",label:"التاريخ"},{key:"reference",label:"رقم القيد"},{key:"description",label:"البيان"},{key:"currency",label:"العملة",align:"center"},
-      {key:"debit",label:"المدين",align:"left"},{key:"credit",label:"الدائن",align:"left"},{key:"accounts",label:"الحسابات وأكوادها"}
+      { key: "date", label: "التاريخ" },
+      { key: "reference", label: "رقم القيد" },
+      { key: "description", label: "البيان" },
+      { key: "currency", label: "العملة", align: "center" },
+      { key: "debit", label: "المدين", align: "left" },
+      { key: "credit", label: "الدائن", align: "left" },
+      { key: "accounts", label: "الحسابات وأكوادها" },
     ],
     rows,
     totals: [
-      {label:"عدد القيود",value:String(rows.length)},
-      {label:"إجمالي المدين",value:rows.reduce((n,r)=>n+Number(r.debit||0),0).toLocaleString("en-US")},
-      {label:"إجمالي الدائن",value:rows.reduce((n,r)=>n+Number(r.credit||0),0).toLocaleString("en-US")}
-    ]
+      { label: "عدد القيود", value: String(rows.length) },
+      {
+        label: "إجمالي المدين",
+        value: rows.reduce((n, r) => n + Number(r.debit || 0), 0).toLocaleString("en-US"),
+      },
+      {
+        label: "إجمالي الدائن",
+        value: rows.reduce((n, r) => n + Number(r.credit || 0), 0).toLocaleString("en-US"),
+      },
+    ],
   });
 }
 
 function exportLedgerDocumentToExcel(rows: any[]) {
-  const flat = rows.map((r) => ({"التاريخ":r.date,"رقم القيد":r.reference,"البيان":r.description,"العملة":r.currency,"المدين":r.debit,"الدائن":r.credit,"الحسابات وأكوادها":r.accounts}));
-  if (!flat.length) { window.alert("لا توجد قيود لتصديرها."); return; }
-  const ws = XLSX.utils.json_to_sheet(flat); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "القيود");
-  XLSX.writeFile(wb, `القيود_المحاسبية_${new Date().toISOString().slice(0,10)}.xlsx`);
+  const flat = rows.map((r) => ({
+    التاريخ: r.date,
+    "رقم القيد": r.reference,
+    البيان: r.description,
+    العملة: r.currency,
+    المدين: r.debit,
+    الدائن: r.credit,
+    "الحسابات وأكوادها": r.accounts,
+  }));
+  if (!flat.length) {
+    window.alert("لا توجد قيود لتصديرها.");
+    return;
+  }
+  const ws = XLSX.utils.json_to_sheet(flat);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "القيود");
+  XLSX.writeFile(wb, `القيود_المحاسبية_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
 function LedgerPage() {
@@ -158,7 +195,8 @@ function LedgerPage() {
   // ERP Store subscription
   const [erpState, setErpState] = useState(() => erpStore.getState());
   useEffect(() => {
-    return erpStore.subscribe((state) => {
+    return erpStore.subscribe(() => {
+      const state = erpStore.getState();
       if (state) setErpState({ ...state });
     });
   }, []);
@@ -345,10 +383,40 @@ function LedgerPage() {
     }
   };
 
-  const showImportReport = (result: any, importedEntries: JournalEntry[], newlyCreatedAccounts: Account[]) => {
-    const balancedEntriesCount = importedEntries.filter((entry) => checkIsEntryBalanced(entry)).length;
-    const totalBaseUSD = importedEntries.reduce((sum, entry) => sum + (entry.lines || []).reduce((s, l) => s + getLineBaseValue(l.debit, l.rate || 1, l.currency || entry.currency || "USD"), 0), 0);
-    setSaveReportData({ savedEntriesCount: result.insertedEntries, savedEntries: importedEntries, balancedEntriesCount, unbalancedEntriesCount: importedEntries.length - balancedEntriesCount, newAccountsCreated: newlyCreatedAccounts.length, newlyCreatedAccounts, totalAccountsCount: erpStore.getState().accounts.length, linkedTreasuryTransactions: result.linkedTreasuryTransactions, totalBaseUSD, savedAt: new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
+  const showImportReport = (
+    result: any,
+    importedEntries: JournalEntry[],
+    newlyCreatedAccounts: Account[],
+  ) => {
+    const balancedEntriesCount = importedEntries.filter((entry) =>
+      checkIsEntryBalanced(entry),
+    ).length;
+    const totalBaseUSD = importedEntries.reduce(
+      (sum, entry) =>
+        sum +
+        (entry.lines || []).reduce(
+          (s, l) =>
+            s + getLineBaseValue(l.debit, l.rate || 1, l.currency || entry.currency || "USD"),
+          0,
+        ),
+      0,
+    );
+    setSaveReportData({
+      savedEntriesCount: result.insertedEntries,
+      savedEntries: importedEntries,
+      balancedEntriesCount,
+      unbalancedEntriesCount: importedEntries.length - balancedEntriesCount,
+      newAccountsCreated: newlyCreatedAccounts.length,
+      newlyCreatedAccounts,
+      totalAccountsCount: erpStore.getState().accounts.length,
+      linkedTreasuryTransactions: result.linkedTreasuryTransactions,
+      totalBaseUSD,
+      savedAt: new Date().toLocaleTimeString("ar-EG", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }),
+    });
     setIsSaveReportOpen(true);
   };
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -383,11 +451,15 @@ function LedgerPage() {
           const newEntries = groupOracleRowsIntoJournalEntriesOrdered(parsedRows);
 
           // Insert journal entries and link with treasuries & chart of accounts
-          const accountsBeforeImport = new Set((erpStore.getState().accounts || []).map((a) => a.code));
+          const accountsBeforeImport = new Set(
+            (erpStore.getState().accounts || []).map((a) => a.code),
+          );
           const result = erpStore.importJournalEntriesAndSyncTreasuries(newEntries, {
             sourceName: file.name,
           });
-          const newlyCreatedAccounts = (erpStore.getState().accounts || []).filter((a) => !accountsBeforeImport.has(a.code));
+          const newlyCreatedAccounts = (erpStore.getState().accounts || []).filter(
+            (a) => !accountsBeforeImport.has(a.code),
+          );
 
           // Re-sync and update state
           showImportReport(result, newEntries, newlyCreatedAccounts);
@@ -397,18 +469,27 @@ function LedgerPage() {
             title: "✅ تم استيراد القيود بنجاح",
             description: `تم إدراج ${result.insertedEntries} قيد في دفتر اليومية، وإنشاء ${result.newAccountsCreated} حساب جديد في الدليل العام، وربط ${result.linkedTreasuryTransactions} حركة مالية بالخزائن الصحيحة.`,
           });
-        } catch (err) {
+        } catch (err: any) {
           console.error(err);
-          alert("حدث خطأ أثناء معالجة الملف. تأكد من أن الملف بنفس صيغة أوراكل.");
+          toast({
+            title: "خطأ في معالجة الملف",
+            description:
+              err?.message || "حدث خطأ أثناء معالجة الملف. تأكد من أن الملف بنفس صيغة أوراكل.",
+            variant: "destructive",
+          });
         } finally {
           setIsImportingOracle(false);
           if (e.target) e.target.value = "";
         }
       };
       reader.readAsArrayBuffer(file);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("حدث خطأ أثناء الاستيراد");
+      toast({
+        title: "خطأ في الاستيراد",
+        description: err?.message || "حدث خطأ أثناء استيراد الملف.",
+        variant: "destructive",
+      });
       setIsImportingOracle(false);
       if (e.target) e.target.value = "";
     }
@@ -463,11 +544,15 @@ function LedgerPage() {
 
   const handleConfirmPasteImport = () => {
     if (parsedEntriesPreview.length === 0) return;
-    const pasteAccountsBeforeImport = new Set((erpStore.getState().accounts || []).map((a) => a.code));
+    const pasteAccountsBeforeImport = new Set(
+      (erpStore.getState().accounts || []).map((a) => a.code),
+    );
     const result = erpStore.importJournalEntriesAndSyncTreasuries(parsedEntriesPreview, {
       sourceName: "معالجة واستيراد جدول القيود",
     });
-    const pasteNewlyCreatedAccounts = (erpStore.getState().accounts || []).filter((a) => !pasteAccountsBeforeImport.has(a.code));
+    const pasteNewlyCreatedAccounts = (erpStore.getState().accounts || []).filter(
+      (a) => !pasteAccountsBeforeImport.has(a.code),
+    );
     showImportReport(result, parsedEntriesPreview, pasteNewlyCreatedAccounts);
     setErpState({ ...erpStore.getState() });
     setIsPasteModalOpen(false);
@@ -529,55 +614,48 @@ function LedgerPage() {
       }
 
       const diff = info.difference;
-      const currency = info.isSingleCurrency ? info.currency : (entry.currency || "USD");
-      const adjRef = `تسوية-${entry.reference || entry.id.substring(0, 6)}`;
-      
-      // Create a separate automatic adjustment journal entry
-      const adjustmentEntry: JournalEntry = {
-        id: `adj-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        reference: adjRef,
-        date: entry.date || new Date().toISOString().split("T")[0],
-        description: `قيد تسوية أوتوماتيكي مستقل لمعالجة فارق الاتزان للقيد رقم ${entry.reference || entry.id}`,
+      const currency = info.isSingleCurrency ? info.currency : entry.currency || "USD";
+
+      // Update the existing entry with a new line to balance it
+      const balancingLine = {
+        account_code: "509",
+        account_name: "حساب فروق التسوية والتوجيه المحاسبي",
+        debit: info.side === "debit" ? diff : 0,
+        credit: info.side === "credit" ? diff : 0,
         currency,
-        lines: [
-          {
-            account_code: "509",
-            account_name: "حساب فروق التسوية والتوجيه المحاسبي",
-            debit: info.side === "debit" ? diff : 0,
-            credit: info.side === "credit" ? diff : 0,
-            currency,
-            rate: 1,
-            description: `معالجة عجز جانب الاتزان للقيد ${entry.reference || entry.id}`,
-          },
-          {
-            account_code: "101",
-            account_name: "الخزينة العامة / الحساب المقابل للتسوية",
-            debit: info.side === "credit" ? diff : 0,
-            credit: info.side === "debit" ? diff : 0,
-            currency,
-            rate: 1,
-            description: `مقابل تسوية القيد ${entry.reference || entry.id}`,
-          }
-        ] as any
+        rate: 1,
+        description: `تسوية أوتوماتيكية لمعالجة عجز جانب الاتزان`,
       };
 
-      erpStore.state.journalEntries = [adjustmentEntry, ...(erpStore.state.journalEntries || [])];
+      const updatedEntry = {
+        ...entry,
+        lines: [...(entry.lines || []), balancingLine as any],
+      };
+
+      const entryIndex = (erpStore.state.journalEntries || []).findIndex((e) => e.id === entry.id);
+
+      if (entryIndex !== -1) {
+        erpStore.state.journalEntries[entryIndex] = updatedEntry;
+      } else {
+        erpStore.state.journalEntries = [updatedEntry, ...(erpStore.state.journalEntries || [])];
+      }
+
       erpStore.recalculateAccountBalances();
       erpStore.saveState();
       setErpState({ ...erpStore.getState() });
       setBalanceAdjustmentEntry(null);
 
       toast({
-        title: "✨ تم إنشاء قيد تسوية أوتوماتيكي مستقل بنجاح",
-        description: `تم إنشاء قيد التسوية برقم (${adjRef}) بقيمة الفارق (${diff.toLocaleString()} ${currency}) وإضافته لدفتر اليومية.`,
+        title: "✨ تم تسوية القيد أوتوماتيكياً بنجاح",
+        description: `تم إضافة سطر التسوية بقيمة (${diff.toLocaleString()} ${currency}) داخل نفس القيد رقم (${entry.reference || entry.id}).`,
       });
     } catch (err) {
       console.error("[تسوية القيد]", err);
       setErpState({ ...erpStore.getState() });
       setBalanceAdjustmentEntry(null);
       toast({
-        title: "خطأ أثناء إنشاء قيد التسوية",
-        description: (err as any)?.message || "حدث خطأ غير متوقع أثناء محاولة إنشاء قيد التسوية الآلي.",
+        title: "خطأ أثناء تسوية القيد",
+        description: (err as any)?.message || "حدث خطأ غير متوقع أثناء محاولة تسوية القيد.",
         variant: "destructive",
       });
     }
@@ -668,7 +746,7 @@ function LedgerPage() {
     const isAssetOrExpense = currentAccount?.type === "asset" || currentAccount?.type === "expense";
 
     return matchingEntries
-      .map(({ entry, line }) => {
+      .map(({ entry, line }, lineIdx) => {
         const debit = Number(line.debit) || 0;
         const credit = Number(line.credit) || 0;
 
@@ -679,7 +757,7 @@ function LedgerPage() {
         }
 
         return {
-          id: `${entry.id}-${line.account_code}`,
+          id: `${entry.id}-${line.account_code}-${lineIdx}`,
           date: entry.date,
           description: entry.description,
           reference: entry.reference,
@@ -817,6 +895,56 @@ function LedgerPage() {
     accounts,
   ]);
 
+  const [journalPage, setJournalPage] = useState(1);
+  const ITEMS_PER_PAGE = 25;
+
+  useEffect(() => {
+    setJournalPage(1);
+  }, [
+    journalSearch,
+    journalCurrencyFilter,
+    journalBalanceFilter,
+    journalStartDate,
+    journalEndDate,
+    journalSortOrder,
+  ]);
+
+  const journalStats = useMemo(() => {
+    let balanced = 0;
+    let unbalanced = 0;
+    let usd = 0;
+    let ssp = 0;
+    let egp = 0;
+
+    (journalEntries || []).forEach((j) => {
+      if (checkIsEntryBalanced(j)) {
+        balanced++;
+      } else {
+        unbalanced++;
+      }
+      const curr = j.currency || "USD";
+      if (curr === "USD") usd++;
+      else if (curr === "SSP") ssp++;
+      else if (curr === "EGP") egp++;
+    });
+
+    return {
+      total: journalEntries.length,
+      balanced,
+      unbalanced,
+      usd,
+      ssp,
+      egp,
+    };
+  }, [journalEntries]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredJournal.length / ITEMS_PER_PAGE));
+
+  const paginatedJournal = useMemo(() => {
+    const start = (journalPage - 1) * ITEMS_PER_PAGE;
+    return filteredJournal.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredJournal, journalPage]);
+
   // Trial Balance calculation
   const trialBalance = useMemo(() => {
     const rows = accounts.map((acc) => {
@@ -899,10 +1027,12 @@ function LedgerPage() {
 
     // Assets
     const assetAccounts = trialBalance.rows.filter((r) => r.type === "asset");
+    console.log("DEBUG: assetAccounts", assetAccounts);
     const totalAssets = assetAccounts.reduce(
       (sum, r) => sum + (r.balanceType === "Dr" ? r.endingBalance : -r.endingBalance),
       0,
     );
+    console.log("DEBUG: totalAssets", totalAssets);
 
     // Liabilities
     const liabilityAccounts = trialBalance.rows.filter((r) => r.type === "liability");
@@ -913,10 +1043,16 @@ function LedgerPage() {
 
     // Equity
     const equityAccounts = trialBalance.rows.filter((r) => r.type === "equity");
+    console.log("DEBUG: equityAccounts", equityAccounts);
     const totalEquity = equityAccounts.reduce(
-      (sum, r) => sum + (r.balanceType === "Cr" ? r.endingBalance : -r.endingBalance),
+      (sum, r) => {
+        const val = r.balanceType === "Cr" ? r.endingBalance : -r.endingBalance;
+        console.log(`DEBUG: Equity Account ${r.code} (${r.name_ar}): Type=${r.balanceType}, Bal=${r.endingBalance}, Contribution=${val}`);
+        return sum + val;
+      },
       0,
     );
+    console.log("DEBUG: totalEquity", totalEquity);
 
     return {
       revenueAccounts,
@@ -1670,11 +1806,11 @@ function LedgerPage() {
                                 className="font-mono text-[10px] bg-primary/10 text-primary border-primary/20"
                               >
                                 المعادل بالعملة الأساسية (USD):{" "}
-                                 {getLineBaseValue(
-                                   line.debit || line.credit || 0,
-                                   line.rate || 1,
-                                   line.currency || "USD",
-                                 ).toLocaleString(undefined, {
+                                {getLineBaseValue(
+                                  line.debit || line.credit || 0,
+                                  line.rate || 1,
+                                  line.currency || "USD",
+                                ).toLocaleString(undefined, {
                                   minimumFractionDigits: 2,
                                   maximumFractionDigits: 2,
                                 })}
@@ -1841,7 +1977,11 @@ function LedgerPage() {
                       const acc = (accounts || []).find((a) => a.code === line.account_code);
                       const isDebit = (line.debit || 0) > 0;
                       const origAmt = isDebit ? line.debit : line.credit;
-                      const baseVal = getLineBaseValue(origAmt || 0, line.rate || 1, line.currency || "USD");
+                      const baseVal = getLineBaseValue(
+                        origAmt || 0,
+                        line.rate || 1,
+                        line.currency || "USD",
+                      );
                       return (
                         <div key={idx} className="p-2.5 flex items-center justify-between text-xs">
                           <div className="flex items-center gap-2">
@@ -1900,9 +2040,47 @@ function LedgerPage() {
 
       {/* Tabs list */}
       <div className="flex flex-wrap items-center gap-2 mb-4 print:hidden">
-        <Button type="button" variant="outline" onClick={() => printLedgerDocument(buildLedgerPrintRows(erpState?.journalEntries || [], erpState?.accounts || []), false)} className="font-bold gap-2" title="طباعة القيود"><Printer size={15}/> طباعة القيود</Button>
-        <Button type="button" variant="outline" onClick={() => printLedgerDocument(buildLedgerPrintRows(erpState?.journalEntries || [], erpState?.accounts || []), true)} className="font-bold gap-2" title="طباعة مستند محاسبي"><FileText size={15}/> مستند محاسبي</Button>
-        <Button type="button" variant="outline" onClick={() => exportLedgerDocumentToExcel(buildLedgerPrintRows(erpState?.journalEntries || [], erpState?.accounts || []))} className="font-bold gap-2" title="تصدير القيود إلى Excel"><FileSpreadsheet size={15}/> Excel</Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() =>
+            printLedgerDocument(
+              buildLedgerPrintRows(erpState?.journalEntries || [], erpState?.accounts || []),
+              false,
+            )
+          }
+          className="font-bold gap-2"
+          title="طباعة القيود"
+        >
+          <Printer size={15} /> طباعة القيود
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() =>
+            printLedgerDocument(
+              buildLedgerPrintRows(erpState?.journalEntries || [], erpState?.accounts || []),
+              true,
+            )
+          }
+          className="font-bold gap-2"
+          title="طباعة مستند محاسبي"
+        >
+          <FileText size={15} /> مستند محاسبي
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() =>
+            exportLedgerDocumentToExcel(
+              buildLedgerPrintRows(erpState?.journalEntries || [], erpState?.accounts || []),
+            )
+          }
+          className="font-bold gap-2"
+          title="تصدير القيود إلى Excel"
+        >
+          <FileSpreadsheet size={15} /> Excel
+        </Button>
       </div>
 
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
@@ -2310,7 +2488,7 @@ function LedgerPage() {
                     إجمالي القيود
                   </span>
                   <span className="text-sm sm:text-base font-bold font-mono text-foreground truncate w-full block mt-0.5">
-                    {journalEntries.length}
+                    {journalStats.total}
                   </span>
                 </button>
 
@@ -2331,7 +2509,7 @@ function LedgerPage() {
                     قيود متزنة ✓
                   </span>
                   <span className="text-sm sm:text-base font-bold font-mono text-emerald-600 dark:text-emerald-400 truncate w-full block mt-0.5">
-                    {journalEntries.filter((j) => checkIsEntryBalanced(j)).length}
+                    {journalStats.balanced}
                   </span>
                 </button>
 
@@ -2352,7 +2530,7 @@ function LedgerPage() {
                     غير متزنة ⚠️
                   </span>
                   <span className="text-sm sm:text-base font-bold font-mono text-rose-600 dark:text-rose-400 truncate w-full block mt-0.5">
-                    {journalEntries.filter((j) => !checkIsEntryBalanced(j)).length}
+                    {journalStats.unbalanced}
                   </span>
                 </button>
 
@@ -2371,7 +2549,7 @@ function LedgerPage() {
                     قيود USD
                   </span>
                   <span className="text-sm sm:text-base font-bold font-mono text-emerald-600 dark:text-emerald-400 truncate w-full block mt-0.5">
-                    {journalEntries.filter((j) => (j.currency || "USD") === "USD").length}
+                    {journalStats.usd}
                   </span>
                 </button>
 
@@ -2390,7 +2568,7 @@ function LedgerPage() {
                     قيود SSP
                   </span>
                   <span className="text-sm sm:text-base font-bold font-mono text-blue-600 dark:text-blue-400 truncate w-full block mt-0.5">
-                    {journalEntries.filter((j) => j.currency === "SSP").length}
+                    {journalStats.ssp}
                   </span>
                 </button>
 
@@ -2409,7 +2587,7 @@ function LedgerPage() {
                     قيود EGP
                   </span>
                   <span className="text-sm sm:text-base font-bold font-mono text-amber-600 dark:text-amber-400 truncate w-full block mt-0.5">
-                    {journalEntries.filter((j) => j.currency === "EGP").length}
+                    {journalStats.egp}
                   </span>
                 </button>
               </div>
@@ -2421,7 +2599,8 @@ function LedgerPage() {
                     لا توجد قيود يومية تطابق معايير البحث والفلترة المحددة.
                   </div>
                 ) : (
-                  filteredJournal.map((entry, entryIndex) => {
+                  paginatedJournal.map((entry, entryIndex) => {
+                    const realIndex = (journalPage - 1) * ITEMS_PER_PAGE + entryIndex + 1;
                     const totalDebit = entry.lines.reduce(
                       (sum, l) => sum + (Number(l.debit) || 0),
                       0,
@@ -2436,11 +2615,25 @@ function LedgerPage() {
                     );
 
                     const totalBaseDebit = entry.lines.reduce((sum, l) => {
-                      return sum + getLineBaseValue(l.debit, l.rate || 1, l.currency || entry.currency || "USD");
+                      return (
+                        sum +
+                        getLineBaseValue(
+                          l.debit,
+                          l.rate || 1,
+                          l.currency || entry.currency || "USD",
+                        )
+                      );
                     }, 0);
 
                     const totalBaseCredit = entry.lines.reduce((sum, l) => {
-                      return sum + getLineBaseValue(l.credit, l.rate || 1, l.currency || entry.currency || "USD");
+                      return (
+                        sum +
+                        getLineBaseValue(
+                          l.credit,
+                          l.rate || 1,
+                          l.currency || entry.currency || "USD",
+                        )
+                      );
                     }, 0);
 
                     const balanceInfo = getEntryBalanceInfo(entry);
@@ -2449,7 +2642,7 @@ function LedgerPage() {
 
                     return (
                       <div
-                        key={entry.id}
+                        key={entry.id ? `${entry.id}-${entryIndex}` : `je-${realIndex}`}
                         className={`border rounded-xl overflow-hidden bg-card shadow-sm hover:shadow-md transition duration-200 ${
                           isBalanced ? "border-border/80" : "border-rose-400 dark:border-rose-700"
                         }`}
@@ -2458,7 +2651,7 @@ function LedgerPage() {
                         <div className="bg-muted/50 px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="font-mono font-bold text-xs bg-primary text-primary-foreground px-2.5 py-1 rounded-md shadow-sm">
-                              #{entryIndex + 1}
+                              #{realIndex}
                             </span>
                             <Badge
                               variant="outline"
@@ -2537,8 +2730,7 @@ function LedgerPage() {
                                 className="h-7 w-7 rounded-md"
                                 title="طباعة القيد"
                                 onClick={() => {
-                                  setSelectedJournal(entry);
-                                  setTimeout(() => window.print(), 300);
+                                  printJournalEntryDocument(entry, accounts, formatCurrency);
                                 }}
                               >
                                 <Printer className="h-3.5 w-3.5" />
@@ -2561,17 +2753,17 @@ function LedgerPage() {
                         </div>
 
                         {/* Entry Lines - grouped by currency */}
-        <JournalEntryCurrencyGroups
-          entry={entry}
-          accounts={accounts}
-          formatCurrency={formatCurrency}
-          getLineBaseValue={getLineBaseValue}
-          totalBaseDebit={totalBaseDebit}
-          totalBaseCredit={totalBaseCredit}
-          isBalanced={isBalanced}
-        />
+                        <JournalEntryCurrencyGroups
+                          entry={entry}
+                          accounts={accounts}
+                          formatCurrency={formatCurrency}
+                          getLineBaseValue={getLineBaseValue}
+                          totalBaseDebit={totalBaseDebit}
+                          totalBaseCredit={totalBaseCredit}
+                          isBalanced={isBalanced}
+                        />
 
-        {/* Bottom Balance Difference Bar */}
+                        {/* Bottom Balance Difference Bar */}
                         <div
                           className={`px-4 py-2 text-xs font-semibold flex items-center justify-between border-t ${
                             isBalanced
@@ -2600,6 +2792,40 @@ function LedgerPage() {
                       </div>
                     );
                   })
+                )}
+
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-border mt-4">
+                    <div className="text-xs text-muted-foreground font-medium">
+                      عرض الصفحة <span className="font-bold font-mono">{journalPage}</span> من أصل{" "}
+                      <span className="font-bold font-mono">{totalPages}</span> (إجمالي القيود
+                      المطابقة: {filteredJournal.length})
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={journalPage <= 1}
+                        onClick={() => setJournalPage((p) => Math.max(1, p - 1))}
+                        className="h-8 text-xs font-semibold"
+                      >
+                        السابقة
+                      </Button>
+                      <div className="text-xs font-mono font-bold px-2">
+                        {journalPage} / {totalPages}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={journalPage >= totalPages}
+                        onClick={() => setJournalPage((p) => Math.min(totalPages, p + 1))}
+                        className="h-8 text-xs font-semibold"
+                      >
+                        التالية
+                      </Button>
+                    </div>
+                  </div>
                 )}
               </div>
             </CardContent>
@@ -2895,7 +3121,9 @@ function LedgerPage() {
                     <div className="bg-muted/40 p-3 rounded-lg divide-y text-sm h-[130px] overflow-y-auto">
                       {financialStatements.equityAccounts.map((eq) => (
                         <div key={eq.code} className="flex justify-between py-1 text-xs">
-                          <span className="text-muted-foreground truncate">{eq.name}</span>
+                          <span className="text-muted-foreground truncate">
+                            {eq.name} ({eq.balanceType})
+                          </span>
                           <span className="font-mono font-semibold">
                             {formatCurrency(eq.endingBalance, eq.currency)}
                           </span>
@@ -3243,13 +3471,19 @@ function LedgerPage() {
                             0,
                           );
 
-                            const cBaseDebit = currLines.reduce((s, l) => {
-                              return s + getLineBaseValue(l.debit, l.rate || 1, l.currency || curr || "USD");
-                            }, 0);
+                          const cBaseDebit = currLines.reduce((s, l) => {
+                            return (
+                              s +
+                              getLineBaseValue(l.debit, l.rate || 1, l.currency || curr || "USD")
+                            );
+                          }, 0);
 
-                            const cBaseCredit = currLines.reduce((s, l) => {
-                              return s + getLineBaseValue(l.credit, l.rate || 1, l.currency || curr || "USD");
-                            }, 0);
+                          const cBaseCredit = currLines.reduce((s, l) => {
+                            return (
+                              s +
+                              getLineBaseValue(l.credit, l.rate || 1, l.currency || curr || "USD")
+                            );
+                          }, 0);
 
                           return (
                             <tr key={curr} className="text-xs font-semibold bg-muted/10">
@@ -3350,7 +3584,11 @@ function LedgerPage() {
               إغلاق
             </Button>
             <Button
-              onClick={() => window.print()}
+              onClick={() => {
+                if (selectedJournal) {
+                  printJournalEntryDocument(selectedJournal, accounts, formatCurrency);
+                }
+              }}
               className="gap-2 bg-primary text-primary-foreground font-bold"
             >
               <Printer size={16} />
@@ -3445,11 +3683,25 @@ function LedgerPage() {
                     const isSingleCurrency = entryCurrencies.length <= 1;
 
                     const totalBaseDebit = entry.lines.reduce((sum, l) => {
-                      return sum + getLineBaseValue(l.debit, l.rate || 1, l.currency || entry.currency || "USD");
+                      return (
+                        sum +
+                        getLineBaseValue(
+                          l.debit,
+                          l.rate || 1,
+                          l.currency || entry.currency || "USD",
+                        )
+                      );
                     }, 0);
 
                     const totalBaseCredit = entry.lines.reduce((sum, l) => {
-                      return sum + getLineBaseValue(l.credit, l.rate || 1, l.currency || entry.currency || "USD");
+                      return (
+                        sum +
+                        getLineBaseValue(
+                          l.credit,
+                          l.rate || 1,
+                          l.currency || entry.currency || "USD",
+                        )
+                      );
                     }, 0);
 
                     const isBalanced = isSingleCurrency
@@ -3458,7 +3710,7 @@ function LedgerPage() {
 
                     return (
                       <div
-                        key={entry.id || idx}
+                        key={entry.id ? `${entry.id}-${idx}` : idx}
                         className="bg-card p-3 rounded-lg border border-border text-xs space-y-1.5 shadow-sm"
                       >
                         <div className="flex items-center justify-between">
@@ -3574,10 +3826,11 @@ function LedgerPage() {
                           )}
                         </div>
                         <p>
-                          هل أنت متأكد من إنشاء <strong>قيد تسوية أوتوماتيكي مستقل</strong> لمعالجة فارق الاتزان لهذا القيد؟
+                          هل أنت متأكد من تسوية فارق الاتزان بإضافة سطر تسوية أوتوماتيكي لهذا القيد؟
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          سيتم إنشاء سند قيد يومية جديد أوتوماتيكياً برقم مرجعي <span className="font-mono font-bold">تسوية-{balanceAdjustmentEntry.reference}</span> وإضافته لدفتر اليومية لتعويض الفرق وإحداث الاتزان.
+                          سيتم إدراج سطر تسوية بقيمة الفارق في نهاية القيد الحالي لتحقيق الاتزان
+                          الكامل بنفس رقم وتاريخ القيد.
                         </p>
                       </>
                     );
@@ -3719,7 +3972,10 @@ function LedgerPage() {
               </div>
 
               {/* Tabbed Report Details */}
-              <Tabs defaultValue={saveReportData.newAccountsCreated > 0 ? "accounts" : "entries"} className="w-full">
+              <Tabs
+                defaultValue={saveReportData.newAccountsCreated > 0 ? "accounts" : "entries"}
+                className="w-full"
+              >
                 <TabsList className="grid grid-cols-2 w-full max-w-md">
                   <TabsTrigger value="entries" className="gap-2">
                     <FileText className="h-4 w-4" />
@@ -3755,11 +4011,18 @@ function LedgerPage() {
                             ),
                           );
                           const baseTotal = (je.lines || []).reduce((s, l) => {
-                            return s + getLineBaseValue(l.debit, l.rate || 1, l.currency || je.currency || "USD");
+                            return (
+                              s +
+                              getLineBaseValue(
+                                l.debit,
+                                l.rate || 1,
+                                l.currency || je.currency || "USD",
+                              )
+                            );
                           }, 0);
 
                           return (
-                            <tr key={je.id || i} className="hover:bg-muted/20">
+                            <tr key={je.id ? `${je.id}-${i}` : i} className="hover:bg-muted/20">
                               <td className="p-2.5 pr-4 font-mono text-muted-foreground">
                                 {i + 1}
                               </td>
@@ -3871,7 +4134,7 @@ function LedgerPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  window.print();
+                  printImportReportDocument(saveReportData);
                 }}
                 className="gap-1.5 rounded-xl text-xs font-semibold"
               >

@@ -75,13 +75,11 @@ export function JournalEntryCurrencyGroups({
         const debit = currencyLines.reduce((sum, line) => sum + (Number(line.debit) || 0), 0);
         const credit = currencyLines.reduce((sum, line) => sum + (Number(line.credit) || 0), 0);
         const baseDebit = currencyLines.reduce(
-          (sum, line) =>
-            sum + getLineBaseValue(line.debit || 0, line.rate || 1, currency),
+          (sum, line) => sum + getLineBaseValue(line.debit || 0, line.rate || 1, currency),
           0,
         );
         const baseCredit = currencyLines.reduce(
-          (sum, line) =>
-            sum + getLineBaseValue(line.credit || 0, line.rate || 1, currency),
+          (sum, line) => sum + getLineBaseValue(line.credit || 0, line.rate || 1, currency),
           0,
         );
         const currencyBalanced = Math.abs(debit - credit) < 0.000001;
@@ -93,7 +91,9 @@ export function JournalEntryCurrencyGroups({
                 <CardTitle className="text-sm sm:text-base font-extrabold flex items-center gap-2">
                   <span className="text-lg">{currencyIcon(currency)}</span>
                   <span>{currency}</span>
-                  <span className="text-muted-foreground font-medium">— {currencyName(currency)}</span>
+                  <span className="text-muted-foreground font-medium">
+                    — {currencyName(currency)}
+                  </span>
                 </CardTitle>
                 <Badge
                   className={
@@ -125,18 +125,28 @@ export function JournalEntryCurrencyGroups({
                       const rate = Number(line.rate) || 1;
                       return (
                         <tr key={`${line.account_code}-${index}`} className="hover:bg-muted/20">
-                          <td className="p-3 pr-4 font-semibold">{account?.name_ar || line.description || "حساب محاسبي"}</td>
+                          <td className="p-3 pr-4 font-semibold">
+                            {account?.name_ar || line.description || "حساب محاسبي"}
+                          </td>
                           <td className="p-3 font-mono text-xs">{line.account_code}</td>
-                          <td className="p-3 text-xs max-w-xs">{line.description || entry.description || "-"}</td>
+                          <td className="p-3 text-xs max-w-xs">
+                            {line.description || entry.description || "-"}
+                          </td>
                           <td className="p-3 font-mono font-bold text-center text-emerald-700 bg-emerald-500/5">
-                            {Number(line.debit) > 0 ? formatCurrency(Number(line.debit), currency) : "-"}
+                            {Number(line.debit) > 0
+                              ? formatCurrency(Number(line.debit), currency)
+                              : "-"}
                           </td>
                           <td className="p-3 font-mono font-bold text-center text-rose-700 bg-rose-500/5">
-                            {Number(line.credit) > 0 ? formatCurrency(Number(line.credit), currency) : "-"}
+                            {Number(line.credit) > 0
+                              ? formatCurrency(Number(line.credit), currency)
+                              : "-"}
                           </td>
                           <td className="p-3 text-center font-mono text-xs">
                             <Badge variant="outline" className="font-mono text-[10px]">
-                              {rate === 1 ? "1.000000" : rate.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                              {rate === 1
+                                ? "1.000000"
+                                : rate.toLocaleString(undefined, { maximumFractionDigits: 6 })}
                             </Badge>
                           </td>
                         </tr>
@@ -165,7 +175,9 @@ export function JournalEntryCurrencyGroups({
                         )}
                       </td>
                       <td className="p-3 text-center text-xs">
-                        {currencyBalanced ? "✓ متوازن" : formatCurrency(Math.abs(debit - credit), currency)}
+                        {currencyBalanced
+                          ? "✓ متوازن"
+                          : formatCurrency(Math.abs(debit - credit), currency)}
                       </td>
                     </tr>
                   </tfoot>
@@ -187,25 +199,33 @@ export function JournalEntryCurrencyGroups({
               >
                 قيد رقم: {entry.reference || entry.id}
               </Badge>
-              <Badge variant="outline" className="font-mono">{currencies.join(" • ")}</Badge>
+              <Badge variant="outline" className="font-mono">
+                {currencies.join(" • ")}
+              </Badge>
               <Badge variant="secondary">عملة التطبيق: USD</Badge>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="rounded-xl bg-background border p-3">
-                <div className="text-xs text-muted-foreground">إجمالي المدين — المعادل بالدولار</div>
+                <div className="text-xs text-muted-foreground">
+                  إجمالي المدين — المعادل بالدولار
+                </div>
                 <div className="font-mono font-black text-lg text-emerald-700">
                   {formatCurrency(totalBaseDebit, "USD")}
                 </div>
               </div>
               <div className="rounded-xl bg-background border p-3">
-                <div className="text-xs text-muted-foreground">إجمالي الدائن — المعادل بالدولار</div>
+                <div className="text-xs text-muted-foreground">
+                  إجمالي الدائن — المعادل بالدولار
+                </div>
                 <div className="font-mono font-black text-lg text-rose-700">
                   {formatCurrency(totalBaseCredit, "USD")}
                 </div>
               </div>
             </div>
             <div className="text-xs font-semibold">
-              {isBalanced ? "✓ القيد متزن بعد تحويل العملات إلى عملة التطبيق (USD)." : "⚠️ يوجد فرق في المعادل العام بالدولار ويحتاج إلى مراجعة/تسوية."}
+              {isBalanced
+                ? "✓ القيد متزن بعد تحويل العملات إلى عملة التطبيق (USD)."
+                : "⚠️ يوجد فرق في المعادل العام بالدولار ويحتاج إلى مراجعة/تسوية."}
             </div>
           </div>
         </CardContent>

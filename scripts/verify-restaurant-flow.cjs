@@ -16,13 +16,35 @@ const oven = read("src/routes/oven.tsx");
 const pos = read("src/routes/pos.tsx");
 
 const checks = [
-  ["customer orders persist before Captain broadcast", menu.includes("from(\"orders\").upsert") && menu.includes('status: "pending_captain"')],
-  ["Captain acceptance persists to Cashier", captain.includes('status: "sent_to_cashier"') && captain.includes('.from("orders")')],
-  ["Cashier listens for live order changes", cashier.includes('cashier_orders_bridge') && cashier.includes('invalidateQueries({ queryKey: ["cashier-treasury", "orders"] })')],
-  ["Oven keeps the durable order bridge", oven.includes("oven_orders_channel") && oven.includes('from("orders")')],
-  ["Oven receives its realtime order event", oven.includes('NEW_OVEN_ORDER')],
-  ["Receipt keeps computed subtotal/tax/total", pos.includes("const displaySubtotal") && pos.includes("const displayTax") && pos.includes("const displayTotal")],
-  ["Receipt keeps currency and tax rate", pos.includes("currency,") && pos.includes("taxRate: invoice.tax_rate ?? receiptSettings.defaultTaxRate")],
+  [
+    "customer orders persist before Captain broadcast",
+    menu.includes('from("orders").upsert') && menu.includes('status: "pending_captain"'),
+  ],
+  [
+    "Captain acceptance persists to Cashier",
+    captain.includes('status: "sent_to_cashier"') && captain.includes('.from("orders")'),
+  ],
+  [
+    "Cashier listens for live order changes",
+    cashier.includes("cashier_orders_bridge") &&
+      cashier.includes('invalidateQueries({ queryKey: ["cashier-treasury", "orders"] })'),
+  ],
+  [
+    "Oven keeps the durable order bridge",
+    oven.includes("oven_orders_channel") && oven.includes('from("orders")'),
+  ],
+  ["Oven receives its realtime order event", oven.includes("NEW_OVEN_ORDER")],
+  [
+    "Receipt keeps computed subtotal/tax/total",
+    pos.includes("const displaySubtotal") &&
+      pos.includes("const displayTax") &&
+      pos.includes("const displayTotal"),
+  ],
+  [
+    "Receipt keeps currency and tax rate",
+    pos.includes("currency,") &&
+      pos.includes("taxRate: invoice.tax_rate ?? receiptSettings.defaultTaxRate"),
+  ],
 ];
 
 const failed = checks.filter(([, ok]) => !ok);

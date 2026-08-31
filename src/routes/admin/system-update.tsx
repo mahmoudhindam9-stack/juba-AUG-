@@ -63,18 +63,14 @@ function SystemUpdatePage() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const searchParams = new URLSearchParams(location.search);
-  const currentTab = searchParams.get("tab") === "access" ? "access" : "system";
-
-  const handleTabChange = (newTab: string) => {
-    navigate({ to: "/admin/system-update", search: { tab: newTab } });
-  };
+  
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const accessPackageInputRef = useRef<HTMLInputElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const [devModeOpen, setDevModeOpen] = useState(false);
+  const [currentTab, setCurrentTab] = useState("system");
   const [editedStrings, setEditedStrings] = useState<Record<string, string>>({});
   const [isLiveSynced, setIsLiveSynced] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toLocaleTimeString("ar-EG"));
@@ -107,6 +103,8 @@ function SystemUpdatePage() {
 
         if (!error && (data as any)?.data) {
           localStorage.setItem("erp_store_state", JSON.stringify((data as any).data));
+          erpStore.state = erpStore.loadState();
+          erpStore.notify();
           setErpState(erpStore.getState());
         }
 
@@ -460,7 +458,12 @@ function SystemUpdatePage() {
   return (
     <div className="space-y-6 pb-12 text-right font-cairo px-2 sm:px-4 md:px-6" dir="rtl">
       {/* Page Navigation Tabs */}
-      <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full space-y-6">
+      <Tabs value={currentTab} onValueChange={setCurrentTab} className="w-full space-y-6">
+        <TabsList>
+          <TabsTrigger value="system">تحديث النظام</TabsTrigger>
+          <TabsTrigger value="access">حزمة أكسس</TabsTrigger>
+        </TabsList>
+
         {/* Top Header & Tab Controls */}
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b pb-4 border-border/60">
           <div>
@@ -500,23 +503,6 @@ function SystemUpdatePage() {
           </div>
 
           <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
-            <TabsList className="bg-slate-200/80 dark:bg-slate-900/80 p-1 rounded-2xl border border-slate-300/80 dark:border-slate-800 h-11 shrink-0">
-              <TabsTrigger
-                value="system"
-                className="gap-2 font-black text-xs sm:text-sm px-4 py-2 rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-foreground data-[state=active]:shadow-sm"
-              >
-                <RefreshCw size={16} />
-                تحديث السيستم
-              </TabsTrigger>
-              <TabsTrigger
-                value="access"
-                className="gap-2 font-black text-xs sm:text-sm px-4 py-2 rounded-xl data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
-              >
-                <FileSpreadsheet size={16} />
-                حزمة أكسس (Access)
-              </TabsTrigger>
-            </TabsList>
-
             <Button
               onClick={() => setDevModeOpen(true)}
               variant="outline"

@@ -1,12 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-  Download,
-  FileText,
-  History,
-  Printer,
-  Search,
-  X,
-} from "lucide-react";
+import { Download, FileText, History, Printer, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -97,8 +90,7 @@ export function AuditOperationsModal({
       .filter((log) => severity === "all" || normalize(log.severity || "info") === severity)
       .filter((log) => !q || log._search.includes(q))
       .sort(
-        (a, b) =>
-          new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
+        (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
       );
   }, [prepared, search, severity]);
 
@@ -135,7 +127,9 @@ export function AuditOperationsModal({
 
     const win = window.open("", "_blank", "width=1200,height=800");
     if (!win) return;
-    win.document.write(`<!doctype html><html dir="rtl"><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#111827}h1{font-size:22px;margin-bottom:18px}.summary{display:grid;gap:8px;font-size:16px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #d1d5db;padding:8px;text-align:right;vertical-align:top}th{background:#f3f4f6} @media print{body{padding:10px}}</style></head><body><h1>${title}</h1>${rows}</body></html>`);
+    win.document.write(
+      `<!doctype html><html dir="rtl"><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#111827}h1{font-size:22px;margin-bottom:18px}.summary{display:grid;gap:8px;font-size:16px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #d1d5db;padding:8px;text-align:right;vertical-align:top}th{background:#f3f4f6} @media print{body{padding:10px}}</style></head><body><h1>${title}</h1>${rows}</body></html>`,
+    );
     win.document.close();
     win.focus();
     setTimeout(() => {
@@ -146,7 +140,10 @@ export function AuditOperationsModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl w-[96vw] h-[88vh] p-0 overflow-hidden flex flex-col" dir="rtl">
+      <DialogContent
+        className="max-w-6xl w-[96vw] h-[88vh] p-0 overflow-hidden flex flex-col"
+        dir="rtl"
+      >
         <DialogHeader className="px-6 pt-6 pb-4 border-b bg-muted/20">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -158,7 +155,12 @@ export function AuditOperationsModal({
                 بحث ذكي في جميع عمليات النظام مع فلاتر وطباعة مستقلة.
               </DialogDescription>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)} aria-label="إغلاق">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onOpenChange(false)}
+              aria-label="إغلاق"
+            >
               <X size={18} />
             </Button>
           </div>
@@ -166,15 +168,30 @@ export function AuditOperationsModal({
 
         <div className="px-6 py-4 border-b space-y-4 bg-background">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="rounded-2xl border bg-muted/20 p-3"><div className="text-[11px] text-muted-foreground font-bold">الإجمالي</div><div className="text-xl font-black">{counts.all}</div></div>
-            <div className="rounded-2xl border bg-rose-50 dark:bg-rose-950/20 p-3"><div className="text-[11px] text-muted-foreground font-bold">حرجة</div><div className="text-xl font-black text-rose-600">{counts.critical}</div></div>
-            <div className="rounded-2xl border bg-amber-50 dark:bg-amber-950/20 p-3"><div className="text-[11px] text-muted-foreground font-bold">تحذيرات</div><div className="text-xl font-black text-amber-600">{counts.warning}</div></div>
-            <div className="rounded-2xl border bg-emerald-50 dark:bg-emerald-950/20 p-3"><div className="text-[11px] text-muted-foreground font-bold">النتائج</div><div className="text-xl font-black text-emerald-600">{filtered.length}</div></div>
+            <div className="rounded-2xl border bg-muted/20 p-3">
+              <div className="text-[11px] text-muted-foreground font-bold">الإجمالي</div>
+              <div className="text-xl font-black">{counts.all}</div>
+            </div>
+            <div className="rounded-2xl border bg-rose-50 dark:bg-rose-950/20 p-3">
+              <div className="text-[11px] text-muted-foreground font-bold">حرجة</div>
+              <div className="text-xl font-black text-rose-600">{counts.critical}</div>
+            </div>
+            <div className="rounded-2xl border bg-amber-50 dark:bg-amber-950/20 p-3">
+              <div className="text-[11px] text-muted-foreground font-bold">تحذيرات</div>
+              <div className="text-xl font-black text-amber-600">{counts.warning}</div>
+            </div>
+            <div className="rounded-2xl border bg-emerald-50 dark:bg-emerald-950/20 p-3">
+              <div className="text-[11px] text-muted-foreground font-bold">النتائج</div>
+              <div className="text-xl font-black text-emerald-600">{filtered.length}</div>
+            </div>
           </div>
 
           <div className="flex flex-col lg:flex-row gap-3">
             <div className="relative flex-1">
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
+              <Search
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                size={16}
+              />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -210,7 +227,9 @@ export function AuditOperationsModal({
             <Button
               variant="outline"
               onClick={() => {
-                const blob = new Blob([filtered.map(printableText).join("\n")], { type: "text/plain;charset=utf-8" });
+                const blob = new Blob([filtered.map(printableText).join("\n")], {
+                  type: "text/plain;charset=utf-8",
+                });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.href = url;
@@ -231,18 +250,31 @@ export function AuditOperationsModal({
         <div className="flex-1 overflow-auto p-6">
           <div className="rounded-2xl border overflow-hidden bg-background">
             <div className="grid grid-cols-[150px_1.1fr_1fr_2fr_90px] gap-0 bg-muted/40 text-xs font-black sticky top-0 z-10 border-b">
-              <div className="p-3">التاريخ</div><div className="p-3">المستخدم</div><div className="p-3">الإجراء</div><div className="p-3">التفاصيل</div><div className="p-3">المستوى</div>
+              <div className="p-3">التاريخ</div>
+              <div className="p-3">المستخدم</div>
+              <div className="p-3">الإجراء</div>
+              <div className="p-3">التفاصيل</div>
+              <div className="p-3">المستوى</div>
             </div>
             {filtered.length === 0 ? (
-              <div className="p-10 text-center text-muted-foreground font-bold">لا توجد عمليات مطابقة للبحث.</div>
+              <div className="p-10 text-center text-muted-foreground font-bold">
+                لا توجد عمليات مطابقة للبحث.
+              </div>
             ) : (
               filtered.map((log, index) => (
-                <div key={log.id || `${log.created_at}-${index}`} className="grid grid-cols-[150px_1.1fr_1fr_2fr_90px] border-b last:border-b-0 hover:bg-muted/20 text-xs">
+                <div
+                  key={log.id || `${log.created_at}-${index}`}
+                  className="grid grid-cols-[150px_1.1fr_1fr_2fr_90px] border-b last:border-b-0 hover:bg-muted/20 text-xs"
+                >
                   <div className="p-3 text-muted-foreground">{formatDate(log.created_at)}</div>
                   <div className="p-3 font-bold break-words">{log.user_email || "غير محدد"}</div>
                   <div className="p-3 font-bold">{log.action || log.action_type || "عملية"}</div>
-                  <div className="p-3 text-muted-foreground break-words">{log.details || log.description || "—"}</div>
-                  <div className="p-3"><Badge variant="outline">{log.severity || "info"}</Badge></div>
+                  <div className="p-3 text-muted-foreground break-words">
+                    {log.details || log.description || "—"}
+                  </div>
+                  <div className="p-3">
+                    <Badge variant="outline">{log.severity || "info"}</Badge>
+                  </div>
                 </div>
               ))
             )}

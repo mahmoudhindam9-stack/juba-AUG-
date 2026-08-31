@@ -128,9 +128,12 @@ function RestaurantHubPage() {
               <Sparkles size={14} aria-hidden="true" />
               <span>نظام إدارة المطاعم المتقدم</span>
             </div>
-            <h1 className="text-2xl font-black tracking-tight sm:text-3xl">إدارة تشغيل المطعم بالكامل</h1>
+            <h1 className="text-2xl font-black tracking-tight sm:text-3xl">
+              إدارة تشغيل المطعم بالكامل
+            </h1>
             <p className="max-w-2xl text-sm leading-relaxed text-slate-300">
-              منصة مركزية متكاملة للكاشير، نقاط البيع، المطبخ، المنيو والمخزن. اختر القسم الذي تريد فتحه مباشرة.
+              منصة مركزية متكاملة للكاشير، نقاط البيع، المطبخ، المنيو والمخزن. اختر القسم الذي تريد
+              فتحه مباشرة.
             </p>
           </div>
           <Link to="/pos" className="shrink-0">
@@ -144,21 +147,32 @@ function RestaurantHubPage() {
 
       <section aria-labelledby="restaurant-modules-heading">
         <div className="mb-4 flex items-center justify-between gap-4">
-          <h2 id="restaurant-modules-heading" className="flex items-center gap-2 text-lg font-black text-foreground">
+          <h2
+            id="restaurant-modules-heading"
+            className="flex items-center gap-2 text-lg font-black text-foreground"
+          >
             <Store size={20} className="text-primary" aria-hidden="true" />
             أقسام نظام تشغيل المطعم
           </h2>
-          <span className="text-xs font-bold text-muted-foreground">{modules.length} أقسام أساسية</span>
+          <span className="text-xs font-bold text-muted-foreground">
+            {modules.length} أقسام أساسية
+          </span>
         </div>
 
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
           {modules.map((module) => {
             const Icon = module.icon;
             return (
-              <Link key={module.to} to={module.to} className="group rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2">
+              <Link
+                key={module.to}
+                to={module.to}
+                className="group rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+              >
                 <Card className="flex h-full flex-col overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm transition-all duration-300 group-hover:border-primary/50 group-hover:bg-accent/30 group-hover:shadow-xl">
                   <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
-                    <div className={`rounded-2xl bg-gradient-to-br p-3 shadow-inner ${module.color}`}>
+                    <div
+                      className={`rounded-2xl bg-gradient-to-br p-3 shadow-inner ${module.color}`}
+                    >
                       <Icon size={24} aria-hidden="true" />
                     </div>
                     <span className="rounded-full border border-border/60 bg-muted px-2.5 py-1 text-[11px] font-bold text-muted-foreground">
@@ -169,7 +183,11 @@ function RestaurantHubPage() {
                     <div className="space-y-1.5">
                       <h3 className="flex items-center justify-between gap-3 text-lg font-black text-foreground transition group-hover:text-primary">
                         <span>{module.title}</span>
-                        <ArrowUpRight size={18} className="shrink-0 text-primary opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
+                        <ArrowUpRight
+                          size={18}
+                          className="shrink-0 text-primary opacity-0 transition-opacity group-hover:opacity-100"
+                          aria-hidden="true"
+                        />
                       </h3>
                       <CardDescription className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                         {module.description}

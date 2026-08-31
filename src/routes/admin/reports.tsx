@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { erpStore } from "@/shared/services/erpStore";
 import { inventoryService } from "@/features/inventory/services/inventoryService";
 import { useSettings } from "@/hooks/use-settings";
+import { printRawHtml } from "@/shared/utils/printAccountingDocument";
 import * as XLSX from "xlsx";
 import {
   ResponsiveContainer,
@@ -72,7 +73,10 @@ function ReportsPage() {
 
   useEffect(() => {
     setErpState(erpStore.getState());
-  }, [activeTab]);
+    return erpStore.subscribe(() => {
+      setErpState({ ...erpStore.getState() });
+    });
+  }, []);
 
   const ordersQuery = useQuery({
     queryKey: ["admin", "reports", "orders", from, to],
@@ -244,38 +248,516 @@ function ReportsPage() {
     0,
   );
 
-  // Accounting Ledger calculations
-  const ledgersSummary = useMemo(() => {
-    const accounts = erpState.accounts;
-    const totalAssets = accounts
-      .filter((a) => a.type === "asset")
-      .reduce((sum: number, a: any) => sum + a.balance, 0);
-    const totalLiabilities = accounts
-      .filter((a) => a.type === "liability")
-      .reduce((sum: number, a: any) => sum + a.balance, 0);
-    const totalEquity = accounts
-      .filter((a) => a.type === "equity")
-      .reduce((sum: number, a: any) => sum + a.balance, 0);
-    const totalRevenue = accounts
-      .filter((a) => a.type === "revenue")
-      .reduce((sum: number, a: any) => sum + a.balance, 0);
-    const totalExpense = accounts
-      .filter((a) => a.type === "expense")
-      .reduce((sum: number, a: any) => sum + a.balance, 0);
+  // 1. Filtered Journal Entries
+  const filteredEntries = useMemo(() => {
+    let entries = erpState.journalEntries || [];
+    if (from) {
+      entries = entries.filter((e) => new Date(e.date) >= new Date(from));
+    }
+    if (to) {
+      entries = entries.filter((e) => new Date(e.date) <= new Date(to + "T23:59:59"));
+    }
+    if (branchFilter !== "all") {
+      entries = entries.filter((e) => e.branch_id === branchFilter || !e.branch_id);
+    }
+    return entries;
+  }, [erpState.journalEntries, from, to, branchFilter]);
 
-    return { totalAssets, totalLiabilities, totalEquity, totalRevenue, totalExpense };
-  }, [erpState.accounts]);
+  // 2. Real General Ledger / Accounts Calculations synchronized with journalEntries
+  const accountsData = useMemo(() => {
+    const accounts = erpState.accounts || [];
+
+    // Map of account code -> current calculated balance
+    const balancesMap: Record<string, number> = {};
+    accounts.forEach((acc) => {
+      balancesMap[acc.code] = 0;
+    });
+
+    if (!from && !to && branchFilter === "all") {
+      // Use live accumulated account balances directly
+      accounts.forEach((acc) => {
+        balancesMap[acc.code] = Number(acc.balance) || 0;
+      });
+    } else {
+      // Calculate balances from filtered journal entries
+      filteredEntries.forEach((entry) => {
+        (entry.lines || []).forEach((line) => {
+          const code = line.account_code;
+          if (balancesMap[code] === undefined) balancesMap[code] = 0;
+          const debitBase = erpStore.getLineBaseValue(
+            line.debit || 0,
+            line.rate || 1,
+            line.currency || "EGP",
+          );
+          const creditBase = erpStore.getLineBaseValue(
+            line.credit || 0,
+            line.rate || 1,
+            line.currency || "EGP",
+          );
+          const acc = accounts.find((a) => a.code === code);
+          const isDebitNature = acc?.type === "asset" || acc?.type === "expense";
+          if (isDebitNature) {
+            balancesMap[code] += debitBase - creditBase;
+          } else {
+            balancesMap[code] += creditBase - debitBase;
+          }
+        });
+      });
+    }
+
+    // Revenue Accounts
+    const revenueAccounts = accounts
+      .filter((a) => a.type === "revenue")
+      .map((a) => ({ ...a, calculatedBalance: balancesMap[a.code] || 0 }));
+    const totalRevenue = revenueAccounts.reduce((sum, a) => sum + a.calculatedBalance, 0);
+
+    // Expense Accounts
+    const expenseAccounts = accounts
+      .filter((a) => a.type === "expense")
+      .map((a) => ({ ...a, calculatedBalance: balancesMap[a.code] || 0 }));
+    const totalExpense = expenseAccounts.reduce((sum, a) => sum + a.calculatedBalance, 0);
+
+    // COGS vs Operating Expenses
+    const cogsAccounts = expenseAccounts.filter(
+      (a) =>
+        a.code.startsWith("51") ||
+        a.code.startsWith("501") ||
+        a.name_ar.includes("تكلفة") ||
+        a.name_ar.includes("مشتريات") ||
+        a.name_ar.includes("خامات") ||
+        a.name_ar.includes("مخزون"),
+    );
+    const operatingExpenseAccounts = expenseAccounts.filter(
+      (a) => !cogsAccounts.some((c) => c.code === a.code),
+    );
+
+    const totalCogs = cogsAccounts.reduce((sum, a) => sum + a.calculatedBalance, 0);
+    const totalOperatingExpenses = operatingExpenseAccounts.reduce(
+      (sum, a) => sum + a.calculatedBalance,
+      0,
+    );
+
+    const grossProfit = totalRevenue - totalCogs;
+    const netProfit = totalRevenue - totalExpense;
+
+    // Asset Accounts
+    const assetAccounts = accounts
+      .filter((a) => a.type === "asset")
+      .map((a) => ({ ...a, calculatedBalance: balancesMap[a.code] || 0 }));
+    const totalAssets = assetAccounts.reduce((sum, a) => sum + a.calculatedBalance, 0);
+
+    const cashAndBankAccounts = assetAccounts.filter(
+      (a) =>
+        a.code.startsWith("101") ||
+        a.code.startsWith("102") ||
+        a.name_ar.includes("خزينة") ||
+        a.name_ar.includes("صندوق") ||
+        a.name_ar.includes("بنك") ||
+        a.name_ar.includes("CIB"),
+    );
+    const inventoryAccounts = assetAccounts.filter(
+      (a) => a.code.startsWith("103") || a.name_ar.includes("مخزون") || a.name_ar.includes("بضاعة"),
+    );
+    const otherAssetAccounts = assetAccounts.filter(
+      (a) =>
+        !cashAndBankAccounts.some((c) => c.code === a.code) &&
+        !inventoryAccounts.some((i) => i.code === a.code),
+    );
+
+    // Liability Accounts
+    const liabilityAccounts = accounts
+      .filter((a) => a.type === "liability")
+      .map((a) => ({ ...a, calculatedBalance: balancesMap[a.code] || 0 }));
+    const totalLiabilities = liabilityAccounts.reduce((sum, a) => sum + a.calculatedBalance, 0);
+
+    // Equity Accounts
+    const equityAccounts = accounts
+      .filter((a) => a.type === "equity")
+      .map((a) => ({ ...a, calculatedBalance: balancesMap[a.code] || 0 }));
+    const totalEquityWithoutProfit = equityAccounts.reduce(
+      (sum, a) => sum + a.calculatedBalance,
+      0,
+    );
+    const totalEquity = totalEquityWithoutProfit + netProfit;
+
+    return {
+      revenueAccounts,
+      totalRevenue,
+      cogsAccounts,
+      totalCogs,
+      operatingExpenseAccounts,
+      totalOperatingExpenses,
+      totalExpense,
+      grossProfit,
+      netProfit,
+
+      assetAccounts,
+      cashAndBankAccounts,
+      inventoryAccounts,
+      otherAssetAccounts,
+      totalAssets,
+
+      liabilityAccounts,
+      totalLiabilities,
+
+      equityAccounts,
+      totalEquityWithoutProfit,
+      totalEquity,
+    };
+  }, [erpState.accounts, filteredEntries, from, to, branchFilter]);
+
+  // Cash Flow calculations from real treasury transactions
+  const cashFlowData = useMemo(() => {
+    let txs = erpState.treasuryTransactions || [];
+    if (from) {
+      txs = txs.filter((t) => new Date(t.date || t.created_at || "") >= new Date(from));
+    }
+    if (to) {
+      txs = txs.filter((t) => new Date(t.date || t.created_at || "") <= new Date(to + "T23:59:59"));
+    }
+    if (branchFilter !== "all") {
+      txs = txs.filter((t) => t.branch_id === branchFilter || !t.branch_id);
+    }
+
+    const operatingInflows = txs
+      .filter(
+        (t) =>
+          t.type === "sales" || t.type === "deposit" || t.type === "income" || t.type === "receipt",
+      )
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    const operatingOutflows = txs
+      .filter(
+        (t) =>
+          t.type === "withdrawal" ||
+          t.type === "expense" ||
+          t.type === "purchase" ||
+          t.type === "loan" ||
+          t.type === "payment",
+      )
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    const netOperatingCashFlow = operatingInflows - operatingOutflows;
+
+    const totalTreasuryBalances = (erpState.treasuries || []).reduce(
+      (sum, tr) => sum + (Number(tr.balance) || 0),
+      0,
+    );
+
+    return {
+      operatingInflows,
+      operatingOutflows,
+      netOperatingCashFlow,
+      totalTreasuryBalances,
+      txs,
+    };
+  }, [erpState.treasuryTransactions, erpState.treasuries, from, to, branchFilter]);
 
   // Vouchers filters
   const filteredVouchers = useMemo(() => {
-    return erpState.vouchers.filter((v: any) => {
+    return (erpState.vouchers || []).filter((v: any) => {
+      if (from && new Date(v.created_at) < new Date(from)) return false;
+      if (to && new Date(v.created_at) > new Date(to + "T23:59:59")) return false;
       if (branchFilter !== "all" && v.branch_id !== branchFilter) return false;
       return true;
     });
-  }, [erpState.vouchers, branchFilter]);
+  }, [erpState.vouchers, branchFilter, from, to]);
 
   const handlePrint = () => {
-    window.print();
+    let title = "التقرير المالي العام";
+    let contentHtml = "";
+
+    const dateStr = `من ${from || "تاريخ التأسيس"} إلى ${to || new Date().toLocaleDateString("ar-EG")}`;
+    const branchName =
+      branchFilter === "all"
+        ? "جميع الفروع"
+        : erpState.branches.find((b) => b.id === branchFilter)?.name_ar || branchFilter;
+
+    if (activeTab === "sales") {
+      title = "تقرير المبيعات والتحليلات";
+      contentHtml = `
+        <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:12px; margin-top:15px;">
+          <div style="border:1px solid #ccc; padding:12px; border-radius:8px;">
+            <div style="font-size:12px; color:#666;">إجمالي طلبات الصالة والدليفري</div>
+            <div style="font-size:18px; font-weight:bold; color:#0284c7;">${summary.count} طلب</div>
+          </div>
+          <div style="border:1px solid #ccc; padding:12px; border-radius:8px;">
+            <div style="font-size:12px; color:#666;">المبيعات التشغيلية المحصلة</div>
+            <div style="font-size:18px; font-weight:bold; color:#16a34a;">${formatPrice(summary.total)}</div>
+          </div>
+          <div style="border:1px solid #ccc; padding:12px; border-radius:8px;">
+            <div style="font-size:12px; color:#666;">إجمالي الضريبة المضافة</div>
+            <div style="font-size:18px; font-weight:bold;">${formatPrice(summary.tax)}</div>
+          </div>
+          <div style="border:1px solid #ccc; padding:12px; border-radius:8px;">
+            <div style="font-size:12px; color:#666;">أصول المواد بالمخازن</div>
+            <div style="font-size:18px; font-weight:bold;">${formatPrice(inventoryValue)}</div>
+          </div>
+        </div>
+      `;
+    } else if (activeTab === "pl") {
+      title = "قائمة الأرباح والخسائر الدورية (P&L Statement)";
+      contentHtml = `
+        <table style="width:100%; border-collapse:collapse; margin-top:15px; font-size:13px;">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th style="padding:10px; border:1px solid #cbd5e1; text-align:right;">اسم الحساب / البند</th>
+              <th style="padding:10px; border:1px solid #cbd5e1; text-align:left;">كود الحساب</th>
+              <th style="padding:10px; border:1px solid #cbd5e1; text-align:left;">المبلغ</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="font-weight:bold; background:#e2e8f0;">
+              <td colSpan="2" style="padding:10px; border:1px solid #cbd5e1;">أولاً: الإيرادات التشغيلية (Revenues)</td>
+              <td style="padding:10px; border:1px solid #cbd5e1; text-align:left; color:#16a34a;">${formatPrice(accountsData.totalRevenue)}</td>
+            </tr>
+            ${accountsData.revenueAccounts
+              .map(
+                (a) => `
+              <tr>
+                <td style="padding:8px 20px; border:1px solid #cbd5e1;">${a.name_ar}</td>
+                <td style="padding:8px; border:1px solid #cbd5e1; text-align:left; font-family:monospace;">${a.code}</td>
+                <td style="padding:8px; border:1px solid #cbd5e1; text-align:left;">${formatPrice(a.calculatedBalance)}</td>
+              </tr>
+            `,
+              )
+              .join("")}
+
+            <tr style="font-weight:bold; background:#e2e8f0;">
+              <td colSpan="2" style="padding:10px; border:1px solid #cbd5e1;">ثانياً: تكلفة البضاعة المباعة (Cost of Goods Sold - COGS)</td>
+              <td style="padding:10px; border:1px solid #cbd5e1; text-align:left; color:#dc2626;">-${formatPrice(accountsData.totalCogs)}</td>
+            </tr>
+            ${accountsData.cogsAccounts
+              .map(
+                (a) => `
+              <tr>
+                <td style="padding:8px 20px; border:1px solid #cbd5e1;">${a.name_ar}</td>
+                <td style="padding:8px; border:1px solid #cbd5e1; text-align:left; font-family:monospace;">${a.code}</td>
+                <td style="padding:8px; border:1px solid #cbd5e1; text-align:left;">${formatPrice(a.calculatedBalance)}</td>
+              </tr>
+            `,
+              )
+              .join("")}
+
+            <tr style="font-weight:bold; background:#fef08a;">
+              <td colSpan="2" style="padding:10px; border:1px solid #cbd5e1;">إجمالي الربح التشغيلي (Gross Profit)</td>
+              <td style="padding:10px; border:1px solid #cbd5e1; text-align:left; color:#16a34a;">${formatPrice(accountsData.grossProfit)}</td>
+            </tr>
+
+            <tr style="font-weight:bold; background:#e2e8f0;">
+              <td colSpan="2" style="padding:10px; border:1px solid #cbd5e1;">ثالثاً: المصروفات العمومية والتشغيلية (Operating Expenses)</td>
+              <td style="padding:10px; border:1px solid #cbd5e1; text-align:left; color:#dc2626;">-${formatPrice(accountsData.totalOperatingExpenses)}</td>
+            </tr>
+            ${accountsData.operatingExpenseAccounts
+              .map(
+                (a) => `
+              <tr>
+                <td style="padding:8px 20px; border:1px solid #cbd5e1;">${a.name_ar}</td>
+                <td style="padding:8px; border:1px solid #cbd5e1; text-align:left; font-family:monospace;">${a.code}</td>
+                <td style="padding:8px; border:1px solid #cbd5e1; text-align:left;">${formatPrice(a.calculatedBalance)}</td>
+              </tr>
+            `,
+              )
+              .join("")}
+
+            <tr style="font-weight:bold; background:#bbf7d0; font-size:15px;">
+              <td colSpan="2" style="padding:12px; border:1px solid #cbd5e1;">صافي الأرباح / الخسائر الدورية (Net Profit)</td>
+              <td style="padding:12px; border:1px solid #cbd5e1; text-align:left;">${formatPrice(accountsData.netProfit)}</td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+    } else if (activeTab === "balance_sheet") {
+      title = "الميزانية العمومية للفرع (Balance Sheet)";
+      contentHtml = `
+        <div style="display:flex; gap:20px; margin-top:15px;">
+          <div style="flex:1;">
+            <h4 style="border-bottom:2px solid #16a34a; padding-bottom:5px; margin-bottom:8px;">الأصول (Assets) - الإجمالي: ${formatPrice(accountsData.totalAssets)}</h4>
+            <table style="width:100%; border-collapse:collapse; font-size:12px;">
+              <thead>
+                <tr style="background:#f1f5f9;">
+                  <th style="padding:6px; border:1px solid #cbd5e1; text-align:right;">الحساب</th>
+                  <th style="padding:6px; border:1px solid #cbd5e1; text-align:left;">الرصيد</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${accountsData.assetAccounts
+                  .map(
+                    (a) => `
+                  <tr>
+                    <td style="padding:6px; border:1px solid #cbd5e1;">${a.name_ar} (${a.code})</td>
+                    <td style="padding:6px; border:1px solid #cbd5e1; text-align:left;">${formatPrice(a.calculatedBalance)}</td>
+                  </tr>
+                `,
+                  )
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+          <div style="flex:1;">
+            <h4 style="border-bottom:2px solid #dc2626; padding-bottom:5px; margin-bottom:8px;">الالتزامات وحقوق الملكية - الإجمالي: ${formatPrice(accountsData.totalLiabilities + accountsData.totalEquity)}</h4>
+            <h5 style="margin:5px 0; color:#dc2626;">الالتزامات (${formatPrice(accountsData.totalLiabilities)})</h5>
+            <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:12px;">
+              <tbody>
+                ${accountsData.liabilityAccounts
+                  .map(
+                    (a) => `
+                  <tr>
+                    <td style="padding:6px; border:1px solid #cbd5e1;">${a.name_ar} (${a.code})</td>
+                    <td style="padding:6px; border:1px solid #cbd5e1; text-align:left;">${formatPrice(a.calculatedBalance)}</td>
+                  </tr>
+                `,
+                  )
+                  .join("")}
+              </tbody>
+            </table>
+            <h5 style="margin:5px 0; color:#2563eb;">حقوق الملكية (${formatPrice(accountsData.totalEquity)})</h5>
+            <table style="width:100%; border-collapse:collapse; font-size:12px;">
+              <tbody>
+                ${accountsData.equityAccounts
+                  .map(
+                    (a) => `
+                  <tr>
+                    <td style="padding:6px; border:1px solid #cbd5e1;">${a.name_ar} (${a.code})</td>
+                    <td style="padding:6px; border:1px solid #cbd5e1; text-align:left;">${formatPrice(a.calculatedBalance)}</td>
+                  </tr>
+                `,
+                  )
+                  .join("")}
+                <tr style="font-weight:bold; background:#f0fdf4;">
+                  <td style="padding:6px; border:1px solid #cbd5e1;">أرباح / خسائر الفترة الحالية</td>
+                  <td style="padding:6px; border:1px solid #cbd5e1; text-align:left;">${formatPrice(accountsData.netProfit)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    } else if (activeTab === "cashflow") {
+      title = "قائمة التدفقات النقدية (Cash Flow Statement)";
+      contentHtml = `
+        <table style="width:100%; border-collapse:collapse; margin-top:15px; font-size:13px;">
+          <tbody>
+            <tr>
+              <td style="padding:10px; border:1px solid #cbd5e1; font-weight:bold;">1. المقبوضات والنقد المحصل (Operating Inflows)</td>
+              <td style="padding:10px; border:1px solid #cbd5e1; text-align:left; color:#16a34a; font-weight:bold;">+${formatPrice(cashFlowData.operatingInflows)}</td>
+            </tr>
+            <tr>
+              <td style="padding:10px; border:1px solid #cbd5e1; font-weight:bold;">2. المدفوعات والمصروفات النقدية (Operating Outflows)</td>
+              <td style="padding:10px; border:1px solid #cbd5e1; text-align:left; color:#dc2626; font-weight:bold;">-${formatPrice(cashFlowData.operatingOutflows)}</td>
+            </tr>
+            <tr style="font-weight:bold; background:#f1f5f9; font-size:14px;">
+              <td style="padding:12px; border:1px solid #cbd5e1;">صافي التدفق النقدي التشغيلي (Net Operating Cash Flow)</td>
+              <td style="padding:12px; border:1px solid #cbd5e1; text-align:left;">${formatPrice(cashFlowData.netOperatingCashFlow)}</td>
+            </tr>
+            <tr style="font-weight:bold; background:#e2e8f0; font-size:14px;">
+              <td style="padding:12px; border:1px solid #cbd5e1;">إجمالي رصيد الخزائن والحسابات النقدية الفعلي</td>
+              <td style="padding:12px; border:1px solid #cbd5e1; text-align:left; color:#0284c7;">${formatPrice(cashFlowData.totalTreasuryBalances)}</td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+    } else if (activeTab === "vouchers") {
+      title = "سندات القبض والصرف والتسويات المالية";
+      contentHtml = `
+        <table style="width:100%; border-collapse:collapse; margin-top:15px; font-size:12px;">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th style="padding:8px; border:1px solid #cbd5e1; text-align:right;">رقم السند</th>
+              <th style="padding:8px; border:1px solid #cbd5e1; text-align:right;">التاريخ</th>
+              <th style="padding:8px; border:1px solid #cbd5e1; text-align:right;">نوع السند</th>
+              <th style="padding:8px; border:1px solid #cbd5e1; text-align:right;">الفئة</th>
+              <th style="padding:8px; border:1px solid #cbd5e1; text-align:left;">المبلغ</th>
+              <th style="padding:8px; border:1px solid #cbd5e1; text-align:right;">البيان / الوصف</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredVouchers
+              .map(
+                (v) => `
+              <tr>
+                <td style="padding:6px; border:1px solid #cbd5e1; font-family:monospace; font-weight:bold;">${v.id.substring(4, 9).toUpperCase()}</td>
+                <td style="padding:6px; border:1px solid #cbd5e1;">${new Date(v.created_at).toLocaleDateString("ar-EG")}</td>
+                <td style="padding:6px; border:1px solid #cbd5e1;">${v.type === "receipt" ? "سند قبض (+)" : "سند صرف (-)"}</td>
+                <td style="padding:6px; border:1px solid #cbd5e1;">${v.category || "-"}</td>
+                <td style="padding:6px; border:1px solid #cbd5e1; text-align:left; font-weight:bold;">${Number(v.amount).toFixed(2)} ${v.currency || "EGP"}</td>
+                <td style="padding:6px; border:1px solid #cbd5e1;">${v.description || "-"}</td>
+              </tr>
+            `,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      `;
+    } else {
+      title = "شجرة الحسابات والدليل المحاسبي للفرع";
+      contentHtml = `
+        <table style="width:100%; border-collapse:collapse; margin-top:15px; font-size:12px;">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th style="padding:8px; border:1px solid #cbd5e1; text-align:right;">كود الحساب</th>
+              <th style="padding:8px; border:1px solid #cbd5e1; text-align:right;">اسم الحساب</th>
+              <th style="padding:8px; border:1px solid #cbd5e1; text-align:right;">نوع الحساب</th>
+              <th style="padding:8px; border:1px solid #cbd5e1; text-align:center;">العملة</th>
+              <th style="padding:8px; border:1px solid #cbd5e1; text-align:left;">الرصيد الدفتري الحالي</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(erpState.accounts || [])
+              .map(
+                (a) => `
+              <tr>
+                <td style="padding:6px; border:1px solid #cbd5e1; font-family:monospace; font-weight:bold;">${a.code}</td>
+                <td style="padding:6px; border:1px solid #cbd5e1; font-weight:bold;">${a.name_ar}</td>
+                <td style="padding:6px; border:1px solid #cbd5e1;">${a.type.toUpperCase()}</td>
+                <td style="padding:6px; border:1px solid #cbd5e1; text-align:center; font-weight:bold;">${a.currency || "EGP"}</td>
+                <td style="padding:6px; border:1px solid #cbd5e1; text-align:left; font-weight:bold; direction:ltr;">${formatTreasuryCurrency(a.balance, a.currency)}</td>
+              </tr>
+            `,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    const fullHtml = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>${title}</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; padding: 20px; color: #0f172a; background: #fff; }
+    .header { text-align: center; border-bottom: 2px solid #0284c7; padding-bottom: 12px; margin-bottom: 20px; }
+    .header h1 { margin: 0; font-size: 20px; color: #0f172a; }
+    .header p { margin: 4px 0 0; font-size: 13px; color: #475569; }
+    .meta { display: flex; justify-content: space-between; font-size: 12px; color: #334155; margin-bottom: 15px; font-weight: bold; background: #f8fafc; padding: 10px 14px; border-radius: 8px; border: 1px solid #cbd5e1; }
+    .signatures { margin-top: 40px; display: flex; justify-content: space-between; text-align: center; font-size: 12px; color: #475569; }
+    .sig-box { flex: 1; margin: 0 10px; }
+    .sig-line { border-top: 1px dashed #94a3b8; margin-top: 40px; padding-top: 6px; font-weight: bold; }
+    @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>الشركة المصرية لادارة المشروعات السياحية والترفيهية (بهجت جروب)</h1>
+    <p>نظام إداري متكامل Restocash ERP - ${title}</p>
+  </div>
+  <div class="meta">
+    <span>الفترة: ${dateStr}</span>
+    <span>الفرع: ${branchName}</span>
+    <span>تاريخ الطباعة: ${new Date().toLocaleDateString("ar-EG")} ${new Date().toLocaleTimeString("ar-EG")}</span>
+  </div>
+  ${contentHtml}
+  <div class="signatures">
+    <div class="sig-box"><div class="sig-line">إعداد المحاسب</div></div>
+    <div class="sig-box"><div class="sig-line">المراجعة والتدقيق</div></div>
+    <div class="sig-box"><div class="sig-line">اعتماد المدير المالي</div></div>
+  </div>
+</body>
+</html>`;
+
+    printRawHtml(fullHtml);
   };
 
   return (
@@ -627,21 +1109,26 @@ function ReportsPage() {
               <div className="space-y-2">
                 <h4 className="font-bold text-emerald-600 text-sm border-b border-border pb-1.5 flex justify-between">
                   <span>أولاً: الإيرادات التشغيلية (Revenues)</span>
-                  <span>{formatPrice(summary.total + 12500)}</span>
+                  <span>{formatPrice(accountsData.totalRevenue)}</span>
                 </h4>
                 <div className="space-y-1 pl-4 text-xs">
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>مبيعات الصالة والوجبات الأساسية</span>
-                    <span>{formatPrice(summary.total)}</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>مبيعات دليفري وخدمات التوصيل</span>
-                    <span>{formatPrice(8000)}</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>إيرادات حفلات وخدمات خارجية</span>
-                    <span>{formatPrice(4500)}</span>
-                  </div>
+                  {accountsData.revenueAccounts.length === 0 ? (
+                    <div className="text-muted-foreground py-1">لا توجد حسابات إيرادات مسجلة</div>
+                  ) : (
+                    accountsData.revenueAccounts.map((acc) => (
+                      <div
+                        key={acc.id || acc.code}
+                        className="flex justify-between text-muted-foreground"
+                      >
+                        <span>
+                          {acc.name_ar} ({acc.code})
+                        </span>
+                        <span className="font-bold text-foreground">
+                          {formatPrice(acc.calculatedBalance)}
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
@@ -649,56 +1136,72 @@ function ReportsPage() {
               <div className="space-y-2">
                 <h4 className="font-bold text-rose-600 text-sm border-b border-border pb-1.5 flex justify-between">
                   <span>ثانياً: تكلفة البضاعة المباعة (Cost of Goods Sold - COGS)</span>
-                  <span>{formatPrice(-(summary.totalCost + 1500))}</span>
+                  <span>{formatPrice(-accountsData.totalCogs)}</span>
                 </h4>
                 <div className="space-y-1 pl-4 text-xs">
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>استهلاك المواد الأولية واللحوم (طبقاً للـ Recipe/BOM)</span>
-                    <span>{formatPrice(-summary.totalCost)}</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>هدر تالف ومفقودات المطبخ</span>
-                    <span>{formatPrice(-1500)}</span>
-                  </div>
+                  {accountsData.cogsAccounts.length === 0 ? (
+                    <div className="text-muted-foreground py-1">
+                      لا توجد تكاليف بضاعة مباشرة مسجلة
+                    </div>
+                  ) : (
+                    accountsData.cogsAccounts.map((acc) => (
+                      <div
+                        key={acc.id || acc.code}
+                        className="flex justify-between text-muted-foreground"
+                      >
+                        <span>
+                          {acc.name_ar} ({acc.code})
+                        </span>
+                        <span className="font-bold text-foreground">
+                          {formatPrice(acc.calculatedBalance)}
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
               {/* Gross Profit */}
-              <div className="bg-muted p-3.5 rounded-xl flex justify-between font-bold text-sm">
+              <div className="bg-muted p-3.5 rounded-xl flex justify-between font-bold text-sm border border-border">
                 <span>إجمالي الربح التشغيلي (Gross Profit)</span>
-                <span className="text-emerald-600">
-                  {formatPrice(summary.total + 12500 - (summary.totalCost + 1500))}
+                <span
+                  className={accountsData.grossProfit >= 0 ? "text-emerald-600" : "text-rose-600"}
+                >
+                  {formatPrice(accountsData.grossProfit)}
                 </span>
               </div>
 
               {/* Operating Expenses */}
               <div className="space-y-2">
-                <h4 className="font-bold text-slate-800 text-sm border-b border-border pb-1.5 flex justify-between">
+                <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm border-b border-border pb-1.5 flex justify-between">
                   <span>ثالثاً: المصروفات العمومية والتشغيلية (Expenses)</span>
-                  <span>{formatPrice(-7200)}</span>
+                  <span>{formatPrice(-accountsData.totalOperatingExpenses)}</span>
                 </h4>
                 <div className="space-y-1 pl-4 text-xs">
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>رواتب وأجور العمالة والموظفين</span>
-                    <span>{formatPrice(-4500)}</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>مصروفات الطاقة والكهرباء والمياه</span>
-                    <span>{formatPrice(-1200)}</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>مصروفات تسويق وإعلانات</span>
-                    <span>{formatPrice(-1500)}</span>
-                  </div>
+                  {accountsData.operatingExpenseAccounts.length === 0 ? (
+                    <div className="text-muted-foreground py-1">لا توجد مصروفات عمومية مسجلة</div>
+                  ) : (
+                    accountsData.operatingExpenseAccounts.map((acc) => (
+                      <div
+                        key={acc.id || acc.code}
+                        className="flex justify-between text-muted-foreground"
+                      >
+                        <span>
+                          {acc.name_ar} ({acc.code})
+                        </span>
+                        <span className="font-bold text-foreground">
+                          {formatPrice(acc.calculatedBalance)}
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
               {/* Net Profit */}
               <div className="bg-primary text-primary-foreground p-4 rounded-xl flex justify-between font-black text-base shadow-xs">
-                <span>صافي الأرباح الدورية للفرع (Net Profit)</span>
-                <span>
-                  {formatPrice(summary.total + 12500 - (summary.totalCost + 1500) - 7200)}
-                </span>
+                <span>صافي الأرباح / الخسائر الدورية (Net Profit)</span>
+                <span>{formatPrice(accountsData.netProfit)}</span>
               </div>
             </CardContent>
           </Card>
@@ -717,31 +1220,31 @@ function ReportsPage() {
             </CardHeader>
             <CardContent className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Assets */}
-              <div className="space-y-4 border-l border-border pl-6">
+              <div className="space-y-4 md:border-l border-border md:pl-6">
                 <h3 className="font-black text-emerald-600 text-base border-b border-border pb-2 flex justify-between">
                   <span>الأصول (Assets)</span>
-                  <span>{formatPrice(ledgersSummary.totalAssets + inventoryValue)}</span>
+                  <span>{formatPrice(accountsData.totalAssets)}</span>
                 </h3>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between font-bold text-slate-700">
-                    <span>أصول متداولة</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground pl-3">
-                    <span>الحساب البنكي الرئيسي (CIB)</span>
-                    <span>{formatPrice(120000)}</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground pl-3">
-                    <span>نقدية بالخزينة (Cash)</span>
-                    <span>{formatPrice(15000)}</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground pl-3">
-                    <span>نقدية بالدولار الأمريكي (USD)</span>
-                    <span>1,000.00 $</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground pl-3">
-                    <span>مخزون المواد الخام بالمستودع</span>
-                    <span>{formatPrice(inventoryValue)}</span>
-                  </div>
+                <div className="space-y-3 text-xs">
+                  {accountsData.assetAccounts.length === 0 ? (
+                    <div className="text-muted-foreground py-2">
+                      لا توجد أصول مسجلة في شجرة الحسابات
+                    </div>
+                  ) : (
+                    accountsData.assetAccounts.map((acc) => (
+                      <div
+                        key={acc.id || acc.code}
+                        className="flex justify-between text-muted-foreground border-b border-border/40 pb-1"
+                      >
+                        <span className="font-medium text-foreground">
+                          {acc.name_ar} ({acc.code})
+                        </span>
+                        <span className="font-bold text-foreground">
+                          {formatPrice(acc.calculatedBalance)}
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
@@ -749,37 +1252,63 @@ function ReportsPage() {
               <div className="space-y-4">
                 <h3 className="font-black text-rose-600 text-base border-b border-border pb-2 flex justify-between">
                   <span>الالتزامات وحقوق الملكية</span>
-                  <span>{formatPrice(ledgersSummary.totalAssets + inventoryValue)}</span>
+                  <span>
+                    {formatPrice(accountsData.totalLiabilities + accountsData.totalEquity)}
+                  </span>
                 </h3>
                 <div className="space-y-4 text-xs">
                   {/* Liabilities */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between font-bold text-slate-700">
+                  <div className="space-y-2">
+                    <div className="flex justify-between font-bold text-rose-600 border-b border-border pb-1">
                       <span>الالتزامات المطلوبة (Liabilities)</span>
-                      <span>{formatPrice(12000)}</span>
+                      <span>{formatPrice(accountsData.totalLiabilities)}</span>
                     </div>
-                    <div className="flex justify-between text-muted-foreground pl-3">
-                      <span>الموردون والدائنون (حسابات جارية)</span>
-                      <span>{formatPrice(12000)}</span>
-                    </div>
+                    {accountsData.liabilityAccounts.length === 0 ? (
+                      <div className="text-muted-foreground py-1">لا توجد التزامات مسجلة</div>
+                    ) : (
+                      accountsData.liabilityAccounts.map((acc) => (
+                        <div
+                          key={acc.id || acc.code}
+                          className="flex justify-between text-muted-foreground pl-3"
+                        >
+                          <span>
+                            {acc.name_ar} ({acc.code})
+                          </span>
+                          <span className="font-bold text-foreground">
+                            {formatPrice(acc.calculatedBalance)}
+                          </span>
+                        </div>
+                      ))
+                    )}
                   </div>
 
                   {/* Equity */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between font-bold text-slate-700">
+                  <div className="space-y-2 pt-2">
+                    <div className="flex justify-between font-bold text-blue-600 border-b border-border pb-1">
                       <span>حقوق الملكية (Equity)</span>
-                      <span>
-                        {formatPrice(ledgersSummary.totalAssets + inventoryValue - 12000)}
-                      </span>
+                      <span>{formatPrice(accountsData.totalEquity)}</span>
                     </div>
-                    <div className="flex justify-between text-muted-foreground pl-3">
-                      <span>رأس المال المدفوع للشركاء</span>
-                      <span>{formatPrice(211500)}</span>
-                    </div>
-                    <div className="flex justify-between text-muted-foreground pl-3">
-                      <span>أرباح العام المحجوزة</span>
-                      <span>
-                        {formatPrice(summary.total + 12500 - (summary.totalCost + 1500) - 7200)}
+                    {accountsData.equityAccounts.map((acc) => (
+                      <div
+                        key={acc.id || acc.code}
+                        className="flex justify-between text-muted-foreground pl-3"
+                      >
+                        <span>
+                          {acc.name_ar} ({acc.code})
+                        </span>
+                        <span className="font-bold text-foreground">
+                          {formatPrice(acc.calculatedBalance)}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between text-muted-foreground pl-3 font-bold bg-muted/50 p-2 rounded-lg">
+                      <span>أرباح / خسائر الفترة الحالية (Net Income)</span>
+                      <span
+                        className={
+                          accountsData.netProfit >= 0 ? "text-emerald-600" : "text-rose-600"
+                        }
+                      >
+                        {formatPrice(accountsData.netProfit)}
                       </span>
                     </div>
                   </div>
@@ -800,39 +1329,42 @@ function ReportsPage() {
             <CardContent className="p-6 space-y-4 text-sm">
               <div className="space-y-2">
                 <p className="font-bold text-emerald-600 border-b border-border pb-1">
-                  1. الأنشطة التشغيلية (Operating Activities)
+                  1. المقبوضات والنقد المحصل (Operating Inflows)
                 </p>
                 <div className="space-y-1 pl-4 text-xs text-muted-foreground">
                   <div className="flex justify-between">
-                    <span>النقد المحصل من مبيعات المطعم اليومية</span>
-                    <span className="text-emerald-600">+{formatPrice(summary.total)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>النقد المدفوع لشراء مواد غذائية خام للمطبخ</span>
-                    <span className="text-rose-600">-{formatPrice(summary.totalCost)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>رواتب ومكافآت العاملين مدفوعة نقدياً</span>
-                    <span className="text-rose-600">{formatPrice(-4500)}</span>
+                    <span>إجمالي النقدية والمقبوضات المحصلة من حركات الخزينة</span>
+                    <span className="text-emerald-600 font-bold">
+                      +{formatPrice(cashFlowData.operatingInflows)}
+                    </span>
                   </div>
                 </div>
               </div>
 
               <div className="space-y-2 pt-2">
-                <p className="font-bold text-slate-700 border-b border-border pb-1">
-                  2. الأنشطة الاستثمارية (Investing Activities)
+                <p className="font-bold text-rose-600 border-b border-border pb-1">
+                  2. المدفوعات والمصروفات النقدية (Operating Outflows)
                 </p>
                 <div className="space-y-1 pl-4 text-xs text-muted-foreground">
                   <div className="flex justify-between">
-                    <span>شراء معدات مطبخ جديدة وأفران صهر</span>
-                    <span className="text-rose-600">{formatPrice(-15000)}</span>
+                    <span>إجمالي المصروفات والمدفوعات الصادرة من الخزائن</span>
+                    <span className="text-rose-600 font-bold">
+                      -{formatPrice(cashFlowData.operatingOutflows)}
+                    </span>
                   </div>
                 </div>
               </div>
 
               <div className="bg-primary/10 text-primary p-3.5 rounded-xl flex justify-between font-black text-sm">
-                <span>صافي التغير في النقد والأرصدة البنكية</span>
-                <span>{formatPrice(summary.total - summary.totalCost - 4500 - 15000)}</span>
+                <span>صافي التدفق النقدي التشغيلي</span>
+                <span>{formatPrice(cashFlowData.netOperatingCashFlow)}</span>
+              </div>
+
+              <div className="bg-muted p-3.5 rounded-xl flex justify-between font-black text-sm border border-border">
+                <span>إجمالي أرصدة الخزائن والحسابات البنكية الفعلية</span>
+                <span className="text-emerald-600">
+                  {formatPrice(cashFlowData.totalTreasuryBalances)}
+                </span>
               </div>
             </CardContent>
           </Card>
@@ -933,7 +1465,8 @@ function ReportsPage() {
                       <th className="text-right p-3 font-bold">كود الحساب</th>
                       <th className="text-right p-3 font-bold">اسم الحساب (أستاذ عام)</th>
                       <th className="text-right p-3 font-bold">تصنيف الحساب</th>
-                      <th className="text-right p-3 font-bold">الرصيد الدفتري الحالي</th>
+                      <th className="text-center p-3 font-bold">العملة</th>
+                      <th className="text-left p-3 font-bold">الرصيد الدفتري الحالي</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -958,7 +1491,12 @@ function ReportsPage() {
                               {acc.type.toUpperCase()}
                             </span>
                           </td>
-                          <td className="p-3 font-black text-slate-700">
+                          <td className="p-3 text-center">
+                            <span className="bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 font-mono text-[11px] font-bold px-2 py-0.5 rounded">
+                              {acc.currency || "EGP"}
+                            </span>
+                          </td>
+                          <td className="p-3 font-black text-slate-700 text-left font-mono dir-ltr">
                             {formatTreasuryCurrency(acc.balance, acc.currency)}
                           </td>
                         </tr>

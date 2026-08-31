@@ -114,7 +114,10 @@ function MenuPage() {
 
     const tableNum = table ? parseInt(table) : 999;
     const resolvedTableId = tableId || table_id || (table ? `tbl-${tableNum}` : "tbl-999");
-    const trackingTokenForOrder = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `trk_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const trackingTokenForOrder =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `trk_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
     const orderPayload = {
       id: "ord_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
@@ -136,23 +139,26 @@ function MenuPage() {
 
     // Persist the same order so Captain, Cashier and Oven share one durable identity.
     try {
-      const { error } = await supabase.from("orders").upsert({
-        id: orderPayload.id,
-        table_id: orderPayload.table_id,
-        items: orderPayload.items,
-        order_type: orderPayload.order_type,
-        notes: orderPayload.notes,
-        subtotal: Number(orderPayload.subtotal || 0),
-        tax: Number(orderPayload.tax || 0),
-        total: Number(orderPayload.total || 0),
-        status: "pending_captain",
-        created_at: orderPayload.created_at,
-        pricing_currency: orderPayload.pricing_currency,
-        payment_currency: orderPayload.payment_currency,
-        payment_exchange_rate: orderPayload.payment_exchange_rate,
-        payment_amount: orderPayload.payment_amount,
-        customer_tracking_token: orderPayload.customer_tracking_token,
-      }, { onConflict: "id" });
+      const { error } = await supabase.from("orders").upsert(
+        {
+          id: orderPayload.id,
+          table_id: orderPayload.table_id,
+          items: orderPayload.items,
+          order_type: orderPayload.order_type,
+          notes: orderPayload.notes,
+          subtotal: Number(orderPayload.subtotal || 0),
+          tax: Number(orderPayload.tax || 0),
+          total: Number(orderPayload.total || 0),
+          status: "pending_captain",
+          created_at: orderPayload.created_at,
+          pricing_currency: orderPayload.pricing_currency,
+          payment_currency: orderPayload.payment_currency,
+          payment_exchange_rate: orderPayload.payment_exchange_rate,
+          payment_amount: orderPayload.payment_amount,
+          customer_tracking_token: orderPayload.customer_tracking_token,
+        },
+        { onConflict: "id" },
+      );
       if (error) throw error;
     } catch (error) {
       console.warn("Self-order database bridge warning:", error);
@@ -429,8 +435,9 @@ function MenuPage() {
           </div>
         </div>
       )}
-      {trackingToken ? <CustomerOrderTracker token={trackingToken} onClose={() => setTrackingToken("")} /> : null}
-
+      {trackingToken ? (
+        <CustomerOrderTracker token={trackingToken} onClose={() => setTrackingToken("")} />
+      ) : null}
     </div>
   );
 }

@@ -31,9 +31,7 @@ describe("financialGuards", () => {
       ]),
     ).toThrow();
 
-    expect(() =>
-      assertBalancedJournalLines([{ debit: 100, credit: 0 }]),
-    ).toThrow();
+    expect(() => assertBalancedJournalLines([{ debit: 100, credit: 0 }])).toThrow();
 
     expect(() =>
       assertBalancedJournalLines([

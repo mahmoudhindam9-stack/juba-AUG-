@@ -19,8 +19,28 @@ export function createAppSync(queryClient: QueryClient) {
       if (!raw) return;
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") {
-        // ERPStore exposes its state for the existing application architecture.
-        erpStore.state = parsed;
+        const memoryEntriesCount = erpStore.state?.journalEntries?.length || 0;
+        const memoryUpdated = erpStore.state?._updatedAt || 0;
+
+        const parsedEntriesCount = parsed.journalEntries?.length || 0;
+        const parsedUpdated = parsed._updatedAt || 0;
+
+        // Never overwrite in-memory state if in-memory has more entries or newer timestamp
+        if (
+          memoryEntriesCount > parsedEntriesCount ||
+          (memoryEntriesCount === parsedEntriesCount && memoryUpdated > parsedUpdated)
+        ) {
+          return;
+        }
+
+        erpStore.state = {
+          ...erpStore.getDefaultState(),
+          ...parsed,
+          auditLogs:
+            (erpStore.state?.auditLogs?.length || 0) > (parsed.auditLogs?.length || 0)
+              ? erpStore.state.auditLogs
+              : parsed.auditLogs || [],
+        };
         if (typeof erpStore.recalculateAccountBalances === "function") {
           erpStore.recalculateAccountBalances();
         }

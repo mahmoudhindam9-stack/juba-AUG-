@@ -34,7 +34,8 @@ export interface MallContractFormData {
 
 export const AR_CONTRACT_SECTIONS = {
   title: "عقد إيجار محل تجاري",
-  intro: "تم الاتفاق بين إدارة المول والمستأجر على تأجير الوحدة الموضحة في بيانات العقد وفقاً للشروط والأحكام المدخلة.",
+  intro:
+    "تم الاتفاق بين إدارة المول والمستأجر على تأجير الوحدة الموضحة في بيانات العقد وفقاً للشروط والأحكام المدخلة.",
   parties: "أولاً: بيانات الأطراف",
   property: "ثانياً: بيانات المحل والوحدة",
   financial: "ثالثاً: القيمة الإيجارية والتأمين والدفعات",
@@ -46,7 +47,8 @@ export const AR_CONTRACT_SECTIONS = {
 
 export const EN_CONTRACT_SECTIONS = {
   title: "COMMERCIAL SHOP LEASE AGREEMENT",
-  intro: "The Mall Management and the Tenant agree to lease the unit identified in the contract data in accordance with the entered terms and conditions.",
+  intro:
+    "The Mall Management and the Tenant agree to lease the unit identified in the contract data in accordance with the entered terms and conditions.",
   parties: "1. PARTIES",
   property: "2. SHOP / PREMISES DETAILS",
   financial: "3. RENT, DEPOSIT AND PAYMENTS",
@@ -70,7 +72,9 @@ export const EN_CONTRACT_DEFAULT_TERMS = `1. This Agreement shall remain effecti
 5. The Tenant shall operate only the approved activity and comply with Mall Management rules and regulations.
 6. In the event of breach of the Agreement, Management may terminate the Agreement and take the necessary legal action under the applicable law.`;
 
-export function normalizeMallContractForm(form: Partial<MallContractFormData>): MallContractFormData {
+export function normalizeMallContractForm(
+  form: Partial<MallContractFormData>,
+): MallContractFormData {
   return {
     shop_id: form.shop_id || "",
     custom_shop_name: form.custom_shop_name || "",

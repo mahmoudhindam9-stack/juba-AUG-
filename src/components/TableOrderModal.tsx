@@ -618,7 +618,8 @@ export function TableOrderModal({
                       <span className="text-[11px] font-black text-indigo-600">
                         {formatPrice(
                           (line.item.price +
-                            (line.selectedAdditions?.reduce((s, a) => s + (a.price || 0), 0) || 0)) *
+                            (line.selectedAdditions?.reduce((s, a) => s + (a.price || 0), 0) ||
+                              0)) *
                             line.quantity,
                         )}
                       </span>
@@ -677,7 +678,11 @@ export function TableOrderModal({
                 </label>
                 <textarea
                   rows={2}
-                  placeholder={lang === "ar" ? "مثال: بدون بصل، صوص إضافي..." : "e.g. No onions, extra sauce..."}
+                  placeholder={
+                    lang === "ar"
+                      ? "مثال: بدون بصل، صوص إضافي..."
+                      : "e.g. No onions, extra sauce..."
+                  }
                   value={orderNotes}
                   onChange={(e) => setOrderNotes(e.target.value)}
                   className="w-full bg-white border border-slate-200 rounded-xl p-1.5 text-xs font-semibold outline-none focus:border-indigo-500 transition resize-none"
@@ -768,9 +773,7 @@ export function TableOrderModal({
                   rows={3}
                   value={noteEditingItem.notes}
                   onChange={(e) =>
-                    setNoteEditingItem((prev) =>
-                      prev ? { ...prev, notes: e.target.value } : null,
-                    )
+                    setNoteEditingItem((prev) => (prev ? { ...prev, notes: e.target.value } : null))
                   }
                   placeholder={
                     lang === "ar"

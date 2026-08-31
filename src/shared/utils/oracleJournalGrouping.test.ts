@@ -25,11 +25,29 @@ describe("Oracle ordered journal grouping", () => {
   it("keeps the same journal number separate across different months and years", () => {
     const entries = groupOracleRowsIntoJournalEntriesOrdered([
       makeRow({ index: 2, date: "2026-01-15", period: "1", journal_number: "01/7" }),
-      makeRow({ index: 3, account_code: "400100", account_name: "إيراد", curr_debit: 0, curr_credit: 100 }),
+      makeRow({
+        index: 3,
+        account_code: "400100",
+        account_name: "إيراد",
+        curr_debit: 0,
+        curr_credit: 100,
+      }),
       makeRow({ index: 4, date: "2026-02-15", period: "2", journal_number: "02/7" }),
-      makeRow({ index: 5, account_code: "400200", account_name: "إيراد فبراير", curr_debit: 0, curr_credit: 100 }),
+      makeRow({
+        index: 5,
+        account_code: "400200",
+        account_name: "إيراد فبراير",
+        curr_debit: 0,
+        curr_credit: 100,
+      }),
       makeRow({ index: 6, date: "2027-01-15", period: "1", journal_number: "01/7" }),
-      makeRow({ index: 7, account_code: "400300", account_name: "إيراد 2027", curr_debit: 0, curr_credit: 100 }),
+      makeRow({
+        index: 7,
+        account_code: "400300",
+        account_name: "إيراد 2027",
+        curr_debit: 0,
+        curr_credit: 100,
+      }),
     ]);
 
     expect(entries).toHaveLength(3);

@@ -306,7 +306,6 @@ function Index() {
 
   const removeFromCart = (id: string) => setCart((prev) => prev.filter((c) => c.item.id !== id));
 
-
   const updateItemNotes = (id: string, notes: string) => {
     setCart((prev) => prev.map((c) => (c.item.id === id ? { ...c, notes } : c)));
   };
@@ -1823,9 +1822,7 @@ function Index() {
                   rows={3}
                   value={noteEditingItem.notes}
                   onChange={(e) =>
-                    setNoteEditingItem((prev) =>
-                      prev ? { ...prev, notes: e.target.value } : null,
-                    )
+                    setNoteEditingItem((prev) => (prev ? { ...prev, notes: e.target.value } : null))
                   }
                   placeholder={
                     lang === "ar"
@@ -2264,17 +2261,23 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
     (sum, it) => sum + Number(it?.price || 0) * Number(it?.quantity || 0),
     0,
   );
-  const displaySubtotal = Number(invoice.subtotal) > 0 ? Number(invoice.subtotal) : calculatedItemsSubtotal;
+  const displaySubtotal =
+    Number(invoice.subtotal) > 0 ? Number(invoice.subtotal) : calculatedItemsSubtotal;
   const displayDiscount = Number(invoice.discount) || 0;
   const displayServiceFee = Number(invoice.service_fee) || 0;
   const displayDeliveryFee = Number(invoice.delivery_fee) || 0;
   const taxRateForDisplay = Number(invoice.tax_rate ?? receiptSettings.defaultTaxRate ?? 14);
-  const displayTax = Number(invoice.tax) > 0
-    ? Number(invoice.tax)
-    : Number((displaySubtotal * taxRateForDisplay / 100).toFixed(2));
-  const displayTotal = Number(invoice.total) > 0
-    ? Number(invoice.total)
-    : Math.max(0, displaySubtotal - displayDiscount + displayServiceFee + displayDeliveryFee + displayTax);
+  const displayTax =
+    Number(invoice.tax) > 0
+      ? Number(invoice.tax)
+      : Number(((displaySubtotal * taxRateForDisplay) / 100).toFixed(2));
+  const displayTotal =
+    Number(invoice.total) > 0
+      ? Number(invoice.total)
+      : Math.max(
+          0,
+          displaySubtotal - displayDiscount + displayServiceFee + displayDeliveryFee + displayTax,
+        );
 
   const handlePrint = () => {
     const isConnected = printerService.isPrinterConnected();
@@ -2429,9 +2432,7 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
         )}
         <div className="flex justify-between items-baseline pt-2 border-t border-border font-sans">
           <span className="font-bold">{t.total}</span>
-          <span className="text-2xl font-black text-primary">
-            {formatPrice(displayTotal)}
-          </span>
+          <span className="text-2xl font-black text-primary">{formatPrice(displayTotal)}</span>
         </div>
       </div>
 

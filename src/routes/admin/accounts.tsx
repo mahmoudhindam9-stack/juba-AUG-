@@ -96,7 +96,7 @@ const ACCOUNT_TYPES: {
 
 function AccountsPage() {
   const { toast } = useToast();
-  const { formatPrice, currency } = useSettings();
+  const { formatPrice, currency, formatTreasuryCurrency } = useSettings();
 
   // Reactive state synced with erpStore - deep copy accounts list to guarantee fresh React references
   const [erpState, setErpState] = useState(() => {
@@ -241,6 +241,10 @@ function AccountsPage() {
                 if (parent_code.length === 0) parent_code = code.substring(0, 1);
               }
 
+              const rowCurrency = String(
+                row["العملة"] || row["Currency"] || row["currency"] || row["curr"] || "EGP",
+              ).trim().toUpperCase();
+
               allAccounts.push({
                 code,
                 name_ar: name,
@@ -250,7 +254,7 @@ function AccountsPage() {
                 balance: initialBalance,
                 initial_balance: initialBalance,
                 status: "active",
-                currency: "EGP",
+                currency: rowCurrency || "EGP",
               });
             }
           });
@@ -275,6 +279,9 @@ function AccountsPage() {
             row["حساب الدائن"] || row["Credit Account"] || row["credit_code"] || "201000",
           );
           const amount = Number(row["المبلغ"] || row["Amount"] || row["amount"] || 0);
+          const txCurrency = String(
+            row["العملة"] || row["Currency"] || row["currency"] || "EGP",
+          ).trim().toUpperCase();
 
           if (amount > 0) {
             allEntries.push({
@@ -283,13 +290,13 @@ function AccountsPage() {
               date: date.includes("2026") ? date : "2026-01-01",
               description: desc,
               reference: ref,
-              currency: "EGP",
+              currency: txCurrency || "EGP",
               created_by: "أوراكل ERP",
               is_approved: true,
               created_at: new Date().toISOString(),
               lines: [
-                { account_code: debitAcc, debit: amount, credit: 0 },
-                { account_code: creditAcc, debit: 0, credit: amount },
+                { account_code: debitAcc, debit: amount, credit: 0, currency: txCurrency || "EGP" },
+                { account_code: creditAcc, debit: 0, credit: amount, currency: txCurrency || "EGP" },
               ],
             });
           }
@@ -1029,7 +1036,7 @@ function AccountsPage() {
                             </td>
 
                             {/* Live Balance */}
-                            <td className="p-3.5 font-mono font-black text-sm">
+                            <td className="p-3.5 font-mono font-black text-sm dir-ltr text-left">
                               <span
                                 className={
                                   acc.balance < 0
@@ -1037,10 +1044,7 @@ function AccountsPage() {
                                     : "text-emerald-600 dark:text-emerald-400"
                                 }
                               >
-                                {formatPrice(acc.balance)}
-                              </span>
-                              <span className="text-[10px] text-muted-foreground mr-1">
-                                {acc.currency || "EGP"}
+                                {formatTreasuryCurrency(acc.balance, acc.currency)}
                               </span>
                             </td>
 

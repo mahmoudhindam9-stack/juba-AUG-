@@ -1,1 +1,1 @@
-console.log('PR9 resolved branch')
+console.log("PR9 resolved branch");

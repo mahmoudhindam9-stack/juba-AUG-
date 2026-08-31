@@ -19,7 +19,8 @@ function normalizeReceipt(data: any) {
   const serviceFee = Number(data.serviceFee) || 0;
   const deliveryFee = Number(data.deliveryFee) || 0;
   const tax = Number(data.tax) || 0;
-  const total = Number(data.total) || Math.max(0, subtotal - discount + serviceFee + deliveryFee + tax);
+  const total =
+    Number(data.total) || Math.max(0, subtotal - discount + serviceFee + deliveryFee + tax);
   return { ...data, subtotal, discount, serviceFee, deliveryFee, tax, total };
 }
 
@@ -58,16 +59,24 @@ function mirrorOrderToKitchen(order: any) {
 if (typeof window !== "undefined") {
   const channel = supabase
     .channel("restocash_pos_oven_bridge")
-    .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders" }, ({ new: order }) => {
-      mirrorOrderToKitchen(order);
-    })
-    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders" }, ({ new: order }) => {
-      if (order?.status === "served" && order?.table_id) {
-        tableOrdersStore.markKitchenCompletedByTableId(order.table_id);
-      } else {
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "orders" },
+      ({ new: order }) => {
         mirrorOrderToKitchen(order);
-      }
-    })
+      },
+    )
+    .on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "orders" },
+      ({ new: order }) => {
+        if (order?.status === "served" && order?.table_id) {
+          tableOrdersStore.markKitchenCompletedByTableId(order.table_id);
+        } else {
+          mirrorOrderToKitchen(order);
+        }
+      },
+    )
     .subscribe();
 
   void channel;

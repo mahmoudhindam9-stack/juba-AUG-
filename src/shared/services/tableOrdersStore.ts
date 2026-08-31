@@ -143,7 +143,8 @@ class TableOrdersStore {
             total: Number(order.total || 0),
             payment_method: "cash",
             order_type: order.order_type,
-            table_id: order.table_id && /^[0-9a-fA-F-]{36}$/.test(order.table_id) ? order.table_id : null,
+            table_id:
+              order.table_id && /^[0-9a-fA-F-]{36}$/.test(order.table_id) ? order.table_id : null,
             status: "pending",
             notes: order.notes || null,
             items: (order.items || []).map((line: any) => ({
@@ -199,8 +200,7 @@ class TableOrdersStore {
   public getOrderByTableId(tableId: string) {
     return this.orders.find(
       (o) =>
-        o.table_id === tableId &&
-        ["draft", "sent_to_cashier", "in_checkout"].includes(o.status),
+        o.table_id === tableId && ["draft", "sent_to_cashier", "in_checkout"].includes(o.status),
     );
   }
 

@@ -17,12 +17,22 @@ const timer = read("src/components/OrderTimer.tsx");
 
 const checks = [
   ["explicit TypeScript check is available", packageJson.scripts?.typecheck === "tsc --noEmit"],
-  ["financial verification command is wired", packageJson.scripts?.["verify:financial"] === "node scripts/verify-financial-sync.cjs"],
-  ["journal verification command is wired", packageJson.scripts?.["verify:journal"] === "node scripts/verify-journal-numbering-and-account-report.cjs"],
+  [
+    "financial verification command is wired",
+    packageJson.scripts?.["verify:financial"] === "node scripts/verify-financial-sync.cjs",
+  ],
+  [
+    "journal verification command is wired",
+    packageJson.scripts?.["verify:journal"] ===
+      "node scripts/verify-journal-numbering-and-account-report.cjs",
+  ],
   ["Oracle grouping is typed", !grouping.startsWith("// @ts-nocheck")],
   ["translation service is typed", !translation.startsWith("// @ts-nocheck")],
   ["currency group entry is typed", currencyGroups.includes("entry: JournalEntry;")],
-  ["order timer exposes an accessible timer role", timer.includes('role="timer"') && timer.includes("aria-label=")],
+  [
+    "order timer exposes an accessible timer role",
+    timer.includes('role="timer"') && timer.includes("aria-label="),
+  ],
 ];
 
 const failed = checks.filter(([, ok]) => !ok);

@@ -11,9 +11,10 @@ export class TranslationService {
     if (typeof window === "undefined") return;
     try {
       const parsed: unknown = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
-      this.map = parsed && typeof parsed === "object" && !Array.isArray(parsed)
-        ? (parsed as Record<string, string>)
-        : {};
+      this.map =
+        parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          ? (parsed as Record<string, string>)
+          : {};
     } catch (error) {
       console.warn("Failed to load translation map:", error);
       this.map = {};

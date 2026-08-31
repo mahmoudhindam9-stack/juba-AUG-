@@ -10,6 +10,7 @@ import {
   type EmployeeLoan,
   type PayrollRecord,
 } from "@/shared/services/erpStore";
+import { printRawHtml } from "@/shared/utils/printAccountingDocument";
 import {
   Users,
   UserPlus,
@@ -35,6 +36,7 @@ import {
   Building2,
   Search,
   CheckSquare,
+  Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,8 +65,8 @@ function HRPage() {
   // ERP Store subscription
   const [erpState, setErpState] = useState(erpStore.getState());
   useEffect(() => {
-    return erpStore.subscribe((state) => {
-      setErpState(state);
+    return erpStore.subscribe(() => {
+      setErpState(erpStore.getState());
     });
   }, []);
 
@@ -93,9 +95,258 @@ function HRPage() {
   const [isEditEmpOpen, setIsEditEmpOpen] = useState(false);
   const [isAddLoanOpen, setIsAddLoanOpen] = useState(false);
   const [isPaySalaryOpen, setIsPaySalaryOpen] = useState(false);
+  const [isDeleteEmpOpen, setIsDeleteEmpOpen] = useState(false);
+  const [isVoucherOpen, setIsVoucherOpen] = useState(false);
+  const [voucherData, setVoucherData] = useState<{
+    type: "loan" | "payroll_accrual" | "salary_payment";
+    title: string;
+    documentNo: string;
+    date: string;
+    employeeName?: string;
+    employeeCode?: string;
+    month?: string;
+    amount?: number;
+    currency?: string;
+    treasuryName?: string;
+    repaymentMonths?: number;
+    notes?: string;
+    journalEntries?: any[];
+    breakdown?: {
+      basic: number;
+      bonuses: number;
+      deductions: number;
+      loans: number;
+      net: number;
+      employeeCount?: number;
+    };
+  } | null>(null);
 
-  // Selected Elements for Edit/Pay
+  const handlePrintVoucher = (vData: typeof voucherData) => {
+    if (!vData) return;
+    const fullHtml = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>${vData.title}</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; direction: rtl; padding: 20px; color: #0f172a; background: #fff; text-align: right; }
+    .header { text-align: center; border-bottom: 2px solid #0284c7; padding-bottom: 12px; margin-bottom: 20px; }
+    .header h1 { margin: 0; font-size: 20px; color: #0f172a; font-weight: bold; }
+    .header p { margin: 4px 0 0; font-size: 13px; color: #475569; }
+    .doc-banner { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; display: flex; justify-content: space-between; font-size: 13px; font-weight: bold; }
+    .doc-banner span { color: #0284c7; }
+    .section-title { font-size: 14px; font-weight: bold; color: #1e293b; border-right: 4px solid #0284c7; padding-right: 8px; margin: 16px 0 10px; }
+    .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; font-size: 12px; background: #fafafa; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 20px; }
+    .info-item { display: flex; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid #f1f5f9; }
+    .info-label { color: #64748b; font-weight: bold; }
+    .info-val { font-weight: bold; color: #0f172a; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; margin-bottom: 20px; }
+    th { background: #f1f5f9; color: #0f172a; font-weight: bold; padding: 10px; border: 1px solid #cbd5e1; text-align: right; }
+    td { border: 1px solid #cbd5e1; padding: 8px; text-align: right; vertical-align: top; }
+    .totals-box { margin-top: 16px; display: flex; justify-content: flex-end; gap: 20px; font-size: 14px; font-weight: bold; }
+    .total-badge { background: #f0fdf4; border: 1px solid #86efac; color: #166534; padding: 8px 16px; border-radius: 8px; }
+    .signatures { margin-top: 50px; display: flex; justify-content: space-between; text-align: center; font-size: 12px; color: #475569; }
+    .sig-box { flex: 1; margin: 0 15px; }
+    .sig-line { border-top: 1px dashed #94a3b8; margin-top: 45px; padding-top: 6px; font-weight: bold; }
+    .footer { margin-top: 40px; font-size: 11px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 12px; }
+    @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>الشركة المصرية لادارة المشروعات السياحية والترفيهية (بهجت جروب)</h1>
+    <p>Restocash ERP - الموارد البشرية والشؤون المالية</p>
+    <h2 style="margin-top:10px; color:#0284c7; font-size:18px;">${vData.title}</h2>
+  </div>
+
+  <div class="doc-banner">
+    <div>رقم المستند: <span>${vData.documentNo}</span></div>
+    <div>تاريخ الإصدار: <span>${vData.date}</span></div>
+    <div>الحالة: <span style="color:#16a34a;">معتمد ومسجل دفترياً</span></div>
+  </div>
+
+  ${
+    vData.employeeName
+      ? `<div class="info-grid">
+          <div class="info-item"><span class="info-label">اسم الموظف:</span><span class="info-val">${vData.employeeName}</span></div>
+          <div class="info-item"><span class="info-label">كود الموظف:</span><span class="info-val">${vData.employeeCode || "-"}</span></div>
+          ${vData.month ? `<div class="info-item"><span class="info-label">عن شهر:</span><span class="info-val">${vData.month}</span></div>` : ""}
+          ${vData.treasuryName ? `<div class="info-item"><span class="info-label">خزينة الصرف:</span><span class="info-val">${vData.treasuryName}</span></div>` : ""}
+          ${vData.repaymentMonths ? `<div class="info-item"><span class="info-label">مدة السداد:</span><span class="info-val">${vData.repaymentMonths} أشهر</span></div>` : ""}
+          ${vData.notes ? `<div class="info-item"><span class="info-label">ملاحظات:</span><span class="info-val">${vData.notes}</span></div>` : ""}
+        </div>`
+      : ""
+  }
+
+  ${
+    vData.breakdown
+      ? `<div class="section-title">تفاصيل ومكونات الاستحقاق والخصم</div>
+        <table>
+          <thead>
+            <tr>
+              <th>بيان العنصر</th>
+              <th style="text-align:left;">المبلغ</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>الراتب الأساسي المستحق</td><td style="text-align:left; font-weight:bold;">${vData.breakdown.basic.toLocaleString()} ${vData.currency}</td></tr>
+            ${vData.breakdown.bonuses ? `<tr><td>المكافآت والبدلات</td><td style="text-align:left; color:#16a34a; font-weight:bold;">+${vData.breakdown.bonuses.toLocaleString()} ${vData.currency}</td></tr>` : ""}
+            ${vData.breakdown.deductions ? `<tr><td>خصومات الحضور والغياب</td><td style="text-align:left; color:#dc2626; font-weight:bold;">-${vData.breakdown.deductions.toLocaleString()} ${vData.currency}</td></tr>` : ""}
+            ${vData.breakdown.loans ? `<tr><td>استقطاع اقساط السلف والقروض</td><td style="text-align:left; color:#dc2626; font-weight:bold;">-${vData.breakdown.loans.toLocaleString()} ${vData.currency}</td></tr>` : ""}
+            <tr style="background:#f0fdf4; font-weight:bold; font-size:13px;">
+              <td>صافي المستحق للصرف</td>
+              <td style="text-align:left; color:#166534;">${vData.breakdown.net.toLocaleString()} ${vData.currency}</td>
+            </tr>
+          </tbody>
+        </table>`
+      : ""
+  }
+
+  ${
+    vData.amount && !vData.breakdown
+      ? `<div class="totals-box">
+          <div class="total-badge">إجمالي المبلغ المصروف: ${vData.amount.toLocaleString()} ${vData.currency}</div>
+        </div>`
+      : ""
+  }
+
+  ${
+    vData.journalEntries && vData.journalEntries.length > 0
+      ? `<div class="section-title">القيد المحاسبي التلقائي المترتب (General Ledger Journal)</div>
+        <table>
+          <thead>
+            <tr>
+              <th>رقم الحساب</th>
+              <th>اسم الحساب</th>
+              <th style="text-align:left;">مدين (+)</th>
+              <th style="text-align:left;">دائن (-)</th>
+              <th>البيان والوصف</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${vData.journalEntries
+              .flatMap((je: any) => je.lines || [])
+              .map(
+                (line: any) => `
+              <tr>
+                <td style="font-family:monospace; font-weight:bold;">${line.account_code}</td>
+                <td>${line.account_name || "حساب محاسبي"}</td>
+                <td style="text-align:left; font-weight:bold; ${line.debit > 0 ? "color:#16a34a;" : ""}">${line.debit > 0 ? line.debit.toLocaleString() + " " + (line.currency || vData.currency) : "-"}</td>
+                <td style="text-align:left; font-weight:bold; ${line.credit > 0 ? "color:#dc2626;" : ""}">${line.credit > 0 ? line.credit.toLocaleString() + " " + (line.currency || vData.currency) : "-"}</td>
+                <td>${line.description || line.note || "-"}</td>
+              </tr>
+            `,
+              )
+              .join("")}
+          </tbody>
+        </table>`
+      : ""
+  }
+
+  <div class="signatures">
+    <div class="sig-box"><div class="sig-line">${vData.employeeName ? `المستلم: ${vData.employeeName}` : "إعداد مسؤول HR"}</div></div>
+    <div class="sig-box"><div class="sig-line">المراجعة والتدقيق المحاسبي</div></div>
+    <div class="sig-box"><div class="sig-line">اعتماد المدير المالي / العام</div></div>
+  </div>
+
+  <div class="footer">
+    مستند HR ومالي إلكتروني صادر من نظام Restocash ERP - تم إنشاؤه بتاريخ ${new Date().toLocaleDateString("ar-EG")} ${new Date().toLocaleTimeString("ar-EG")}
+  </div>
+</body>
+</html>`;
+
+    printRawHtml(fullHtml);
+  };
+
+  const viewLoanVoucher = (l: EmployeeLoan) => {
+    const emp = employees.find((e) => e.id === l.employee_id);
+    const tr = (erpState.treasuries || []).find((t) => t.id === l.treasury_id);
+    const ref = `LOAN-${l.id.slice(-6).toUpperCase()}`;
+    const je = (erpState.journalEntries || []).find(
+      (j) =>
+        j.reference === ref ||
+        j.description?.includes(ref) ||
+        j.description?.includes(emp?.name || ""),
+    );
+    setVoucherData({
+      type: "loan",
+      title: "سند صرف سلفة مالية للموظف",
+      documentNo: ref,
+      date: l.date,
+      employeeName: emp?.name,
+      employeeCode: emp?.id,
+      amount: l.amount,
+      currency: l.currency,
+      treasuryName: tr?.name_ar || "الخزينة الرئيسية",
+      repaymentMonths: l.repayment_months,
+      notes: l.notes,
+      journalEntries: je ? [je] : [],
+    });
+    setIsVoucherOpen(true);
+  };
+
+  const viewPayrollVoucher = (p: PayrollRecord) => {
+    const emp = employees.find((e) => e.id === p.employee_id);
+    const tr = (erpState.treasuries || []).find((t) => t.id === p.payment_treasury_id);
+    const ref = `PAY-${p.id.substring(4, 9).toUpperCase()}`;
+    const je = (erpState.journalEntries || []).find(
+      (j) => j.reference === ref || j.description?.includes(p.month),
+    );
+    setVoucherData({
+      type: "salary_payment",
+      title: `إشعار وسند صرف راتب موظف - شهر ${p.month}`,
+      documentNo: ref,
+      date: p.payment_date || new Date().toISOString().split("T")[0],
+      employeeName: emp?.name,
+      employeeCode: emp?.id,
+      month: p.month,
+      amount: p.net_salary,
+      currency: p.currency,
+      treasuryName: tr?.name_ar || "خزينة الصرف",
+      journalEntries: je ? [je] : [],
+      breakdown: {
+        basic: p.basic_salary,
+        bonuses: p.bonuses,
+        deductions: p.deductions,
+        loans: p.loan_deduction,
+        net: p.net_salary,
+      },
+    });
+    setIsVoucherOpen(true);
+  };
+
+  const openAccrualVoucher = (month: string) => {
+    const monthPayrolls = (erpState.payrolls || []).filter((p) => p.month === month);
+    const accrualEntries = (erpState.journalEntries || []).filter(
+      (j) =>
+        j.id?.startsWith(`PAYROLL-ACCRUAL-${month}`) ||
+        j.description?.includes(`استحقاق رواتب وأجور شهر ${month}`) ||
+        j.reference?.includes(`ACCRUAL-${month}`),
+    );
+    setVoucherData({
+      type: "payroll_accrual",
+      title: `سند قيد استحقاق رواتب وأجور شهر ${month}`,
+      documentNo: accrualEntries[0]?.reference || `ACCRUAL-${month}`,
+      date: `${month}-28`,
+      month,
+      currency: accrualEntries[0]?.currency || monthPayrolls[0]?.currency || "EGP",
+      journalEntries: accrualEntries,
+      breakdown: {
+        basic: monthPayrolls.reduce((s, p) => s + (p.basic_salary || 0), 0),
+        bonuses: monthPayrolls.reduce((s, p) => s + (p.bonuses || 0), 0),
+        deductions: monthPayrolls.reduce((s, p) => s + (p.deductions || 0), 0),
+        loans: monthPayrolls.reduce((s, p) => s + (p.loan_deduction || 0), 0),
+        net: monthPayrolls.reduce((s, p) => s + (p.net_salary || 0), 0),
+        employeeCount: monthPayrolls.length,
+      },
+    });
+    setIsVoucherOpen(true);
+  };
+
+  // Selected Elements for Edit/Pay/Delete
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
+  const [empToDelete, setEmpToDelete] = useState<Employee | null>(null);
   const [selectedPayroll, setSelectedPayroll] = useState<PayrollRecord | null>(null);
   const [paySalaryTreasuryId, setPaySalaryTreasuryId] = useState<string>("");
 
@@ -118,6 +369,7 @@ function HRPage() {
     amount: 1000,
     currency: "EGP",
     repayment_months: 2,
+    treasury_id: "",
     notes: "",
   });
 
@@ -137,19 +389,29 @@ function HRPage() {
   };
 
   const resetLoanForm = () => {
+    const activeEmp = employees.find((e) => e.status === "active") || employees[0];
+    const activeTreasury = erpState.treasuries?.find((t) => !t.deleted) || erpState.treasuries?.[0];
     setLoanForm({
-      employee_id: "",
+      employee_id: activeEmp?.id || "",
       amount: 1000,
-      currency: "EGP",
+      currency: activeEmp?.currency || "EGP",
       repayment_months: 2,
+      treasury_id: activeTreasury?.id || "",
       notes: "",
     });
+  };
+
+  const openLoanDialog = () => {
+    resetLoanForm();
+    setIsAddLoanOpen(true);
   };
 
   // HR Executive Stats
   const activeEmployeesCount = employees.filter((e) => e.status === "active").length;
   const totalPayrollCost = useMemo(() => {
-    return employees.filter((e) => e.status === "active").reduce((sum, emp) => sum + emp.salary, 0); // note: simplified visual total in raw values
+    return employees
+      .filter((e) => e.status === "active")
+      .reduce((sum, emp) => sum + (Number(emp.salary) || 0), 0);
   }, [employees]);
 
   const activeLoansCount = loans.filter((l) => l.status === "active").length;
@@ -161,9 +423,9 @@ function HRPage() {
   const filteredEmployees = useMemo(() => {
     return employees.filter((emp) => {
       const matchSearch =
-        emp.name.toLowerCase().includes(empSearch.toLowerCase()) ||
-        emp.job_title.toLowerCase().includes(empSearch.toLowerCase()) ||
-        emp.phone.includes(empSearch);
+        (emp.name || "").toLowerCase().includes(empSearch.toLowerCase()) ||
+        (emp.job_title || "").toLowerCase().includes(empSearch.toLowerCase()) ||
+        (emp.phone || "").includes(empSearch);
       const matchDept = empDeptFilter === "all" || emp.department === empDeptFilter;
       return matchSearch && matchDept;
     });
@@ -180,13 +442,24 @@ function HRPage() {
       });
       return;
     }
-    erpStore.addEmployee(empForm);
-    toast({
-      title: "تم الحفظ بنجاح",
-      description: `تم تسجيل الموظف: ${empForm.name}`,
-    });
-    setIsAddEmpOpen(false);
-    resetEmpForm();
+    try {
+      erpStore.addEmployee({
+        ...empForm,
+        salary: Number(empForm.salary) || 0,
+      });
+      toast({
+        title: "تم الحفظ بنجاح",
+        description: `تم تسجيل الموظف: ${empForm.name}`,
+      });
+      setIsAddEmpOpen(false);
+      resetEmpForm();
+    } catch (err: any) {
+      toast({
+        title: "خطأ في إضافة الموظف",
+        description: err.message || "تعذر إضافة الموظف.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleEditEmployeeSubmit = (e: React.FormEvent) => {
@@ -200,22 +473,47 @@ function HRPage() {
       });
       return;
     }
-    erpStore.updateEmployee(selectedEmp.id, empForm);
-    toast({
-      title: "تم التحديث بنجاح",
-      description: `تم حفظ تعديلات الموظف: ${empForm.name}`,
-    });
-    setIsEditEmpOpen(false);
-    setSelectedEmp(null);
-    resetEmpForm();
+    try {
+      erpStore.updateEmployee(selectedEmp.id, {
+        ...empForm,
+        salary: Number(empForm.salary) || 0,
+      });
+      toast({
+        title: "تم التحديث بنجاح",
+        description: `تم حفظ تعديلات الموظف: ${empForm.name}`,
+      });
+      setIsEditEmpOpen(false);
+      setSelectedEmp(null);
+      resetEmpForm();
+    } catch (err: any) {
+      toast({
+        title: "خطأ في التحديث",
+        description: err.message || "تعذر تحديث بيانات الموظف.",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleDeleteEmployee = (id: string, name: string) => {
-    if (confirm(`هل أنت متأكد من حذف الموظف: ${name}؟`)) {
-      erpStore.deleteEmployee(id);
+  const openDeleteDialog = (emp: Employee) => {
+    setEmpToDelete(emp);
+    setIsDeleteEmpOpen(true);
+  };
+
+  const handleConfirmDeleteEmployee = () => {
+    if (!empToDelete) return;
+    try {
+      erpStore.deleteEmployee(empToDelete.id);
       toast({
-        title: "تم الحذف",
-        description: `تم إزالة الموظف ${name} من النظام.`,
+        title: "تم الحذف بنجاح",
+        description: `تم إزالة الموظف ${empToDelete.name} من النظام.`,
+      });
+      setIsDeleteEmpOpen(false);
+      setEmpToDelete(null);
+    } catch (err: any) {
+      toast({
+        title: "خطأ في الحذف",
+        description: err.message || "تعذر حذف الموظف.",
+        variant: "destructive",
       });
     }
   };
@@ -223,15 +521,15 @@ function HRPage() {
   const openEditDialog = (emp: Employee) => {
     setSelectedEmp(emp);
     setEmpForm({
-      name: emp.name,
-      job_title: emp.job_title,
-      department: emp.department,
-      phone: emp.phone,
+      name: emp.name || "",
+      job_title: emp.job_title || "",
+      department: emp.department || "المطبخ",
+      phone: emp.phone || "",
       email: emp.email || "",
-      hire_date: emp.hire_date,
-      salary: emp.salary,
-      currency: emp.currency,
-      status: emp.status,
+      hire_date: emp.hire_date || new Date().toISOString().split("T")[0],
+      salary: emp.salary || 0,
+      currency: emp.currency || "EGP",
+      status: emp.status || "active",
     });
     setIsEditEmpOpen(true);
   };
@@ -256,28 +554,77 @@ function HRPage() {
     if (!loanForm.employee_id || !loanForm.amount || loanForm.amount <= 0) {
       toast({
         title: "خطأ في الإدخال",
-        description: "يرجى اختيار الموظف وتحديد مبلغ السلفة.",
+        description: "يرجى اختيار الموظف وتحديد مبلغ السلفة الإيجابي.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!loanForm.treasury_id) {
+      toast({
+        title: "خطأ في الإدخال",
+        description: "يرجى اختيار الخزينة أو البنك لصرف السلفة.",
         variant: "destructive",
       });
       return;
     }
     const emp = employees.find((e) => e.id === loanForm.employee_id);
-    if (!emp) return;
+    if (!emp) {
+      toast({
+        title: "خطأ",
+        description: "الموظف المختار غير موجود في النظام.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    erpStore.addLoan(
-      loanForm.employee_id,
-      loanForm.amount,
-      emp.currency, // auto use employee currency
-      loanForm.repayment_months,
-      loanForm.notes,
-    );
+    try {
+      const loan = erpStore.addLoan(
+        loanForm.employee_id,
+        loanForm.amount,
+        loanForm.currency || emp.currency || "EGP",
+        loanForm.repayment_months,
+        loanForm.notes,
+        loanForm.treasury_id,
+      );
 
-    toast({
-      title: "تم تسجيل السلفة",
-      description: `تم قيد السلفة بقيمة ${loanForm.amount} ${emp.currency} بنجاح.`,
-    });
-    setIsAddLoanOpen(false);
-    resetLoanForm();
+      const tr = (erpState.treasuries || []).find((t) => t.id === loanForm.treasury_id);
+      const ref = `LOAN-${loan.id.slice(-6).toUpperCase()}`;
+      const latestEntries = erpStore.getState().journalEntries || [];
+      const je = latestEntries.find(
+        (j) =>
+          j.reference === ref || j.description?.includes(ref) || j.description?.includes(emp.name),
+      );
+
+      setVoucherData({
+        type: "loan",
+        title: "سند صرف سلفة مالية للموظف",
+        documentNo: ref,
+        date: loan.date,
+        employeeName: emp.name,
+        employeeCode: emp.id,
+        amount: loan.amount,
+        currency: loan.currency,
+        treasuryName: tr?.name_ar || "الخزينة الرئيسية",
+        repaymentMonths: loan.repayment_months,
+        notes: loan.notes,
+        journalEntries: je ? [je] : [],
+      });
+
+      toast({
+        title: "تم قيد وصرف السلفة بنجاح",
+        description: `تم قيد السلفة بقيمة ${loanForm.amount} ${loan.currency} وصرفها وتوليد المستند المالي التلقائي.`,
+      });
+
+      setIsAddLoanOpen(false);
+      resetLoanForm();
+      setIsVoucherOpen(true);
+    } catch (err: any) {
+      toast({
+        title: "خطأ في صرف السلفة",
+        description: err.message || "تعذر صرف السلفة وقيدها.",
+        variant: "destructive",
+      });
+    }
   };
 
   // Handle Payroll
@@ -289,10 +636,49 @@ function HRPage() {
     });
   };
 
+  const handlePostPayrollAccrual = () => {
+    try {
+      const entries = erpStore.postPayrollAccrualJournal(payrollMonth);
+      const refs = entries.map((e: any) => e.reference || e.id).join("، ");
+      const monthPayrolls = (erpState.payrolls || []).filter((p) => p.month === payrollMonth);
+
+      setVoucherData({
+        type: "payroll_accrual",
+        title: `سند قيد استحقاق رواتب وأجور شهر ${payrollMonth}`,
+        documentNo: entries[0]?.reference || `ACCRUAL-${payrollMonth}`,
+        date: `${payrollMonth}-28`,
+        month: payrollMonth,
+        currency: entries[0]?.currency || "EGP",
+        journalEntries: entries,
+        breakdown: {
+          basic: monthPayrolls.reduce((s, p) => s + (p.basic_salary || 0), 0),
+          bonuses: monthPayrolls.reduce((s, p) => s + (p.bonuses || 0), 0),
+          deductions: monthPayrolls.reduce((s, p) => s + (p.deductions || 0), 0),
+          loans: monthPayrolls.reduce((s, p) => s + (p.loan_deduction || 0), 0),
+          net: monthPayrolls.reduce((s, p) => s + (p.net_salary || 0), 0),
+          employeeCount: monthPayrolls.length,
+        },
+      });
+
+      toast({
+        title: "تم توليد قيود استحقاق المرتبات تلقائياً",
+        description: `تم إدراج قيود استحقاق المرتبات لشهر ${payrollMonth} برقم القيد الموحد: (${refs})`,
+      });
+
+      setIsVoucherOpen(true);
+    } catch (err: any) {
+      toast({
+        title: "خطأ في التوليد",
+        description: err.message || "تعذر توليد قيود استحقاق المرتبات.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const openPaySalaryDialog = (payroll: PayrollRecord) => {
     setSelectedPayroll(payroll);
     // Find active cash treasuries that match the salary currency
-    const matchingTreasuries = erpState.treasuries.filter(
+    const matchingTreasuries = (erpState.treasuries || []).filter(
       (t) => !t.deleted && (t.currency === "MULTI" || t.currency === payroll.currency),
     );
     if (matchingTreasuries.length > 0) {
@@ -307,14 +693,46 @@ function HRPage() {
     e.preventDefault();
     if (!selectedPayroll || !paySalaryTreasuryId) return;
 
+    const emp = employees.find((e) => e.id === selectedPayroll.employee_id);
+    const tr = (erpState.treasuries || []).find((t) => t.id === paySalaryTreasuryId);
+    const ref = `PAY-${selectedPayroll.id.substring(4, 9).toUpperCase()}`;
+
     erpStore.paySalary(selectedPayroll.id, paySalaryTreasuryId);
+
+    const latestEntries = erpStore.getState().journalEntries || [];
+    const je = latestEntries.find(
+      (j) => j.reference === ref || j.description?.includes(selectedPayroll.month),
+    );
+
+    setVoucherData({
+      type: "salary_payment",
+      title: `إشعار وسند صرف راتب موظف - شهر ${selectedPayroll.month}`,
+      documentNo: ref,
+      date: new Date().toISOString().split("T")[0],
+      employeeName: emp?.name,
+      employeeCode: emp?.id,
+      month: selectedPayroll.month,
+      amount: selectedPayroll.net_salary,
+      currency: selectedPayroll.currency,
+      treasuryName: tr?.name_ar || "خزينة الصرف",
+      journalEntries: je ? [je] : [],
+      breakdown: {
+        basic: selectedPayroll.basic_salary,
+        bonuses: selectedPayroll.bonuses,
+        deductions: selectedPayroll.deductions,
+        loans: selectedPayroll.loan_deduction,
+        net: selectedPayroll.net_salary,
+      },
+    });
 
     toast({
       title: "تم صرف الراتب",
-      description: "تم صرف الراتب بنجاح، وخصم المبلغ من الخزينة وتسجيل الحركة.",
+      description: "تم صرف الراتب بنجاح، وخصم المبلغ من الخزينة وتسجيل الحركة والسند المالي.",
     });
+
     setIsPaySalaryOpen(false);
     setSelectedPayroll(null);
+    setIsVoucherOpen(true);
   };
 
   // Statistics for Attendance Tab
@@ -354,10 +772,7 @@ function HRPage() {
           </Button>
           <Button
             variant="outline"
-            onClick={() => {
-              setLoanForm((prev) => ({ ...prev, employee_id: employees[0]?.id || "" }));
-              setIsAddLoanOpen(true);
-            }}
+            onClick={openLoanDialog}
             className="gap-2 rounded-xl font-bold px-5 py-6"
           >
             <Coins size={18} />
@@ -585,7 +1000,7 @@ function HRPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDeleteEmployee(emp.id, emp.name)}
+                        onClick={() => openDeleteDialog(emp)}
                         className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs gap-1 h-8"
                       >
                         <Trash2 size={12} />
@@ -754,10 +1169,31 @@ function HRPage() {
               </div>
             </div>
 
-            <Button onClick={handleGeneratePayroll} className="gap-2 rounded-xl font-bold px-5">
-              <PlusCircle size={16} />
-              توليد واحتساب مسير الرواتب للشهر
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={handleGeneratePayroll}
+                variant="outline"
+                className="gap-2 rounded-xl font-bold px-4"
+              >
+                <PlusCircle size={16} />
+                احتساب كشف الرواتب
+              </Button>
+              <Button
+                onClick={handlePostPayrollAccrual}
+                className="gap-2 rounded-xl font-bold px-5 bg-purple-600 hover:bg-purple-700 text-white shadow-sm"
+              >
+                <CheckCircle2 size={16} />
+                توليد قيود استحقاق المرتبات اوتوماتيك (M/N)
+              </Button>
+              <Button
+                onClick={() => openAccrualVoucher(payrollMonth)}
+                variant="outline"
+                className="gap-2 rounded-xl font-bold px-4 border-purple-500/40 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/30"
+              >
+                <Printer size={16} />
+                عرض/طباعة قيد الاستحقاق
+              </Button>
+            </div>
           </div>
 
           <Card className="border border-border shadow-sm rounded-2xl bg-card overflow-hidden">
@@ -820,20 +1256,31 @@ function HRPage() {
                               )}
                             </td>
                             <td className="p-3.5 text-center pl-6">
-                              {p.status === "paid" ? (
-                                <div className="text-xs text-slate-400 font-bold font-mono">
-                                  تاريخ الدفع: {p.payment_date}
-                                </div>
-                              ) : (
+                              <div className="flex items-center justify-center gap-2">
                                 <Button
                                   size="sm"
-                                  onClick={() => openPaySalaryDialog(p)}
-                                  className="h-7 text-xs rounded-lg font-bold px-4 bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 gap-1"
+                                  variant="outline"
+                                  onClick={() => viewPayrollVoucher(p)}
+                                  className="h-7 text-xs rounded-lg font-bold px-3 gap-1"
                                 >
-                                  <CreditCard size={12} />
-                                  صرف الراتب نقداً
+                                  <Printer size={12} />
+                                  عرض السند
                                 </Button>
-                              )}
+                                {p.status === "paid" ? (
+                                  <div className="text-xs text-slate-400 font-bold font-mono">
+                                    تاريخ الدفع: {p.payment_date}
+                                  </div>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => openPaySalaryDialog(p)}
+                                    className="h-7 text-xs rounded-lg font-bold px-4 bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 gap-1"
+                                  >
+                                    <CreditCard size={12} />
+                                    صرف الراتب نقداً
+                                  </Button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -852,13 +1299,7 @@ function HRPage() {
               <Coins className="text-primary" size={18} />
               متابعة تسديد السلف من رواتب الموظفين
             </h3>
-            <Button
-              onClick={() => {
-                setLoanForm((prev) => ({ ...prev, employee_id: employees[0]?.id || "" }));
-                setIsAddLoanOpen(true);
-              }}
-              className="gap-2 rounded-xl font-bold px-5"
-            >
+            <Button onClick={openLoanDialog} className="gap-2 rounded-xl font-bold px-5">
               <PlusCircle size={16} />
               طلب سلفة نقدية جديدة لموظف
             </Button>
@@ -877,12 +1318,13 @@ function HRPage() {
                     <th className="p-3.5 text-emerald-600">المبلغ المسدد حتى الآن</th>
                     <th className="p-3.5 text-rose-600">المبلغ المتبقي للتحصيل</th>
                     <th className="p-3.5">الحالة العامة</th>
+                    <th className="p-3.5 text-center pl-6">المستند والطباعة</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
                   {loans.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                      <td colSpan={9} className="p-8 text-center text-muted-foreground">
                         لا يوجد سلف أو قروض مسجلة في هذا الحساب حالياً.
                       </td>
                     </tr>
@@ -923,6 +1365,17 @@ function HRPage() {
                                 جاري التحصيل
                               </Badge>
                             )}
+                          </td>
+                          <td className="p-3.5 text-center pl-6">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => viewLoanVoucher(l)}
+                              className="h-7 text-xs rounded-lg font-bold px-3 gap-1"
+                            >
+                              <Printer size={12} />
+                              عرض السند
+                            </Button>
                           </td>
                         </tr>
                       );
@@ -1173,7 +1626,15 @@ function HRPage() {
               <Label className="font-bold text-xs">اختر الموظف المستفيد *</Label>
               <select
                 value={loanForm.employee_id}
-                onChange={(e) => setLoanForm((prev) => ({ ...prev, employee_id: e.target.value }))}
+                onChange={(e) => {
+                  const empId = e.target.value;
+                  const emp = employees.find((item) => item.id === empId);
+                  setLoanForm((prev) => ({
+                    ...prev,
+                    employee_id: empId,
+                    currency: emp?.currency || prev.currency || "EGP",
+                  }));
+                }}
                 className="w-full bg-card border border-border text-xs rounded-xl h-10 px-3 font-bold outline-none"
               >
                 <option value="">-- اختر موظف من القائمة --</option>
@@ -1181,7 +1642,7 @@ function HRPage() {
                   .filter((e) => e.status === "active")
                   .map((e) => (
                     <option key={e.id} value={e.id}>
-                      {e.name} ({e.job_title} - عملته {e.currency})
+                      {e.name} ({e.job_title} - عملة الراتب: {e.currency})
                     </option>
                   ))}
               </select>
@@ -1200,22 +1661,54 @@ function HRPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="font-bold text-xs">مدة السداد (بالأشهر) *</Label>
+                <Label className="font-bold text-xs">عملة السلفة *</Label>
                 <select
-                  value={loanForm.repayment_months}
-                  onChange={(e) =>
-                    setLoanForm((prev) => ({ ...prev, repayment_months: Number(e.target.value) }))
-                  }
-                  className="w-full bg-card border border-border text-xs rounded-xl h-10 px-3 font-bold outline-none"
+                  value={loanForm.currency}
+                  onChange={(e) => setLoanForm((prev) => ({ ...prev, currency: e.target.value }))}
+                  className="w-full bg-card border border-border text-xs rounded-xl h-10 px-3 font-bold outline-none font-mono"
                 >
-                  <option value={1}>شهر واحد</option>
-                  <option value={2}>شهرين</option>
-                  <option value={3}>3 أشهر</option>
-                  <option value={4}>4 أشهر</option>
-                  <option value={6}>6 أشهر</option>
-                  <option value={12}>12 شهر</option>
+                  <option value="EGP">EGP - جنيه مصري</option>
+                  <option value="USD">USD - دولار أمريكي</option>
+                  <option value="SSP">SSP - جنيه جنوب سوداني</option>
                 </select>
               </div>
+            </div>
+
+            <div className="space-y-1.5 text-right">
+              <Label className="font-bold text-xs">مدة السداد (بالأشهر) *</Label>
+              <select
+                value={loanForm.repayment_months}
+                onChange={(e) =>
+                  setLoanForm((prev) => ({ ...prev, repayment_months: Number(e.target.value) }))
+                }
+                className="w-full bg-card border border-border text-xs rounded-xl h-10 px-3 font-bold outline-none"
+              >
+                <option value={1}>شهر واحد</option>
+                <option value={2}>شهرين</option>
+                <option value={3}>3 أشهر</option>
+                <option value={4}>4 أشهر</option>
+                <option value={6}>6 أشهر</option>
+                <option value={12}>12 شهر</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5 text-right">
+              <Label className="font-bold text-xs">خزينة / بنك صرف السلفة *</Label>
+              <select
+                value={loanForm.treasury_id}
+                onChange={(e) => setLoanForm((prev) => ({ ...prev, treasury_id: e.target.value }))}
+                className="w-full bg-card border border-border text-xs rounded-xl h-10 px-3 font-bold outline-none"
+              >
+                <option value="">-- اختر الخزينة أو البنك لصرف السلفة --</option>
+                {(erpState.treasuries || [])
+                  .filter((t) => !t.deleted)
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name_ar} (الرصيد: {formatTreasuryCurrency(t.balance, t.currency)} - العملة:{" "}
+                      {t.currency})
+                    </option>
+                  ))}
+              </select>
             </div>
 
             <div className="space-y-1.5 text-right">
@@ -1237,7 +1730,11 @@ function HRPage() {
               >
                 إلغاء
               </Button>
-              <Button type="submit" className="rounded-xl font-bold">
+              <Button
+                type="submit"
+                disabled={!loanForm.treasury_id}
+                className="rounded-xl font-bold"
+              >
                 اعتماد وصرف السلفة
               </Button>
             </DialogFooter>
@@ -1286,7 +1783,7 @@ function HRPage() {
                 className="w-full bg-card border border-border text-xs rounded-xl h-10 px-3 font-bold outline-none"
               >
                 <option value="">-- اختر خزينة الصرف --</option>
-                {erpState.treasuries
+                {(erpState.treasuries || [])
                   .filter(
                     (t) =>
                       !t.deleted &&
@@ -1325,6 +1822,269 @@ function HRPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG 5: CONFIRM DELETE EMPLOYEE */}
+      <Dialog open={isDeleteEmpOpen} onOpenChange={setIsDeleteEmpOpen}>
+        <DialogContent className="max-w-md bg-card border border-border text-right" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="font-black text-rose-600 flex items-center gap-2">
+              <AlertCircle size={20} />
+              تأكيد حذف الموظف
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground text-xs pt-2">
+              هل أنت متأكد من حذف الموظف{" "}
+              <strong className="text-slate-900 dark:text-slate-100">{empToDelete?.name}</strong>؟
+              لا يمكن التراجع عن هذه العملية بعد التأكيد.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteEmpOpen(false)}
+              className="rounded-xl font-bold"
+            >
+              إلغاء
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDeleteEmployee}
+              className="rounded-xl font-bold bg-rose-600 hover:bg-rose-700"
+            >
+              تأكيد الحذف
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG 6: VOUCHER & DOCUMENT PREVIEW / PRINT */}
+      <Dialog open={isVoucherOpen} onOpenChange={setIsVoucherOpen}>
+        <DialogContent
+          className="max-w-2xl bg-card border border-border text-right max-h-[90vh] overflow-y-auto"
+          dir="rtl"
+        >
+          <DialogHeader className="border-b border-border/60 pb-3">
+            <div className="flex items-center justify-between">
+              <Badge className="bg-primary/10 text-primary border border-primary/20 text-xs font-bold px-3 py-1">
+                Restocash ERP Document
+              </Badge>
+              <DialogTitle className="font-black text-lg text-slate-900 dark:text-slate-100">
+                {voucherData?.title || "سند ومستند مالي إلكتروني"}
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-xs text-muted-foreground pt-1">
+              معاينة السند المحاسبي الرسمي الصادر وإمكانية طباعته أو حفظه برقم قيد مالي موحد
+            </DialogDescription>
+          </DialogHeader>
+
+          {voucherData && (
+            <div className="space-y-4 py-2">
+              {/* Top Banner */}
+              <div className="bg-slate-50 dark:bg-slate-900/60 p-3.5 rounded-xl border border-border/60 grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">
+                    رقم المستند / القيد:
+                  </span>
+                  <span className="font-mono font-black text-primary text-sm">
+                    {voucherData.documentNo}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">تاريخ المستند:</span>
+                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                    {voucherData.date}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">حالة التوثيق:</span>
+                  <span className="font-bold text-emerald-600 flex items-center gap-1 mt-0.5">
+                    <CheckCircle2 size={13} /> معتمد ومسجل
+                  </span>
+                </div>
+              </div>
+
+              {/* Employee & Header info if applicable */}
+              {voucherData.employeeName && (
+                <div className="bg-muted/30 p-3.5 rounded-xl border border-border/50 grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-muted-foreground block">اسم الموظف:</span>
+                    <span className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                      {voucherData.employeeName}
+                    </span>
+                  </div>
+                  {voucherData.month && (
+                    <div>
+                      <span className="text-muted-foreground block">عن شهر:</span>
+                      <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                        {voucherData.month}
+                      </span>
+                    </div>
+                  )}
+                  {voucherData.treasuryName && (
+                    <div>
+                      <span className="text-muted-foreground block">خزينة / بنك الصرف:</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200">
+                        {voucherData.treasuryName}
+                      </span>
+                    </div>
+                  )}
+                  {voucherData.repaymentMonths && (
+                    <div>
+                      <span className="text-muted-foreground block">مدة السداد:</span>
+                      <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                        {voucherData.repaymentMonths} أشهر
+                      </span>
+                    </div>
+                  )}
+                  {voucherData.notes && (
+                    <div className="col-span-2 border-t border-border/40 pt-2 mt-1">
+                      <span className="text-muted-foreground block">ملاحظات ومبررات:</span>
+                      <span className="font-medium text-slate-700 dark:text-slate-300">
+                        {voucherData.notes}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Breakdown Table if available */}
+              {voucherData.breakdown && (
+                <div className="space-y-2">
+                  <h4 className="font-bold text-xs text-slate-700 dark:text-slate-300">
+                    تفاصيل ومكونات الاستحقاق والخصم:
+                  </h4>
+                  <div className="border border-border rounded-xl overflow-hidden text-xs">
+                    <table className="w-full text-right">
+                      <thead className="bg-muted text-muted-foreground font-bold">
+                        <tr>
+                          <th className="p-2.5 pr-4">بيان العنصر</th>
+                          <th className="p-2.5 text-left pl-4">المبلغ</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/60">
+                        <tr>
+                          <td className="p-2.5 pr-4">الراتب الأساسي المستحق</td>
+                          <td className="p-2.5 text-left pl-4 font-mono font-bold">
+                            {voucherData.breakdown.basic.toLocaleString()} {voucherData.currency}
+                          </td>
+                        </tr>
+                        {!!voucherData.breakdown.bonuses && (
+                          <tr>
+                            <td className="p-2.5 pr-4">المكافآت والبدلات</td>
+                            <td className="p-2.5 text-left pl-4 font-mono font-bold text-emerald-600">
+                              +{voucherData.breakdown.bonuses.toLocaleString()}{" "}
+                              {voucherData.currency}
+                            </td>
+                          </tr>
+                        )}
+                        {!!voucherData.breakdown.deductions && (
+                          <tr>
+                            <td className="p-2.5 pr-4">خصومات الحضور والغياب</td>
+                            <td className="p-2.5 text-left pl-4 font-mono font-bold text-rose-600">
+                              -{voucherData.breakdown.deductions.toLocaleString()}{" "}
+                              {voucherData.currency}
+                            </td>
+                          </tr>
+                        )}
+                        {!!voucherData.breakdown.loans && (
+                          <tr>
+                            <td className="p-2.5 pr-4">استقطاع أقساط السلف وقروض الموظفين</td>
+                            <td className="p-2.5 text-left pl-4 font-mono font-bold text-rose-600">
+                              -{voucherData.breakdown.loans.toLocaleString()} {voucherData.currency}
+                            </td>
+                          </tr>
+                        )}
+                        <tr className="bg-emerald-500/10 font-black text-emerald-700 dark:text-emerald-400">
+                          <td className="p-2.5 pr-4">صافي المستحق للصرف النقدي</td>
+                          <td className="p-2.5 text-left pl-4 font-mono text-sm">
+                            {voucherData.breakdown.net.toLocaleString()} {voucherData.currency}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Simple Amount Box if no breakdown */}
+              {voucherData.amount && !voucherData.breakdown && (
+                <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl flex items-center justify-between">
+                  <span className="font-bold text-xs text-emerald-700 dark:text-emerald-400">
+                    إجمالي قيمة السند / المبلغ المصروف:
+                  </span>
+                  <span className="font-mono font-black text-lg text-emerald-700 dark:text-emerald-400">
+                    {voucherData.amount.toLocaleString()} {voucherData.currency}
+                  </span>
+                </div>
+              )}
+
+              {/* Journal Entries Table */}
+              {voucherData.journalEntries && voucherData.journalEntries.length > 0 && (
+                <div className="space-y-2 pt-1">
+                  <h4 className="font-bold text-xs text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                    <Briefcase size={14} className="text-primary" />
+                    القيد المحاسبي التلقائي المترتب على الحركة (GL Journal):
+                  </h4>
+                  <div className="border border-border rounded-xl overflow-hidden text-xs">
+                    <table className="w-full text-right">
+                      <thead className="bg-muted text-muted-foreground font-bold">
+                        <tr>
+                          <th className="p-2 pr-3">الكود</th>
+                          <th className="p-2">اسم الحساب</th>
+                          <th className="p-2 text-left">مدين (+)</th>
+                          <th className="p-2 text-left">دائن (-)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/60 font-mono">
+                        {voucherData.journalEntries
+                          .flatMap((je: any) => je.lines || [])
+                          .map((line: any, idx: number) => (
+                            <tr key={idx} className="hover:bg-muted/20">
+                              <td className="p-2 pr-3 font-bold text-slate-500">
+                                {line.account_code}
+                              </td>
+                              <td className="p-2 font-sans font-bold text-slate-800 dark:text-slate-200">
+                                {line.account_name || "حساب محاسبي"}
+                              </td>
+                              <td className="p-2 text-left font-bold text-emerald-600">
+                                {line.debit > 0
+                                  ? `${line.debit.toLocaleString()} ${line.currency || voucherData.currency}`
+                                  : "-"}
+                              </td>
+                              <td className="p-2 text-left font-bold text-rose-600">
+                                {line.credit > 0
+                                  ? `${line.credit.toLocaleString()} ${line.currency || voucherData.currency}`
+                                  : "-"}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 pt-4 border-t border-border/60">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsVoucherOpen(false)}
+              className="rounded-xl font-bold text-xs"
+            >
+              إلغاء وإغلاق
+            </Button>
+            <Button
+              type="button"
+              onClick={() => handlePrintVoucher(voucherData)}
+              className="rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-2 py-5"
+            >
+              <Printer size={16} />
+              طباعة وتصدير المستند الرسمي (Print Document)
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

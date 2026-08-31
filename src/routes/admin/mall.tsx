@@ -28,6 +28,7 @@ import {
   Archive,
   Paperclip,
   MessageCircle,
+  CalendarCheck,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
@@ -109,6 +110,35 @@ function MallManagementPage() {
   const [selectedYear, setSelectedYear] = useState(2026);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [filterStatus, setFilterStatus] = useState<string>("all");
+
+  const targetMonthStr = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`;
+  const isAccrualGeneratedForMonth = (state.journalEntries || []).some(
+    (je) =>
+      je.reference === `MALL-RENT-ACCRUAL-${targetMonthStr}` ||
+      je.reference?.startsWith(`MALL-RENT-ACCRUAL-${targetMonthStr}`) ||
+      je.description?.includes(`قيد استحقاق إيجارات المحلات لشهر (${targetMonthStr})`) ||
+      je.description?.includes(`قيد استحقاق إيجارات المحلات - شهر (${targetMonthStr})`) ||
+      je.description?.includes(`MALL-RENT-ACCRUAL-${targetMonthStr}`),
+  );
+
+  const handleGenerateAccrual = () => {
+    const monthStr = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`;
+    const result = erpStore.postMallRentAccrualJournal(monthStr);
+
+    if (result.alreadyGenerated) {
+      toast.warning(result.message, {
+        duration: 6000,
+        description: "تم حظر العملية لتفادي تكرار وازدواجية القيود المحاسبية لنفس الشهر.",
+      });
+    } else if (!result.success) {
+      toast.error(result.message);
+    } else {
+      toast.success(result.message, {
+        duration: 6000,
+        description: "تم إنشاء قيود الاستحقاق الشهرية في دفتر اليومية العامة بنجاح.",
+      });
+    }
+  };
 
   // Modal states for Shop CRUD
   const [isShopModalOpen, setIsShopModalOpen] = useState(false);
@@ -314,8 +344,25 @@ function MallManagementPage() {
         tenant_name: s.tenant_name || "",
         phone: s.phone || "",
         monthly_rent: s.monthly_rent || 1000,
-        deposit_amount: s.monthly_rent || 1000,
+        deposit_amount: s.contract?.deposit_amount || s.monthly_rent || 1000,
         advance_payment: s.contract?.advance_payment || 0,
+        nationality: s.contract?.nationality || "مصري / Egyptian",
+        id_number: s.contract?.id_number || "",
+        start_date: s.contract?.start_date || new Date().toISOString().split("T")[0],
+        end_date: s.contract?.end_date || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+        language: s.contract?.language || "ar",
+        tenant_address: s.contract?.tenant_address || "",
+        floor: s.contract?.floor || "",
+        area: s.contract?.area || "",
+        lease_term: s.contract?.lease_term || "",
+        renewal_option: s.contract?.renewal_option || "",
+        currency: s.contract?.currency || "USD",
+        payment_due_date: s.contract?.payment_due_date || "",
+        payment_method: s.contract?.payment_method || "",
+        service_charge: s.contract?.service_charge || "",
+        electricity_included: s.contract?.electricity_included || false,
+        water_included: s.contract?.water_included || false,
+        authorized_representative: s.contract?.authorized_representative || "",
       });
     } else {
       setContractForm({ ...contractForm, shop_id: shopId });
@@ -351,10 +398,7 @@ function MallManagementPage() {
   };
 
   const handleSaveContract = () => {
-    if (
-      !contractForm.shop_id ||
-      !contractForm.tenant_name
-    ) {
+    if (!contractForm.shop_id || !contractForm.tenant_name) {
       return;
     }
     erpStore.updateMallShop(contractForm.shop_id, {
@@ -436,6 +480,7 @@ function MallManagementPage() {
     date: new Date().toISOString().split("T")[0],
     receipt_number: `REC-G-${Math.floor(1000 + Math.random() * 9000)}`,
     notes: "",
+    treasury_id: "",
   });
   const [revenueToDelete, setRevenueToDelete] = useState<MallGardenRevenue | null>(null);
 
@@ -451,6 +496,7 @@ function MallManagementPage() {
     date: new Date().toISOString().split("T")[0],
     paid_to: "",
     notes: "",
+    treasury_id: "",
   });
   const [expenseToDelete, setExpenseToDelete] = useState<MallGardenExpense | null>(null);
 
@@ -1112,6 +1158,19 @@ function MallManagementPage() {
           </div>
           <div className="flex items-center gap-3 shrink-0 flex-wrap">
             <Button
+              onClick={handleGenerateAccrual}
+              className={`${
+                isAccrualGeneratedForMonth
+                  ? "bg-amber-600 hover:bg-amber-700 text-white"
+                  : "bg-indigo-600 hover:bg-indigo-700 text-white"
+              } font-black gap-2 shadow-lg cursor-pointer transition-all`}
+            >
+              <CalendarCheck size={18} />
+              {isAccrualGeneratedForMonth
+                ? `تم توليد استحقاق (${MONTHS_AR[selectedMonth - 1]} ${selectedYear})`
+                : `توليد قيود استحقاق الإيجار (${MONTHS_AR[selectedMonth - 1]} ${selectedYear})`}
+            </Button>
+            <Button
               onClick={() => {
                 erpStore.resetMallData();
               }}
@@ -1502,13 +1561,40 @@ function MallManagementPage() {
 
           <Card className="border border-border/80 bg-card rounded-2xl shadow-sm overflow-hidden">
             <CardHeader className="pb-3 border-b border-border/60">
-              <CardTitle className="text-base font-black text-foreground flex items-center justify-between">
-                <span>
-                  متابعة إيجارات شهر {MONTHS_AR[selectedMonth - 1]} {selectedYear}
-                </span>
-                <span className="text-xs font-bold bg-muted text-muted-foreground px-3 py-1 rounded-full">
-                  المحلات المؤجرة: {shops.filter((s) => s.status === "rented").length}
-                </span>
+              <CardTitle className="text-base font-black text-foreground flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span>
+                    متابعة إيجارات شهر {MONTHS_AR[selectedMonth - 1]} {selectedYear}
+                  </span>
+                  {isAccrualGeneratedForMonth ? (
+                    <span className="text-[11px] font-extrabold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-3 py-1 rounded-full flex items-center gap-1 border border-emerald-500/30">
+                      <CheckCircle2 size={13} />
+                      قيود الاستحقاق مُولّدة
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-extrabold bg-amber-500/15 text-amber-700 dark:text-amber-300 px-3 py-1 rounded-full flex items-center gap-1 border border-amber-500/30">
+                      <AlertCircle size={13} />
+                      لم تُولد قيود الاستحقاق بعد
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    onClick={handleGenerateAccrual}
+                    size="sm"
+                    className={`${
+                      isAccrualGeneratedForMonth
+                        ? "bg-amber-600 hover:bg-amber-700 text-white"
+                        : "bg-indigo-600 hover:bg-indigo-700 text-white"
+                    } font-bold gap-1.5 text-xs shadow-sm cursor-pointer`}
+                  >
+                    <CalendarCheck size={15} />
+                    توليد قيود استحقاق الإيجار
+                  </Button>
+                  <span className="text-xs font-bold bg-muted text-muted-foreground px-3 py-1.5 rounded-xl">
+                    المحلات المؤجرة: {shops.filter((s) => s.status === "rented").length}
+                  </span>
+                </div>
               </CardTitle>
               <CardDescription className="text-xs">
                 جدول متابعة حالة السداد والقيم المستحقة لكل محل خلال الشهر المحدد بالدولار الأمريكي.
@@ -2499,6 +2585,26 @@ function MallManagementPage() {
                 className="rounded-xl font-mono"
               />
             </div>
+            
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-foreground">الخزينة / الحساب البنكي (اختياري)</label>
+              <Select
+                value={revenueForm.treasury_id}
+                onValueChange={(v) => setRevenueForm({ ...revenueForm, treasury_id: v })}
+              >
+                <SelectTrigger className="rounded-xl font-bold bg-background">
+                  <SelectValue placeholder="اختر الخزينة للإيداع التلقائي..." />
+                </SelectTrigger>
+                <SelectContent dir="rtl">
+                  {treasuries.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.account_code ? `[رقم الحساب: ${t.account_code}] ` : ""}
+                      {t.name_ar}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0">
@@ -2594,6 +2700,26 @@ function MallManagementPage() {
                 placeholder="اسم الجهة أو الشخص المستلم"
                 className="rounded-xl"
               />
+            </div>
+            
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-foreground">الخزينة / الحساب البنكي (اختياري)</label>
+              <Select
+                value={expenseForm.treasury_id}
+                onValueChange={(v) => setExpenseForm({ ...expenseForm, treasury_id: v })}
+              >
+                <SelectTrigger className="rounded-xl font-bold bg-background">
+                  <SelectValue placeholder="اختر الخزينة للدفع التلقائي..." />
+                </SelectTrigger>
+                <SelectContent dir="rtl">
+                  {treasuries.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.account_code ? `[رقم الحساب: ${t.account_code}] ` : ""}
+                      {t.name_ar}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -3236,20 +3362,8 @@ function MallManagementPage() {
                   size="sm"
                   onClick={() =>
                     printContractContent(
-                      contractForm.tenant_name,
-                      shops.find((s) => s.id === contractForm.shop_id)?.shop_number || "---",
-                      contractForm.custom_shop_name ||
-                        shops.find((s) => s.id === contractForm.shop_id)?.name_ar ||
-                        "---",
-                      contractForm.custom_activity,
-                      contractForm.phone,
-                      contractForm.monthly_rent,
-                      contractForm.deposit_amount,
-                      contractForm.advance_payment,
-                      contractForm.start_date,
-                      contractForm.end_date,
-                      contractForm.terms,
-                      contractForm.language,
+                      contractForm,
+                      shops.find((s) => s.id === contractForm.shop_id)?.shop_number || "---"
                     )
                   }
                   className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 rounded-xl cursor-pointer"

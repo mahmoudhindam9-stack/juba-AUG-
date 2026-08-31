@@ -465,8 +465,14 @@ const PERMISSION_CATEGORIES: PermissionCategory[] = [
         desc: "إنشاء الفروع وتحديث بيانات الشركة وبيانات الترخيص",
       },
       {
+        key: "developer_options",
+        name: "خيارات المطور وتحديث النظام",
+        desc: "تحديث الأكواد، مزامنة البيانات، وإدارة حركة أكسس",
+        isSuperAdminOnly: true,
+      },
+      {
         key: "system_backup_update",
-        name: "النسخ الاحتياطي وتحديث النظام واستيراد البيانات",
+        name: "النسخ الاحتياطي واستيراد البيانات",
         desc: "تصدير قواعد البيانات، استيراد بيانات Oracle/Access وتصفير السيستم",
       },
       {

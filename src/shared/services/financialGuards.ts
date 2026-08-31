@@ -49,9 +49,7 @@ export function assertBalancedJournalLines(
   // Keep the tolerance tight enough to catch real accounting mistakes while
   // allowing normal floating-point arithmetic noise.
   if (Math.abs(debitTotal - creditTotal) > 0.000001) {
-    throw new Error(
-      `Unbalanced journal entry: debit=${debitTotal}, credit=${creditTotal}`,
-    );
+    throw new Error(`Unbalanced journal entry: debit=${debitTotal}, credit=${creditTotal}`);
   }
 }
 
@@ -60,8 +58,12 @@ export function assertSameCurrency(
   expectedCurrency: unknown,
   field = "currency",
 ): string {
-  const actual = String(currency ?? "").trim().toUpperCase();
-  const expected = String(expectedCurrency ?? "").trim().toUpperCase();
+  const actual = String(currency ?? "")
+    .trim()
+    .toUpperCase();
+  const expected = String(expectedCurrency ?? "")
+    .trim()
+    .toUpperCase();
   if (!actual || !expected || actual !== expected) {
     throw new Error(`${field} does not match the expected currency`);
   }

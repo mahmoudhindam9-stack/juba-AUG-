@@ -25,7 +25,12 @@ export function groupOracleRowsIntoJournalEntriesOrdered(rows: ParsedOracleRow[]
     const refMonth = Number(refParts[0]);
     const refSequence = Number(refParts[1]);
     const date = row.date ? new Date(row.date) : null;
-    const year = date && !Number.isNaN(date.getTime()) ? date.getUTCFullYear() : 0;
+    let year = date && !Number.isNaN(date.getTime()) ? date.getUTCFullYear() : 0;
+    if (year === 0) {
+      const textToSearch = `${row.period || ""} ${rawRef} ${row.description || ""} ${row.account_name || ""}`;
+      const yearMatch = textToSearch.match(/20\d{2}/);
+      if (yearMatch) year = Number(yearMatch[0]);
+    }
 
     let month = Number(row.period);
     if (!(month >= 1 && month <= 12)) month = refMonth;
@@ -37,11 +42,17 @@ export function groupOracleRowsIntoJournalEntriesOrdered(rows: ParsedOracleRow[]
     if (!Number.isFinite(sequence) || sequence < 1) sequence = 0;
 
     const key = `${year}|${String(month).padStart(2, "0")}|${sequence}`;
+    const entryDate =
+      row.date ||
+      (year > 0
+        ? `${year}-${String(month).padStart(2, "0")}-01`
+        : new Date().toISOString().split("T")[0]);
     const existing = groups.get(key);
     if (existing) {
       existing.rows.push(row);
+      if (!existing.date && entryDate) existing.date = entryDate;
     } else {
-      groups.set(key, { year, month, sequence, date: row.date, rows: [row] });
+      groups.set(key, { year, month, sequence, date: entryDate, rows: [row] });
     }
   }
 
@@ -65,7 +76,12 @@ export function groupOracleRowsIntoJournalEntriesOrdered(rows: ParsedOracleRow[]
       date: group.date,
       reference,
       description: first.description || `قيد رقم (${reference})`,
-      currency: parseCurrency(first.currency_code, first.currency_name, first.description, first.account_code),
+      currency: parseCurrency(
+        first.currency_code,
+        first.currency_name,
+        first.description,
+        first.account_code,
+      ),
       lines: lines as JournalLine[],
       branch_id: "main",
       created_at: group.date,
@@ -77,8 +93,12 @@ export function groupOracleRowsIntoJournalEntriesOrdered(rows: ParsedOracleRow[]
   entries.sort((a, b) => {
     const ya = Number(String(a.date || "").slice(0, 4)) || 0;
     const yb = Number(String(b.date || "").slice(0, 4)) || 0;
-    const [ma, sa] = String(a.reference || "00/00").split("/").map(Number);
-    const [mb, sb] = String(b.reference || "00/00").split("/").map(Number);
+    const [ma, sa] = String(a.reference || "00/00")
+      .split("/")
+      .map(Number);
+    const [mb, sb] = String(b.reference || "00/00")
+      .split("/")
+      .map(Number);
     const da = new Date(a.date || 0).getTime();
     const db = new Date(b.date || 0).getTime();
     return ya - yb || ma - mb || sa - sb || da - db;

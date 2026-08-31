@@ -352,45 +352,83 @@ function AdminDashboard() {
   // Calculate Treasury stats
   const totalCashBalance = useMemo(() => {
     return erpState.treasuries
-      .filter((t) => t.branch_id === currentBranch.id && t.type === "cash")
+      .filter(
+        (t) =>
+          (!t.branch_id ||
+            t.branch_id === "all" ||
+            t.branch_id === currentBranch.id ||
+            currentBranch.id === "all") &&
+          t.type !== "bank" &&
+          !t.deleted,
+      )
       .reduce((sum, t) => {
-        const rate = erpState.exchangeRates?.[t.currency] || 1;
-        // Since exchange rate usually defined as 1 USD = X EGP.
-        // If currency is EGP and rate is 50, then to get USD value we do balance / 50.
-        // If currency is already USD, rate is 1.
-        const baseValue = t.currency === "USD" ? t.balance : t.balance / rate;
+        const rate =
+          erpState.exchangeRates?.[t.currency] || erpStore.getExchangeRate(t.currency) || 1;
+        const baseValue =
+          t.currency === "USD" || t.currency === "MULTI"
+            ? Number(t.balance || 0)
+            : Number(t.balance || 0) / rate;
         return sum + baseValue;
       }, 0);
   }, [erpState.treasuries, currentBranch.id, erpState.exchangeRates]);
 
   const totalBankBalance = useMemo(() => {
     return erpState.treasuries
-      .filter((t) => t.branch_id === currentBranch.id && t.type === "bank")
+      .filter(
+        (t) =>
+          (!t.branch_id ||
+            t.branch_id === "all" ||
+            t.branch_id === currentBranch.id ||
+            currentBranch.id === "all") &&
+          t.type === "bank" &&
+          !t.deleted,
+      )
       .reduce((sum, t) => {
-        const rate = erpState.exchangeRates?.[t.currency] || 1;
-        const baseValue = t.currency === "USD" ? t.balance : t.balance / rate;
+        const rate =
+          erpState.exchangeRates?.[t.currency] || erpStore.getExchangeRate(t.currency) || 1;
+        const baseValue =
+          t.currency === "USD" || t.currency === "MULTI"
+            ? Number(t.balance || 0)
+            : Number(t.balance || 0) / rate;
         return sum + baseValue;
       }, 0);
   }, [erpState.treasuries, currentBranch.id, erpState.exchangeRates]);
 
   const branchTreasuries = useMemo(() => {
-    return erpState.treasuries.filter((t) => t.branch_id === currentBranch.id && !t.deleted);
+    return erpState.treasuries.filter(
+      (t) =>
+        (!t.branch_id ||
+          t.branch_id === "all" ||
+          t.branch_id === currentBranch.id ||
+          currentBranch.id === "all") &&
+        !t.deleted,
+    );
   }, [erpState.treasuries, currentBranch.id]);
 
   const accountingSummary = useMemo(() => {
     const accounts = erpState.accounts || [];
-    const sumType = (type) => accounts
-      .filter((a) => a.type === type)
-      .reduce((sum, a) => sum + Number(a.balance || 0), 0);
-    const sumByName = (pattern) => accounts
-      .filter((a) => pattern.test(String(a.name_ar || "")))
-      .reduce((sum, a) => sum + Number(a.balance || 0), 0);
 
-    const totalAssets = sumType("asset");
-    const totalLiabilities = sumType("liability");
-    const totalEquity = sumType("equity");
-    const totalRevenues = sumType("revenue");
-    const totalExpenses = sumType("expense");
+    // Identify parent codes to distinguish leaf accounts vs parent accounts
+    const parentCodes = new Set(accounts.map((a) => a.parent_code).filter(Boolean));
+    const leafAccounts = accounts.filter((a) => !parentCodes.has(a.code));
+
+    // Calculate totals from leaf accounts
+    const sumLeafType = (type: string) =>
+      leafAccounts
+        .filter((a) => a.type === type)
+        .reduce((sum, a) => sum + Number(a.balance || 0), 0);
+
+    const totalAssets =
+      sumLeafType("asset") || Number(accounts.find((a) => a.code === "1")?.balance || 0);
+    const totalLiabilities =
+      sumLeafType("liability") || Number(accounts.find((a) => a.code === "2")?.balance || 0);
+    const totalEquity =
+      sumLeafType("equity") || Number(accounts.find((a) => a.code === "3")?.balance || 0);
+    const totalRevenues =
+      sumLeafType("revenue") || Number(accounts.find((a) => a.code === "4")?.balance || 0);
+    const totalExpenses =
+      sumLeafType("expense") || Number(accounts.find((a) => a.code === "5")?.balance || 0);
+
     const journalEntries = erpState.journalEntries || [];
     let debitTotal = 0;
     let creditTotal = 0;
@@ -410,16 +448,22 @@ function AdminDashboard() {
       totalRevenues,
       totalExpenses,
       netResult: totalRevenues - totalExpenses,
-      cash: sumByName(/خزينة|صندوق|نقد|cash/i) || totalCashBalance,
-      bank: sumByName(/بنك|مصرف|bank/i) || totalBankBalance,
-      inventory: sumByName(/مخزون|مخازن|inventory|stock/i) || Number(s?.inventoryValue || 0),
+      cash: totalCashBalance,
+      bank: totalBankBalance,
+      inventory: Number(s?.inventoryValue || 0),
       journalCount: journalEntries.length,
       debitTotal,
       creditTotal,
       unbalancedEntries,
       accountCount: accounts.length,
     };
-  }, [erpState.accounts, erpState.journalEntries, totalCashBalance, totalBankBalance, s?.inventoryValue]);
+  }, [
+    erpState.accounts,
+    erpState.journalEntries,
+    totalCashBalance,
+    totalBankBalance,
+    s?.inventoryValue,
+  ]);
 
   // Handle Voucher Submission
   const handleVoucherSubmit = (e: React.FormEvent) => {
@@ -681,7 +725,12 @@ function AdminDashboard() {
             <FileBarChart size={16} className="ml-1.5 inline" />
             شجرة ودليل الحسابات
           </TabsTrigger>
-          <Button type="button" variant="outline" onClick={() => setIsAuditOperationsOpen(true)} className="rounded-lg font-bold py-2 px-4 h-auto gap-1.5">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setIsAuditOperationsOpen(true)}
+            className="rounded-lg font-bold py-2 px-4 h-auto gap-1.5"
+          >
             <History size={16} />
             سجل العمليات
           </Button>
@@ -689,30 +738,118 @@ function AdminDashboard() {
 
         {/* TAB 1: EXECUTIVE DASHBOARD */}
         <TabsContent value="dashboard" className="space-y-6 mt-4">
-            <div data-dashboard-accounting-sync="true" className="space-y-4">
-              <div className="rounded-3xl border border-border/70 bg-white p-5 shadow-sm">
-                <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
-                  <div className="flex items-center gap-2">
-                    <div className="h-9 w-9 rounded-2xl bg-primary/10 flex items-center justify-center"><BookOpen size={18} className="text-primary" /></div>
-                    <div><h2 className="text-base font-black text-slate-900">المركز المالي الموحد</h2><p className="text-xs text-muted-foreground mt-0.5">نفس مصدر البيانات المستخدم في دليل الحسابات وحساب الأستاذ والخزائن.</p></div>
+          <div data-dashboard-accounting-sync="true" className="space-y-4">
+            <div className="rounded-3xl border border-border/70 bg-white p-5 shadow-sm">
+              <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <div className="h-9 w-9 rounded-2xl bg-primary/10 flex items-center justify-center">
+                    <BookOpen size={18} className="text-primary" />
                   </div>
-                  <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className="font-bold px-3 py-1.5"><CheckCircle size={13} className="ml-1" /> متزامن لحظياً</Badge><Badge variant="outline" className="font-bold px-3 py-1.5">{accountingSummary.accountCount.toLocaleString("en-US")} حساب</Badge><Badge variant="outline" className="font-bold px-3 py-1.5">{accountingSummary.journalCount.toLocaleString("en-US")} قيد</Badge></div>
+                  <div>
+                    <h2 className="text-base font-black text-slate-900">المركز المالي الموحد</h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      نفس مصدر البيانات المستخدم في دليل الحسابات وحساب الأستاذ والخزائن.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="font-bold px-3 py-1.5">
+                    <CheckCircle size={13} className="ml-1" /> متزامن لحظياً
+                  </Badge>
+                  <Badge variant="outline" className="font-bold px-3 py-1.5">
+                    {accountingSummary.accountCount.toLocaleString("en-US")} حساب
+                  </Badge>
+                  <Badge variant="outline" className="font-bold px-3 py-1.5">
+                    {accountingSummary.journalCount.toLocaleString("en-US")} قيد
+                  </Badge>
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                <StatCard title="صافي النتيجة" value={formatPrice(accountingSummary.netResult || 0)} subtext="إجمالي الإيرادات − المصروفات" icon={TrendingUp} trend={accountingSummary.netResult >= 0 ? "نتيجة موجبة" : "نتيجة سالبة"} trendType={accountingSummary.netResult >= 0 ? "up" : "neutral"} accentColor={accountingSummary.netResult >= 0 ? "green" : "primary"} />
-                <StatCard title="إجمالي المصروفات" value={formatPrice(accountingSummary.totalExpenses || 0)} subtext="من دليل المصروفات" icon={FileBarChart} trend="مصدر محاسبي" trendType="neutral" accentColor="amber" />
-                <StatCard title="دفتر الأستاذ" value={accountingSummary.journalCount.toLocaleString("en-US")} subtext="إجمالي القيود المسجلة" icon={BookOpen} trend={accountingSummary.unbalancedEntries ? `${accountingSummary.unbalancedEntries} يحتاج مراجعة` : "القيود متزنة"} trendType={accountingSummary.unbalancedEntries ? "neutral" : "up"} accentColor={accountingSummary.unbalancedEntries ? "primary" : "green"} />
-                <StatCard title="إجمالي الأصول" value={formatPrice(accountingSummary.totalAssets || 0)} subtext="من دليل الحسابات" icon={Building} trend="المصدر المحاسبي" trendType="neutral" accentColor="blue" />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card className="border-border/70"><CardContent className="p-5"><div className="text-xs font-bold text-muted-foreground">الالتزامات</div><div className="mt-1 text-2xl font-black">{formatPrice(accountingSummary.totalLiabilities || 0)}</div><div className="mt-2 text-[11px] text-muted-foreground">مرتبط مباشرة بدليل الحسابات</div></CardContent></Card>
-                <Card className="border-border/70"><CardContent className="p-5"><div className="text-xs font-bold text-muted-foreground">حقوق الملكية</div><div className="mt-1 text-2xl font-black">{formatPrice(accountingSummary.totalEquity || 0)}</div><div className="mt-2 text-[11px] text-muted-foreground">مرتبط مباشرة بدليل الحسابات</div></CardContent></Card>
-                <Card className="border-border/70"><CardContent className="p-5"><div className="text-xs font-bold text-muted-foreground">ميزان الحركة</div><div className="mt-1 text-2xl font-black">{accountingSummary.debitTotal.toLocaleString("en-US", { maximumFractionDigits: 2 })}</div><div className="mt-2 text-[11px] text-muted-foreground">مدين مقابل {accountingSummary.creditTotal.toLocaleString("en-US", { maximumFractionDigits: 2 })} دائن</div></CardContent></Card>
-              </div>
             </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <StatCard
+                title="صافي النتيجة"
+                value={formatPrice(accountingSummary.netResult || 0)}
+                subtext="إجمالي الإيرادات − المصروفات"
+                icon={TrendingUp}
+                trend={accountingSummary.netResult >= 0 ? "نتيجة موجبة" : "نتيجة سالبة"}
+                trendType={accountingSummary.netResult >= 0 ? "up" : "neutral"}
+                accentColor={accountingSummary.netResult >= 0 ? "green" : "primary"}
+              />
+              <StatCard
+                title="إجمالي المصروفات"
+                value={formatPrice(accountingSummary.totalExpenses || 0)}
+                subtext="من دليل المصروفات"
+                icon={FileBarChart}
+                trend="مصدر محاسبي"
+                trendType="neutral"
+                accentColor="amber"
+              />
+              <StatCard
+                title="دفتر الأستاذ"
+                value={accountingSummary.journalCount.toLocaleString("en-US")}
+                subtext="إجمالي القيود المسجلة"
+                icon={BookOpen}
+                trend={
+                  accountingSummary.unbalancedEntries
+                    ? `${accountingSummary.unbalancedEntries} يحتاج مراجعة`
+                    : "القيود متزنة"
+                }
+                trendType={accountingSummary.unbalancedEntries ? "neutral" : "up"}
+                accentColor={accountingSummary.unbalancedEntries ? "primary" : "green"}
+              />
+              <StatCard
+                title="إجمالي الأصول"
+                value={formatPrice(accountingSummary.totalAssets || 0)}
+                subtext="من دليل الحسابات"
+                icon={Building}
+                trend="المصدر المحاسبي"
+                trendType="neutral"
+                accentColor="blue"
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="border-border/70">
+                <CardContent className="p-5">
+                  <div className="text-xs font-bold text-muted-foreground">الالتزامات</div>
+                  <div className="mt-1 text-2xl font-black">
+                    {formatPrice(accountingSummary.totalLiabilities || 0)}
+                  </div>
+                  <div className="mt-2 text-[11px] text-muted-foreground">
+                    مرتبط مباشرة بدليل الحسابات
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-border/70">
+                <CardContent className="p-5">
+                  <div className="text-xs font-bold text-muted-foreground">حقوق الملكية</div>
+                  <div className="mt-1 text-2xl font-black">
+                    {formatPrice(accountingSummary.totalEquity || 0)}
+                  </div>
+                  <div className="mt-2 text-[11px] text-muted-foreground">
+                    مرتبط مباشرة بدليل الحسابات
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-border/70">
+                <CardContent className="p-5">
+                  <div className="text-xs font-bold text-muted-foreground">ميزان الحركة</div>
+                  <div className="mt-1 text-2xl font-black">
+                    {accountingSummary.debitTotal.toLocaleString("en-US", {
+                      maximumFractionDigits: 2,
+                    })}
+                  </div>
+                  <div className="mt-2 text-[11px] text-muted-foreground">
+                    مدين مقابل{" "}
+                    {accountingSummary.creditTotal.toLocaleString("en-US", {
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    دائن
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
 
-            
           {statsQuery.isLoading ? (
             <div className="flex items-center justify-center h-48 text-muted-foreground">
               جاري تحميل المؤشرات...
@@ -726,7 +863,9 @@ function AdminDashboard() {
                   value={formatPrice(accountingSummary.totalRevenues || 0)}
                   subtext="من دليل الحسابات المحاسبي"
                   icon={DollarSign}
-                  trend={accountingSummary.totalRevenues ? "متزامن مع حساب الأستاذ" : "لا توجد إيرادات"}
+                  trend={
+                    accountingSummary.totalRevenues ? "متزامن مع حساب الأستاذ" : "لا توجد إيرادات"
+                  }
                   trendType={s?.revenue ? "up" : "neutral"}
                   accentColor="primary"
                 />
@@ -1810,7 +1949,6 @@ function AdminDashboard() {
         <TabsContent value="chart_of_accounts" className="space-y-6 mt-4">
           <OracleAccountsViewer />
         </TabsContent>
-
       </Tabs>
 
       <AuditOperationsModal
@@ -2263,15 +2401,86 @@ function AdminDashboard() {
 
               // Double-Entry Journal Entry Generator for a given transaction
               const getTransactionJournalEntry = (tx: any) => {
+                const storeEntries = erpStore.getState().journalEntries || [];
+                const storeAccounts = erpStore.getState().accounts || [];
                 const trName = selectedTreasuryForDetails.name_ar;
+                const trCode = selectedTreasuryForDetails.account_code || "13010100";
+
+                // 1. Try to find real Journal Entry in erpStore
+                const realJe = storeEntries.find(
+                  (je) =>
+                    (tx.related_entity_id &&
+                      (je.reference === tx.related_entity_id || je.id === tx.related_entity_id)) ||
+                    je.id === tx.id ||
+                    je.reference === tx.id,
+                );
+
+                if (realJe) {
+                  const voucherNum = realJe.reference || realJe.id;
+                  const lines = (realJe.lines || []).map((line) => {
+                    const code = String(line.account_code || "");
+                    const matchedAcc = storeAccounts.find((a) => a.code === code);
+                    const matchedOracle = oracleAccounts.find((o) => o.code === code);
+                    const accName = matchedAcc
+                      ? `${matchedAcc.code} - ${matchedAcc.name_ar}`
+                      : matchedOracle
+                        ? `${code} - ${matchedOracle.name_ar}`
+                        : code === trCode
+                          ? `${trCode} - ${trName}`
+                          : `${code} - حساب عام`;
+
+                    return {
+                      type: Number(line.debit || 0) > 0 ? "debit" : "credit",
+                      accountCode: code,
+                      accountName: accName,
+                      debit: Number(line.debit || 0),
+                      credit: Number(line.credit || 0),
+                    };
+                  });
+
+                  return {
+                    id: tx.id,
+                    voucherNum,
+                    date: realJe.date || tx.date || tx.created_at || new Date().toISOString(),
+                    description: realJe.description || tx.note || "قيد محاسبي مسجل",
+                    reference: realJe.reference || tx.related_entity_id || "-",
+                    currency: realJe.currency || tx.currency || "USD",
+                    createdBy:
+                      realJe.created_by ||
+                      tx.created_by ||
+                      selectedTreasuryForDetails.responsible_employee ||
+                      "الكاشير",
+                    type: tx.type,
+                    amount: tx.amount,
+                    paymentMethod: tx.payment_method || "cash",
+                    lines:
+                      lines.length > 0
+                        ? lines
+                        : [
+                            {
+                              type: "debit",
+                              accountCode: trCode,
+                              accountName: `${trCode} - ${trName}`,
+                              debit: tx.amount,
+                              credit: 0,
+                            },
+                            {
+                              type: "credit",
+                              accountCode: "410101",
+                              accountName: "410101 - إيراد مبيعات وحركات خزينة",
+                              debit: 0,
+                              credit: tx.amount,
+                            },
+                          ],
+                  };
+                }
+
+                // 2. If no real Journal Entry in store, construct double entry with unified M/N voucher reference
                 const isIncoming =
                   tx.type === "deposit" || tx.type === "sales" || tx.type === "transfer_in";
 
-                const treasuryCodeNum = tx.treasury_id
-                  ? tx.treasury_id.replace(/\D/g, "") || "101"
-                  : "101";
-                const treasuryAccountCode = `1101${treasuryCodeNum.padStart(2, "0")}`;
-                const treasuryAccountName = `حساب الخزينة/النقدية (${trName})`;
+                const treasuryAccountCode = trCode;
+                const treasuryAccountName = `${trCode} - ${trName}`;
 
                 let debitAccountCode = "";
                 let debitAccountName = "";
@@ -2284,13 +2493,13 @@ function AdminDashboard() {
 
                   if (tx.type === "sales") {
                     creditAccountCode = "410101";
-                    creditAccountName = "إيراد مبيعات صالة ومطعم (POS)";
+                    creditAccountName = "410101 - إيراد مبيعات صالة ومطعم (POS)";
                   } else if (tx.type === "transfer_in") {
                     creditAccountCode = "110199";
-                    creditAccountName = "حساب تحويلات نقدية بين الخزائن (وسيط)";
+                    creditAccountName = "110199 - حساب تحويلات نقدية بين الخزائن (وسيط)";
                   } else {
                     creditAccountCode = "420101";
-                    creditAccountName = "إيرادات وإيداعات نقدية مباشرة";
+                    creditAccountName = "420101 - إيرادات وإيداعات نقدية مباشرة";
                   }
                 } else {
                   creditAccountCode = treasuryAccountCode;
@@ -2298,18 +2507,25 @@ function AdminDashboard() {
 
                   if (tx.type === "transfer_out") {
                     debitAccountCode = "110199";
-                    debitAccountName = "حساب تحويلات نقدية بين الخزائن (وسيط)";
+                    debitAccountName = "110199 - حساب تحويلات نقدية بين الخزائن (وسيط)";
                   } else if (tx.type === "reconciliation") {
                     debitAccountCode = "520101";
-                    debitAccountName = "تسويات فروق صناديق الجرد";
+                    debitAccountName = "520101 - تسويات فروق صناديق الجرد";
                   } else {
                     debitAccountCode = "510101";
-                    debitAccountName = "مصروفات عمومية وإدارية / عهد نقدية";
+                    debitAccountName = "510101 - مصروفات عمومية وإدارية / عهد نقدية";
                   }
                 }
 
-                const rawNum = tx.id ? tx.id.replace(/\D/g, "") : "";
-                const voucherNum = `JV-${rawNum.slice(-6) || Math.floor(100000 + Math.random() * 900000)}`;
+                // Resolve unified M/N voucher reference
+                let voucherNum = tx.related_entity_id;
+                if (!voucherNum || voucherNum === "-" || voucherNum.startsWith("JV-")) {
+                  const d = new Date(tx.date || tx.created_at || Date.now());
+                  const month = d.getMonth() + 1;
+                  const rawNum = tx.id ? tx.id.replace(/\D/g, "") : "";
+                  const seq = parseInt(rawNum.slice(-3)) || 1;
+                  voucherNum = `${month}/${seq}`;
+                }
 
                 return {
                   id: tx.id,
@@ -2318,8 +2534,8 @@ function AdminDashboard() {
                   description:
                     tx.note ||
                     (isIncoming ? "قبض نقدي / إيداع بالخزينة" : "صرف نقدي / مسحوبات ومصاريف"),
-                  reference: tx.related_entity_id || "-",
-                  currency: tx.currency || "EGP",
+                  reference: voucherNum,
+                  currency: tx.currency || selectedTreasuryForDetails.currency || "USD",
                   createdBy:
                     tx.created_by || selectedTreasuryForDetails.responsible_employee || "الكاشير",
                   type: tx.type,
@@ -2633,7 +2849,7 @@ function AdminDashboard() {
                                 <div className="p-3 bg-muted/40 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <span className="font-mono font-black bg-indigo-600 text-white px-2.5 py-0.5 rounded-lg">
-                                      {entry.voucherNum}
+                                      قيد رقم: {entry.voucherNum}
                                     </span>
                                     <span className="font-mono text-muted-foreground">
                                       {new Date(entry.date).toLocaleString("ar-EG")}
@@ -2852,8 +3068,8 @@ function AdminDashboard() {
                                       <td className="p-3 text-slate-700 dark:text-slate-300 font-semibold max-w-[200px] truncate">
                                         {tx.note || "لا توجد ملاحظات"}
                                       </td>
-                                      <td className="p-3 font-mono text-muted-foreground text-[11px]">
-                                        {tx.related_entity_id || "-"}
+                                      <td className="p-3 font-mono font-bold text-indigo-600 dark:text-indigo-400 text-[11px]">
+                                        {getTransactionJournalEntry(tx).voucherNum}
                                       </td>
                                     </tr>
                                   );
@@ -2904,9 +3120,28 @@ function TreasuryAccountCard({
   const Icon = tr.type === "bank" ? Building : Wallet;
   const containers = tr.containers || [];
   const hasContainers = containers.length > 0;
+  const nonZeroContainers = containers.filter((c) => Number(c.balance || 0) !== 0);
+  const displayedContainers = nonZeroContainers.length > 0 ? nonZeroContainers : containers;
 
-  const liveAccountBalance = tr.account_code ? (erpStore.getState().accounts || []).find((a) => a.code === tr.account_code)?.balance : undefined;
-  const displayBalance = liveAccountBalance !== undefined ? Number(liveAccountBalance) : Number(tr.balance || 0);
+  const liveAccountBalance = tr.account_code
+    ? (erpStore.getState().accounts || []).find((a) => a.code === tr.account_code)?.balance
+    : undefined;
+  const displayBalance =
+    liveAccountBalance !== undefined ? Number(liveAccountBalance) : Number(tr.balance || 0);
+
+  const rates = erpStore.getState().exchangeRates || { USD: 1, EGP: 50, SSP: 1000 };
+  let totalEquivalentUSD = 0;
+  if (hasContainers) {
+    totalEquivalentUSD = containers.reduce((acc, cnt) => {
+      const cCurr = (cnt.currency || "USD").toUpperCase();
+      const r = cCurr === "USD" ? 1 : rates[cCurr] || erpStore.getExchangeRate(cCurr) || 1;
+      return acc + Number(cnt.balance || 0) / (r || 1);
+    }, 0);
+  } else {
+    const trCurr = (tr.currency || "USD").toUpperCase();
+    const r = trCurr === "USD" ? 1 : rates[trCurr] || erpStore.getExchangeRate(trCurr) || 1;
+    totalEquivalentUSD = displayBalance / (r || 1);
+  }
 
   return (
     <Card
@@ -2948,15 +3183,15 @@ function TreasuryAccountCard({
               أوعية الخزينة
             </span>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-[140px] overflow-y-auto pr-0.5 text-xs font-mono">
-              {containers.map((cnt) => (
+              {displayedContainers.map((cnt) => (
                 <div
                   key={cnt.id}
-                  className="flex items-center justify-between bg-card border border-border/30 px-2 py-1 rounded-lg"
+                  className="flex items-center justify-between gap-1 bg-card border border-border/30 px-2 py-1 rounded-lg"
                 >
-                  <span className="text-muted-foreground text-[10px] font-semibold truncate max-w-[85px]">
+                  <span className="text-muted-foreground text-[10px] font-semibold truncate shrink-0">
                     {cnt.name}
                   </span>
-                  <span className="font-bold text-foreground text-[11px]">
+                  <span className="font-bold text-foreground text-[11px] truncate dir-ltr">
                     {formatTreasuryCurrency(cnt.balance, cnt.currency)}
                   </span>
                 </div>
@@ -2982,15 +3217,7 @@ function TreasuryAccountCard({
             الإجمالي المعادل
           </span>
           <span className="text-base font-black text-primary font-mono truncate">
-            {formatPrice(
-              tr.type === "cash"
-                ? tr.currency === "USD"
-                  ? displayBalance
-                  : displayBalance / (erpStore.getState().exchangeRates?.[tr.currency] || 1)
-                : tr.currency === "USD"
-                  ? displayBalance
-                  : displayBalance / (erpStore.getState().exchangeRates?.[tr.currency] || 1),
-            )}
+            {formatPrice(totalEquivalentUSD)}
           </span>
         </div>
       </CardContent>

@@ -4,18 +4,26 @@ export type Currency = "EGP" | "USD" | "SSP";
 export type Language = "ar" | "en";
 
 export function formatTreasuryCurrency(amount: number, currencyCode?: string) {
-  const val = Number(amount || 0).toLocaleString("en-US", {
+  const num = Number(amount || 0);
+  const isNegative = num < 0;
+  const absVal = Math.abs(num).toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-  const code = (currencyCode || "EGP").toUpperCase();
+  const val = isNegative ? `-${absVal}` : absVal;
+  const code = (currencyCode || "EGP").toUpperCase().trim();
+
   if (code === "EGP" || code === "CASH_EGP" || code === "CARD_EGP" || code === "WALLET_EGP")
-    return `${val} ج.م`;
+    return `${val} EGP`;
   if (code === "USD" || code === "CASH_USD" || code === "CARD_USD" || code === "WALLET_USD")
-    return `${val} $`;
+    return `${val} USD`;
+  if (code === "EUR" || code === "CASH_EUR" || code === "CARD_EUR" || code === "WALLET_EUR")
+    return `${val} EUR`;
+  if (code === "SAR" || code === "CASH_SAR" || code === "CARD_SAR" || code === "WALLET_SAR")
+    return `${val} SAR`;
   if (code === "SSP" || code === "CASH_SSP" || code === "CARD_SSP" || code === "WALLET_SSP")
-    return `${val} ج.ج.س`;
-  if (code === "MULTI") return `${val} ج.م (عملات متعددة)`;
+    return `${val} SSP`;
+  if (code === "MULTI") return `${val} (عملات متعددة)`;
   return `${val} ${code}`;
 }
 

@@ -197,11 +197,14 @@ function CaptainPage() {
         .update({ status: "sent_to_cashier" })
         .eq("id", order.id);
       if (error) {
-        toast({ title: "تعذر إرسال الطلب للكاشير", description: error.message, variant: "destructive" });
+        toast({
+          title: "تعذر إرسال الطلب للكاشير",
+          description: error.message,
+          variant: "destructive",
+        });
         return;
       }
     }
-
 
     tableOrdersStore.saveOrder({
       status: "sent_to_cashier",
@@ -467,7 +470,6 @@ function CaptainPage() {
         </div>
       </header>
       <CaptainSelfOrderPanel />
-
 
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 overflow-auto">
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 mt-6">

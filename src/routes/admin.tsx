@@ -22,6 +22,7 @@ import {
   Utensils,
   Store,
   Building2,
+  Settings,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -48,15 +49,9 @@ const nav = [
   { to: "/admin/users", label: "المستخدمين", icon: Users },
   {
     to: "/admin/system-update",
-    search: { tab: "system" },
-    label: "تحديث السيستم",
-    icon: RefreshCw,
-  },
-  {
-    to: "/admin/system-update",
-    search: { tab: "access" },
-    label: "حزمة أكسس (Access)",
-    icon: FileSpreadsheet,
+    label: "خيارات المطور",
+    icon: Settings,
+    permissionKey: "developer_options",
   },
 ];
 

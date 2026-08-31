@@ -385,7 +385,8 @@ function OvenPage() {
                                     key={aIdx}
                                     className="text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 px-1.5 py-0.5 rounded-md"
                                   >
-                                    +{typeof add === "string"
+                                    +
+                                    {typeof add === "string"
                                       ? add
                                       : `${add.icon || ""} ${add.name_ar || add.name || ""}`}
                                   </span>
