@@ -528,76 +528,56 @@ function LedgerPage() {
         return;
       }
 
-      const lines = [...(entry.lines || [])];
-      const targetSide = info.side;
-      let targetIndex = lines.findIndex((line) =>
-        targetSide === "debit" ? Number(line.debit) > 0 : Number(line.credit) > 0,
-      );
-      const template = lines[targetIndex] || lines[0];
-      if (!template) return;
+      const diff = info.difference;
+      const currency = info.isSingleCurrency ? info.currency : (entry.currency || "USD");
+      const adjRef = `تسوية-${entry.reference || entry.id.substring(0, 6)}`;
+      
+      // Create a separate automatic adjustment journal entry
+      const adjustmentEntry: JournalEntry = {
+        id: `adj-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        reference: adjRef,
+        date: entry.date || new Date().toISOString().split("T")[0],
+        description: `قيد تسوية أوتوماتيكي مستقل لمعالجة فارق الاتزان للقيد رقم ${entry.reference || entry.id}`,
+        currency,
+        lines: [
+          {
+            account_code: "509",
+            account_name: "حساب فروق التسوية والتوجيه المحاسبي",
+            debit: info.side === "debit" ? diff : 0,
+            credit: info.side === "credit" ? diff : 0,
+            currency,
+            rate: 1,
+            description: `معالجة عجز جانب الاتزان للقيد ${entry.reference || entry.id}`,
+          },
+          {
+            account_code: "101",
+            account_name: "الخزينة العامة / الحساب المقابل للتسوية",
+            debit: info.side === "credit" ? diff : 0,
+            credit: info.side === "debit" ? diff : 0,
+            currency,
+            rate: 1,
+            description: `مقابل تسوية القيد ${entry.reference || entry.id}`,
+          }
+        ] as any
+      };
 
-      const currency = template.currency || entry.currency || "USD";
-      const rate = Number(template.rate) > 0 ? Number(template.rate) : 1;
-      // `info.difference` is expressed in the BASE currency (USD). To add it to a line
-      // that is in a foreign currency, convert base -> native by MULTIPLYING by the
-      // rate (native = base * rate).
-      const amount = info.difference * rate;
-
-      if (targetIndex < 0) {
-        targetIndex = lines.length;
-        lines.push({
-          account_code: template.account_code,
-          account_name: (template as any).account_name,
-          debit: targetSide === "debit" ? amount : 0,
-          credit: targetSide === "credit" ? amount : 0,
-          currency,
-          rate,
-          description: `تسوية فرق القيد ${entry.reference || ""}`,
-        } as any);
-      } else {
-        const line = { ...lines[targetIndex] };
-        if (targetSide === "debit") line.debit = Number(line.debit || 0) + amount;
-        else line.credit = Number(line.credit || 0) + amount;
-        line.description = `${line.description || entry.description || ""} - تسوية فرق القيد`;
-        lines[targetIndex] = line;
-      }
-
-      erpStore.state.journalEntries = erpStore.state.journalEntries.map((item) =>
-        item.id === entry.id ? { ...item, lines } : item,
-      );
+      erpStore.state.journalEntries = [adjustmentEntry, ...(erpStore.state.journalEntries || [])];
       erpStore.recalculateAccountBalances();
       erpStore.saveState();
-      setSavedEntryIds((current) => {
-        const next = new Set(current);
-        next.delete(entry.id);
-        return next;
-      });
       setErpState({ ...erpStore.getState() });
       setBalanceAdjustmentEntry(null);
 
-      if (!getEntryBalanceInfo({ ...entry, lines }).isBalanced) {
-        toast({
-          title: "⚠️ تم تعديل القيد لكنه ما زال غير متزن",
-          description:
-            "بسبب تعدد العملات والمعاملات، قد تحتاج لمعالجة هذا القيد يدويًا لإتمام التوازن الكامل.",
-        });
-      } else {
-        toast({
-          title: "تمت تسوية القيد",
-          description: `تمت إضافة ${amount.toFixed(2)} ${currency} إلى الجانب ${
-            targetSide === "debit" ? "المدين" : "الدائن"
-          }. احفظ القيود لتثبيت التعديل.`,
-        });
-      }
+      toast({
+        title: "✨ تم إنشاء قيد تسوية أوتوماتيكي مستقل بنجاح",
+        description: `تم إنشاء قيد التسوية برقم (${adjRef}) بقيمة الفارق (${diff.toLocaleString()} ${currency}) وإضافته لدفتر اليومية.`,
+      });
     } catch (err) {
       console.error("[تسوية القيد]", err);
-      // Even on failure, refresh the UI from the store so partial mutations are
-      // reflected, and surface the real error instead of swallowing it silently.
       setErpState({ ...erpStore.getState() });
       setBalanceAdjustmentEntry(null);
       toast({
-        title: "خطأ أثناء تسوية القيد",
-        description: (err as any)?.message || "حدث خطأ غير متوقع أثناء محاولة تسوية القيد.",
+        title: "خطأ أثناء إنشاء قيد التسوية",
+        description: (err as any)?.message || "حدث خطأ غير متوقع أثناء محاولة إنشاء قيد التسوية الآلي.",
         variant: "destructive",
       });
     }
@@ -3056,7 +3036,7 @@ function LedgerPage() {
 
       {/* View Document Dialog */}
       <Dialog open={isViewJournalOpen} onOpenChange={setIsViewJournalOpen}>
-        <DialogContent className="sm:max-w-[760px] text-right dir-rtl print:max-w-none print:w-full print:h-full print:m-0 print:border-none print:shadow-none bg-card">
+        <DialogContent className="sm:max-w-[760px] max-h-[90vh] overflow-y-auto text-right dir-rtl print:max-w-none print:w-full print:h-full print:m-0 print:border-none print:shadow-none bg-card">
           <DialogHeader className="print:hidden">
             <DialogTitle className="text-lg font-bold text-right">
               سند قيد يومية عامة (محاسبي)
@@ -3594,10 +3574,10 @@ function LedgerPage() {
                           )}
                         </div>
                         <p>
-                          هل أنت متأكد من إضافة قيمة الفرق إلى جانب <strong>{sideLabel}</strong>؟
+                          هل أنت متأكد من إنشاء <strong>قيد تسوية أوتوماتيكي مستقل</strong> لمعالجة فارق الاتزان لهذا القيد؟
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          سيتم تعديل القيد في الذاكرة، ثم اضغط حفظ القيود لتثبيته نهائيًا.
+                          سيتم إنشاء سند قيد يومية جديد أوتوماتيكياً برقم مرجعي <span className="font-mono font-bold">تسوية-{balanceAdjustmentEntry.reference}</span> وإضافته لدفتر اليومية لتعويض الفرق وإحداث الاتزان.
                         </p>
                       </>
                     );
