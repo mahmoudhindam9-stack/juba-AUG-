@@ -8,6 +8,7 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { Analytics } from "@vercel/analytics/react";
 import { Toaster } from "@/components/ui/sonner";
 import { translator } from "../shared/services/translationService";
 import { createAppSync } from "../shared/services/appSync";
@@ -132,6 +133,7 @@ function RootComponent() {
           <Outlet />
           <Toaster />
         </QueryClientProvider>
+        <Analytics />
         <Scripts />
       </body>
     </html>
